@@ -3,13 +3,14 @@ import {
   cycleName, cycleRange, daysLeft, cycleLength, cycleBounds, summarize, money, fmt, dayKey, dayLabel, timeLabel, toAED, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, saveSettings, setDemo,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, saveSettings, setDemo, setPrefs,
 } from './store.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
 import { icon } from './icons.js';
 import { donut, bindDonut, paceLine, bindPace, inOutBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
+import { ACCENTS, CARD_COLORS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 
 const view = document.getElementById('view');
 const TABS = ['home', 'activity', 'insights', 'settings'];
@@ -291,6 +292,11 @@ function renderSettings() {
       </button>
     </section>
 
+    <h3 class="group-title">Appearance</h3>
+    <section class="group appearance">
+      ${appearanceBlock()}
+    </section>
+
     <h3 class="group-title">Budget</h3>
     <section class="group form">
       <label class="row input-row"><span>Allowance per cycle</span><span class="suffix-input"><em>AED</em><input name="allowance" type="number" inputmode="decimal" min="0" step="50" value="${s.allowance}"></span></label>
@@ -315,6 +321,42 @@ function renderSettings() {
         <input type="checkbox" switch class="switch" name="demo" ${isDemo() ? 'checked' : ''}></label>
     </section>
     <p class="group-foot center">Spendings · your data lives in your own Google Sheet.</p>`;
+}
+
+
+function appearanceBlock() {
+  const a = normalizeAppearance(state.prefs.appearance);
+  const acc = ACCENTS.find((x) => x.id === a.accent);
+  const changed = JSON.stringify(a) !== JSON.stringify(normalizeAppearance(DEFAULT_APPEARANCE));
+  return `
+    <div class="ap-label">Theme</div>
+    <div class="theme-seg" role="radiogroup" aria-label="Theme">
+      ${[['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<button type="button" role="radio" aria-checked="${a.theme === k}" data-theme-mode="${k}">${l}</button>`).join('')}
+    </div>
+    <div class="ap-label">Accent <b>${acc.name}</b></div>
+    <div class="swatches" role="radiogroup" aria-label="Accent colour">
+      ${ACCENTS.map((x) => `<button type="button" role="radio" class="swatch accent-swatch" aria-checked="${x.id === a.accent}" aria-label="${x.name}" data-accent="${x.id}" style="--sw:${x.l[0]}; --sw-top:${x.l[3]}">${icon('check', { size: 16 })}</button>`).join('')}
+    </div>
+    <p class="group-foot" style="padding:0">Used for buttons, the tab bar and the allowance liquid.</p>
+    ${ACCOUNTS.map((acct) => {
+      const cur = a.cards[acct.id];
+      return `<div class="card-pick">
+        <div class="ap-label"><i class="acc-dot" style="--chip:${acct.color}"></i>${acct.name} colour</div>
+        <div class="swatches" role="radiogroup" aria-label="${acct.name} colour">
+          ${CARD_COLORS.map((c) => `<button type="button" role="radio" class="swatch" aria-checked="${c.id === cur}" aria-label="${c.name}" data-card="${acct.id}" data-color="${c.id}" style="--sw:${c.hex}">${icon('check', { size: 14 })}</button>`).join('')}
+        </div>
+      </div>`;
+    }).join('')}
+    ${changed ? '<button type="button" class="text-btn reset-btn" data-act="reset-look">Reset colours</button>' : ''}`;
+}
+
+function setAppearance(patch) {
+  const a = normalizeAppearance(state.prefs.appearance);
+  const next = { ...a, ...patch, cards: { ...a.cards, ...(patch.cards || {}) } };
+  setPrefs({ appearance: next });
+  applyAppearance(next);
+  haptic();
+  render();
 }
 
 const ordinal = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
@@ -498,8 +540,15 @@ document.addEventListener('click', async (ev) => {
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { insightsCycle = shiftCycle(insightsCycle || currentCycle(), +cyc.dataset.cyc); if (insightsCycle === currentCycle()) insightsCycle = null; haptic(); return render(); }
+  const mode = t.closest('[data-theme-mode]');
+  if (mode) return setAppearance({ theme: mode.dataset.themeMode });
+  const accent = t.closest('[data-accent]');
+  if (accent) return setAppearance({ accent: accent.dataset.accent });
+  const cardColor = t.closest('[data-card][data-color]');
+  if (cardColor) return setAppearance({ cards: { [cardColor.dataset.card]: cardColor.dataset.color } });
   const act = t.closest('[data-act]')?.dataset.act;
   if (!act || !view.contains(t)) return;
+  if (act === 'reset-look') return setAppearance({ ...DEFAULT_APPEARANCE });
   if (act === 'sync') { haptic(); await sync(); if (state.sync.status === 'error') toast(state.sync.error, { icon: icon('warn', { size: 18 }), tone: 'warn' }); }
   if (act === 'review') openReview();
   if (act === 'shortcut') openShortcutGuide();
@@ -575,6 +624,8 @@ function handleDeepLink() {
   openEntry(null, { amount: num || 0, merchant: p.get('merchant') || '', ...(account ? { account } : {}), currency: /\$|usd/i.test(p.get('amount') || '') ? 'USD' : 'AED' });
 }
 
+applyAppearance(state.prefs.appearance);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance(state.prefs.appearance));
 render();
 initLock();
 handleDeepLink();

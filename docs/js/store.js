@@ -14,7 +14,7 @@ export const state = {
   settings: { ...DEFAULT_SETTINGS },
   merchants: {},
   outbox: read(K.outbox, []),
-  prefs: read(K.prefs, { lock: false, demo: false, credId: '' }),
+  prefs: { lock: false, demo: false, credId: '', appearance: null, ...read(K.prefs, {}) },
   sync: { status: 'idle', error: '', at: 0 },
   sheetUrl: '',
 };
