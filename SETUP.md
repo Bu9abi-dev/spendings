@@ -3,7 +3,7 @@
 Allow about 15 minutes, once. There are four parts:
 
 1. **The Google Sheet**: it stores everything.
-2. **The app**: hosted on GitHub Pages and installed on your iPhone.
+2. **The app**: hosted on Vercel and installed on your iPhone.
 3. **The Apple Pay Shortcut**: logs each payment as it happens.
 4. **Optional:** Face ID lock.
 
@@ -38,12 +38,16 @@ The sheet now has these tabs:
 
 ## 2. The app (5 min)
 
-### Host it on GitHub Pages
-1. Merge this branch into `main`.
-2. In the repo on GitHub, open **Settings → Pages**. Set **Source** to *Deploy from a branch*, choose **`main`** and **`/docs`**, then **Save**.
-3. After a minute the app is live at **https://bu9abi-dev.github.io/spendings/**.
+### Put it online with Vercel (free, works with a private repo)
+1. Go to **vercel.com** and choose **Sign Up → Continue with GitHub**. The free **Hobby** plan is enough.
+2. Click **Add New… → Project**. If the `spendings` repo isn't listed, choose **Adjust GitHub App Permissions**, give Vercel access to it, and come back.
+3. Next to `spendings`, click **Import**, then set:
+   - **Framework Preset:** Other
+   - **Root Directory:** click **Edit** and choose **`docs`**
+   - Leave the build and output settings empty. There's nothing to build.
+4. Click **Deploy**. About 30 seconds later you get a link like **`https://spendings-xxxx.vercel.app`**. That's your app.
 
-> **Private repo:** GitHub Pages for a private repo needs a paid plan (GitHub Pro). The Pages *site* is still reachable by anyone who knows the URL, but it holds no data. Your numbers live only in your Google Sheet, behind your app key.
+Vercel publishes the `main` branch. Every time `main` changes, the app updates by itself.
 
 ### Install it on your iPhone
 1. Open the link in **Safari**.

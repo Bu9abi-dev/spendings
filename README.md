@@ -17,7 +17,7 @@ A personal money tracker for iPhone. Apple Pay payments are logged as they happe
 
 | Path | What |
 | --- | --- |
-| `docs/` | The web app: static HTML, CSS and JS modules, no build step. Served by GitHub Pages. |
+| `docs/` | The web app: static HTML, CSS and JS modules, no build step. Hosted on Vercel (Root Directory `docs`). |
 | `apps-script/Code.gs` | The Google Sheet backend. Paste it into the sheet's Apps Script. |
 | `tests/apps-script.test.mjs` | Runs the backend against a fake sheet: `node tests/apps-script.test.mjs` |
 | `PRODUCT.md` | Product context. |
