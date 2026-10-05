@@ -221,4 +221,4 @@ export function setDemo(on) {
 }
 
 // after all declarations: demo can be forced with ?demo=1
-if (state.prefs.demo || new URLSearchParams(location.search).has('demo')) loadDemo();
+if (state.prefs.demo || globalThis.SPENDINGS_DEMO || new URLSearchParams(location.search).has('demo')) loadDemo();

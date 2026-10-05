@@ -580,4 +580,6 @@ initLock();
 handleDeepLink();
 sync();
 
-if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+try {
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
+} catch { /* not allowed in this frame */ }
