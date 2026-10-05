@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spending Tracker Council</title>
+<style>
+:root{--bg:#fbfbfd;--card:#fff;--ink:#1d1d1f;--mute:#6e6e73;--line:#e5e5ea;--accent:#0a7cff;--agree:#1f9d55;--clash:#c2410c}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#0b0b0d;--card:#161618;--ink:#f5f5f7;--mute:#a1a1a6;--line:#2c2c2e;--accent:#4aa3ff;--agree:#3ecf7a;--clash:#fb923c}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.55 -apple-system,BlinkMacSystemFont,"SF Pro Text",system-ui,sans-serif}
+main{max-width:760px;margin:0 auto;padding:40px 16px 64px}
+h1{font-size:28px;letter-spacing:-.02em;margin:0 0 6px}
+h2{font-size:19px;margin:28px 0 8px}
+.sub{color:var(--mute);margin:0 0 24px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:18px 20px;margin:12px 0}
+.verdict{border-color:var(--accent)}
+ul{padding-left:20px;margin:6px 0}li{margin:4px 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:8px}
+.pill{border:1px solid var(--line);border-radius:12px;padding:10px;font-size:14px}
+.pill b{display:block}.sheet{color:var(--agree)}.local{color:var(--clash)}
+details{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:8px 0}
+summary{cursor:pointer;font-weight:600}
+footer{color:var(--mute);font-size:13px;margin-top:32px}
+</style>
+</head>
+<body><main>
+<h1>Spending tracker: council verdict</h1>
+<p class="sub">The question: what should v1 be, where should the data live, and how should Apple Pay logging work?</p>
+
+<div class="card verdict">
+<h2 style="margin-top:0">Recommendation</h2>
+<p>Build an iOS Shortcut that logs each Apple Pay payment as it happens and writes it straight to the Google Sheet, which holds the record. Pair it with a no-build web app that leads with <em>AED left this month</em>. Charts come second. Include transfers, merchant memory and card "envelopes". Protect the sync with a token, dedupe, locking and formula sanitising.</p>
+<p><b>First step:</b> on the real iPhone, set up a Wallet automation that only shows the Amount, Merchant and Card it receives. Pay once with each card and check what iOS actually provides.</p>
+</div>
+
+<h2>Where the advisors stood on "source of truth"</h2>
+<div class="grid">
+<div class="pill"><b class="sheet">Sheet</b>Contrarian</div>
+<div class="pill"><b class="sheet">Sheet</b>First Principles</div>
+<div class="pill"><b class="sheet">Sheet</b>Outsider</div>
+<div class="pill"><b class="local">Local-first</b>Expansionist</div>
+<div class="pill"><b class="local">Local-first</b>Executor</div>
+</div>
+<p class="sub" style="margin-top:8px">The peer review settled it: opening a URL from a Shortcut lands in Safari, not the home-screen app, and the two have separate storage.</p>
+
+<div class="card"><h2 style="margin-top:0">Where the council agrees</h2><ul>
+<li>The Apple Pay moment <em>is</em> the product. Trackers die in week two.</li>
+<li>Use one Ledger tab as the record and generate the monthly tabs from it.</li>
+<li>Add Transfer as a third type next to income and spending.</li>
+<li>Learn each merchant's category; cards act as envelopes (ADCB allowance left, warn on ADIB use).</li>
+<li>Use Liquid Glass only on the nav and sheets. Cut AI, OCR and gamification.</li></ul></div>
+
+<div class="card"><h2 style="margin-top:0">Blind spots caught in peer review</h2><ul>
+<li>A secret baked into public JavaScript isn't secret. Enter it once on the device.</li>
+<li>Duplicate triggers. Dedupe with a deterministic id.</li>
+<li>Merchant names that start with “=” become live formulas in the Sheet.</li>
+<li>Failures when offline at the till. Show a failure notification and a reconcile nudge.</li>
+<li>“Ask Before Running” must be off. Add an app lock and a backup/export.</li>
+<li>Setup is the real product. Avoid a build step the owner can't debug.</li></ul></div>
+
+<details><summary>Contrarian</summary><p>Fatal flaw: Open URL opens Safari, so local-first loses data. The Shortcut should do everything and POST to the Sheet. Make sure BOTIM is in Wallet. Add Transfers, a token and LockService. Use one Ledger tab and keep glass light.</p></details>
+<details><summary>First Principles</summary><p>The real problem is getting each payment logged. Capture first and categorise later. An uncategorised row is still true. The Sheet holds the record. Generate the monthly tabs. Add card-purpose meaning and an ADCB burn-down.</p></details>
+<details><summary>Expansionist</summary><p>Capture with zero taps and keep an inbox. Learn categories from merchants. Treat cards as envelopes. Add UAE touches: AED, and optionally salary-cycle months. Put a lock-screen glance on a Shortcut. Later: bank SMS/email ingestion.</p></details>
+<details><summary>Outsider</summary><p>“Prompted” only means a banner. Make setup one tap and include a test transaction. Handle transfers, refunds and splits. The daily question is “how much allowance is left”. Wallet card names need mapping.</p></details>
+<details><summary>Executor</summary><p>Build the riskiest part first: the Apps Script, then the automation on the real phone. Use client UUIDs. Watch the Pages base path and the manifest scope. Auto-suggest the category from the merchant.</p></details>
+
+<footer>LLM Council · 5 advisors · 5 anonymised peer reviews · 5 Oct 2026 · full transcript in council-transcript-2026-10-05.md</footer>
+</main></body></html>
