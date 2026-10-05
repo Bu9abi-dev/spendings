@@ -1,9 +1,9 @@
 import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, seriesColor, accountMeta, cycleOf, shiftCycle,
-  cycleName, cycleRange, daysLeft, cycleLength, cycleBounds, summarize, money, fmt, dayKey, dayLabel, timeLabel, toAED, toCSV,
+  cycleName, cycleRange, daysLeft, cycleLength, cycleBounds, summarize, money, fmt, fmtCompact, dayKey, dayLabel, timeLabel, toAED, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, saveSettings, setDemo, setPrefs,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, restoreEntry, saveSettings, setDemo, setPrefs,
 } from './store.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
@@ -33,11 +33,11 @@ function entryRow(e) {
   else if (e.merchant) bits.push(`${esc(e.account)} → ${esc(e.toAccount)}`);
   bits.push(timeLabel(e.date));
   const amt = `${isIn ? '+' : ''}${e.currency === 'USD' ? '$' : ''}${fmt(e.amount, { fixed: true })}`;
-  return `<button class="row entry${e.status === 'Review' ? ' review' : ''}" type="button" data-id="${esc(e.id)}">
+  return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry${e.status === 'Review' ? ' review' : ''}" type="button" data-id="${esc(e.id)}">
     <span class="row-icon" style="--tint:${tint}">${icon(ic, { size: 20 })}</span>
     <span class="row-main"><span class="row-title">${esc(title)}</span><span class="row-sub">${bits.join(' · ')}${e.note ? ` · <span class="row-note">${esc(e.note)}</span>` : ''}</span></span>
     <span class="row-amt num ${isIn ? 'in' : isTr ? 'tr' : ''}">${amt}${e.currency === 'USD' ? `<small>≈ AED ${fmt(toAED(e, state.settings), { fixed: true })}</small>` : ''}</span>
-  </button>`;
+  </button></div>`;
 }
 
 function syncBadge() {
@@ -90,7 +90,7 @@ function renderHome() {
       <div class="cap-rim" aria-hidden="true"></div>
       <div class="cap-content">
         <span class="cap-label">${left < 0 ? 'Over your allowance' : 'Allowance left'}</span>
-        <span class="cap-value num" data-value="${Math.abs(left)}">AED ${fmt(Math.abs(left), { whole: true })}</span>
+        <span class="cap-value num" data-value="${Math.abs(left)}" style="--chars:${`AED ${fmt(Math.abs(left), { whole: true })}`.length}">AED ${fmt(Math.abs(left), { whole: true })}</span>
         <span class="cap-meta">${left < 0
           ? `You’ve spent ${money(sum.allowanceUsed, 'AED', { whole: true })} of ${money(s.allowance, 'AED', { whole: true })} on ${esc(s.allowanceAccount)}`
           : `of ${fmt(s.allowance, { whole: true })} on ${esc(s.allowanceAccount)}${perDay ? ` · about <b>AED ${fmt(perDay, { whole: true })}</b> a day` : ''}`}</span>
@@ -98,14 +98,16 @@ function renderHome() {
     </section>
 
     <section class="flow" aria-label="This cycle">
-      <div><span class="flow-label">${icon('in', { size: 15 })}Money in</span><span class="flow-val num in">${fmt(sum.income, { whole: true })}</span></div>
-      <div><span class="flow-label">${icon('out', { size: 15 })}Money out</span><span class="flow-val num">${fmt(sum.spent, { whole: true })}</span></div>
-      <div><span class="flow-label">Net</span><span class="flow-val num ${sum.net >= 0 ? 'in' : 'neg'}">${sum.net >= 0 ? '+' : '−'}${fmt(Math.abs(sum.net), { whole: true })}</span></div>
+      <div><span class="flow-label">${icon('in', { size: 15 })}Money in</span><span class="flow-val num in">${fmtCompact(sum.income)}</span></div>
+      <div><span class="flow-label">${icon('out', { size: 15 })}Money out</span><span class="flow-val num">${fmtCompact(sum.spent)}</span></div>
+      <div><span class="flow-label">Net</span><span class="flow-val num ${sum.net >= 0 ? 'in' : 'neg'}">${sum.net >= 0 ? '+' : '−'}${fmtCompact(Math.abs(sum.net))}</span></div>
     </section>
+
+    ${quickAdd()}
 
     ${reviewItems.length ? `<button class="review-row" type="button" data-act="review">
         <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">${reviewItems.length} ${reviewItems.length === 1 ? 'payment needs' : 'payments need'} a category</span><span class="row-sub">Sort them in a couple of taps</span></span>
+        <span class="row-main"><span class="row-title">${reviewItems.length} ${reviewItems.length === 1 ? 'payment' : 'payments'} to sort</span><span class="row-sub">Pick a category for each</span></span>
         ${icon('chevR', { size: 18, cls: 'chev' })}
       </button>` : ''}
 
@@ -126,6 +128,30 @@ function renderHome() {
     <section class="group">
       ${recent.length ? recent.map(entryRow).join('') : `<div class="empty">${icon('card', { size: 28 })}<p>No entries yet.</p><p class="muted">Pay with Apple Pay or tap <b>+</b> to add one.</p></div>`}
     </section>`;
+}
+
+/* Frequent purchases from the last 60 days, one tap to log again. */
+function quickAdd() {
+  const since = Date.now() - 60 * 864e5;
+  const groups = new Map();
+  for (const e of state.entries) {
+    if (e.type !== 'Spend' || !e.merchant || !e.category || new Date(e.date) < since) continue;
+    const k = `${e.merchant.toLowerCase()}|${e.category}|${e.account}`;
+    const g = groups.get(k);
+    if (g) g.n++; else groups.set(k, { n: 1, e });
+  }
+  const top = [...groups.values()].filter((g) => g.n >= 2).sort((a, b) => b.n - a.n).slice(0, 6);
+  if (!top.length) return '';
+  return `<h3 class="group-title">Quick add</h3>
+    <div class="quick" role="list">
+      ${top.map(({ e }) => {
+        const m = categoryMeta(e.category);
+        return `<button type="button" class="quick-chip" role="listitem" data-quick="${esc(e.id)}" style="--tint:${m ? seriesColor(m.slot) : 'var(--label-2)'}">
+          <span class="qc-icon">${icon(m ? m.icon : 'dots', { size: 18 })}</span>
+          <span class="qc-text"><b>${esc(e.merchant)}</b><span>${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount)} · ${esc(e.account)}</span></span>
+        </button>`;
+      }).join('')}
+    </div>`;
 }
 
 /* ───────────────────────── Activity ───────────────────────── */
@@ -534,7 +560,18 @@ document.addEventListener('click', async (ev) => {
   const tabBtn = t.closest('.tabbar [data-tab]');
   if (tabBtn) { haptic(); return go(tabBtn.dataset.tab); }
   if (t.closest('.fab')) { haptic(); return openEntry(); }
+  const quick = t.closest('[data-quick]');
+  if (quick) {
+    const e = state.entries.find((x) => x.id === quick.dataset.quick);
+    haptic();
+    if (e) openEntry(null, { type: 'Spend', amount: e.amount, currency: e.currency, account: e.account, category: e.category, merchant: e.merchant });
+    return;
+  }
+  const del = t.closest('.swipe-del');
+  if (del) { swipeDelete(del.closest('.swipe')); return; }
+  if (openSwipe && !t.closest('.swipe.open')) { closeSwipe(); return; }
   const row = t.closest('.entry[data-id]');
+  if (row && view.contains(row) && openSwipe) { closeSwipe(); return; }
   if (row && view.contains(row)) { const e = state.entries.find((x) => x.id === row.dataset.id); if (e) openEntry(e); return; }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
@@ -609,6 +646,70 @@ subscribe((reason) => { if (reason !== 'prefs') render(reason); });
 window.addEventListener('online', () => sync());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
 window.addEventListener('resize', () => moveDroplet());
+
+/* ───── Swipe left on an entry to delete (iOS list behaviour) ───── */
+let openSwipe = null, swipeDrag = null, swallowClick = false;
+const REVEAL = 88;
+function setX(row, x, animate) {
+  row.style.transition = animate && !reduceMotion() ? 'transform 0.38s cubic-bezier(0.23, 1, 0.32, 1)' : 'none';
+  row.style.transform = x ? `translateX(${x}px)` : '';
+}
+function closeSwipe() { if (!openSwipe) return; setX(openSwipe.querySelector('.entry'), 0, true); openSwipe.classList.remove('open'); openSwipe = null; }
+function swipeDelete(wrap) {
+  if (!wrap) return;
+  const removed = state.entries.find((x) => x.id === wrap.dataset.id);
+  if (!removed) return;
+  haptic();
+  const finish = () => {
+    openSwipe = null;
+    deleteEntry(removed.id);
+    toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => restoreEntry(removed), icon: icon('trash', { size: 18 }) });
+  };
+  if (reduceMotion()) return finish();
+  const row = wrap.querySelector('.entry');
+  setX(row, -wrap.offsetWidth, true);
+  wrap.animate([{ height: `${wrap.offsetHeight}px` }, { height: '0px' }], { duration: 260, delay: 160, easing: 'cubic-bezier(0.23, 1, 0.32, 1)', fill: 'forwards' }).onfinish = finish;
+}
+view.addEventListener('pointerdown', (e) => {
+  const wrap = e.target.closest('.swipe');
+  if (!wrap || e.target.closest('.swipe-del')) return;
+  if (openSwipe && openSwipe !== wrap) closeSwipe();
+  swipeDrag = { wrap, row: wrap.querySelector('.entry'), x0: e.clientX, y0: e.clientY, base: wrap === openSwipe ? -REVEAL : 0, on: false, id: e.pointerId, last: [e.timeStamp, e.clientX], v: 0 };
+});
+view.addEventListener('pointermove', (e) => {
+  const d = swipeDrag;
+  if (!d || e.pointerId !== d.id) return;
+  const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+  if (!d.on) {
+    if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { swipeDrag = null; return; }
+    if (Math.abs(dx) < 8) return;
+    d.on = true;
+    d.row.setPointerCapture?.(e.pointerId);
+  }
+  let x = Math.min(0, d.base + dx);
+  const w = d.wrap.offsetWidth;
+  if (x < -w * 0.75) x = -w * 0.75 + (x + w * 0.75) * 0.3; // resist past the full-swipe point
+  setX(d.row, x, false);
+  d.wrap.classList.toggle('armed', x < -w * 0.55);
+  d.v = (e.clientX - d.last[1]) / Math.max(1, e.timeStamp - d.last[0]) * 1000;
+  d.last = [e.timeStamp, e.clientX];
+});
+const endSwipe = (e) => {
+  const d = swipeDrag;
+  swipeDrag = null;
+  if (!d || !d.on) return;
+  swallowClick = true;
+  setTimeout(() => { swallowClick = false; }, 60);
+  const x = new DOMMatrix(getComputedStyle(d.row).transform).m41;
+  const w = d.wrap.offsetWidth;
+  d.wrap.classList.remove('armed');
+  if (x < -w * 0.55 || (d.v < -1400 && x < -REVEAL)) return swipeDelete(d.wrap);
+  if (x < -REVEAL / 2 || d.v < -500) { setX(d.row, -REVEAL, true); d.wrap.classList.add('open'); openSwipe = d.wrap; haptic(); }
+  else { setX(d.row, 0, true); d.wrap.classList.remove('open'); if (openSwipe === d.wrap) openSwipe = null; }
+};
+view.addEventListener('pointerup', endSwipe);
+view.addEventListener('pointercancel', endSwipe);
+view.addEventListener('click', (e) => { if (swallowClick) { e.stopPropagation(); e.preventDefault(); } }, true);
 
 /* Deep link: #add?amount=42&merchant=Carrefour&card=ADCB opens a pre-filled entry. */
 function handleDeepLink() {

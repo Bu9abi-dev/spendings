@@ -99,7 +99,7 @@ export function bindPace(root) {
       xh.setAttribute('x1', vx); xh.setAttribute('x2', vx); xh.setAttribute('visibility', 'visible');
       const spent = data.cumulative[i];
       tip.hidden = false;
-      tip.innerHTML = `<b>${data.labels[i]}</b><span><i class="sw spend"></i>Spent ${spent == null ? '—' : 'AED ' + fmt(spent, { whole: true })}</span><span><i class="sw pace"></i>Even pace AED ${fmt(data.pace[i], { whole: true })}</span>`;
+      tip.innerHTML = `<b>${data.labels[i]}</b><span><i class="sw spend"></i>Spent ${spent == null ? 'not yet' : 'AED ' + fmt(spent, { whole: true })}</span><span><i class="sw pace"></i>Even pace AED ${fmt(data.pace[i], { whole: true })}</span>`;
       const px = (vx / 340) * r.width;
       tip.style.transform = `translateX(${Math.min(r.width - tip.offsetWidth, Math.max(0, px - tip.offsetWidth / 2))}px)`;
     };

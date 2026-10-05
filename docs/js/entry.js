@@ -63,6 +63,7 @@ export function openEntry(existing = null, preset = {}) {
           <input type="datetime-local" name="date" value="${localInputValue(e.date)}">
         </label>
       </div>
+      ${existing ? `<button type="button" class="dup-btn" data-act="duplicate">${icon('copy', { size: 18 })}Log this again</button>` : ''}
     </div>
     <div class="keypad-wrap">
       <div class="keypad" role="group" aria-label="Amount keypad">
@@ -214,6 +215,11 @@ export function openEntry(existing = null, preset = {}) {
         }
         const act = ev.target.closest('[data-act]')?.dataset.act;
         if (act === 'cancel') close();
+        if (act === 'duplicate') {
+          close();
+          setTimeout(() => openEntry(null, { type: e.type, amount: e.amount, currency: e.currency, account: e.account, toAccount: e.toAccount, category: e.category, merchant: merchantInput.value.trim(), note: noteInput.value.trim() }), 280);
+          return;
+        }
         if (act === 'currency') { e.currency = e.currency === 'AED' ? 'USD' : 'AED'; haptic(); renderAmount(); }
         if (act === 'delete') {
           const removed = deleteEntry(existing.id);

@@ -137,6 +137,7 @@ function enqueue(op) {
 
 function finalize(e) {
   const out = { ...e };
+  if (!out.date || Number.isNaN(new Date(out.date).getTime())) out.date = new Date().toISOString();
   out.cycle = cycleOf(out.date, state.settings.cycleStart);
   out.amountAED = toAED({ ...out, amountAED: null }, state.settings);
   if (out.type === 'Transfer') out.category = '';

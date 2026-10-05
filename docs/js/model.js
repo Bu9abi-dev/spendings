@@ -120,6 +120,13 @@ export function fmt(n, { fixed = false, whole = false } = {}) {
   return nf2.format(v);
 }
 export const money = (n, cur = 'AED', opts) => `${cur} ${fmt(n, opts)}`;
+/** 456484 → "456.5k", 1250000 → "1.25M"; below 100k stays whole. */
+export function fmtCompact(n) {
+  const a = Math.abs(n);
+  if (a >= 1e6) return `${+(n / 1e6).toFixed(2)}M`;
+  if (a >= 1e5) return `${+(n / 1e3).toFixed(1)}k`;
+  return fmt(n, { whole: true });
+}
 
 export function dayKey(date) {
   const { y, m, d } = dubaiParts(date);
