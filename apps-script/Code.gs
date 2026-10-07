@@ -175,7 +175,7 @@ function doPost(e) {
   if (!body.token || String(body.token).trim() !== getToken_()) {
     return json_({ ok: false, error: 'Wrong app key. Copy it again from the sheet: Spendings → Show my app key.' });
   }
-  var action = body.action || (body.source === 'applepay' ? 'applepay' : 'add');
+  var action = body.action || (body.source === 'applepay' ? 'applepay' : body.source === 'bank' ? 'bankalert' : 'add');
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(20000);
@@ -187,6 +187,7 @@ function doPost(e) {
       case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName() });
       case 'list': return json_(listAll_());
       case 'applepay': return json_(addApplePay_(body));
+      case 'bankalert': return json_(addBankAlert_(body));
       case 'add': return json_(addEntries_(body.entries || [body.entry || body]));
       case 'update': return json_(updateEntry_(body.id, body.fields || {}));
       case 'delete': return json_(deleteEntry_(body.id));
@@ -213,41 +214,119 @@ function json_(obj) {
 /** Called by the Apple Pay Shortcut. Fields: amount (text like "AED 42.00"), merchant, card, category?, note? */
 function addApplePay_(body) {
   var s = getSettings_();
-  var money = parseMoney_(body.amount);
-  var account = mapCard_(body.card, s.cardMap);
-  var merchant = clean_(body.merchant);
-  var category = clean_(body.category);
+  return logCardSpend_(s, {
+    money: parseMoney_(body.amount),
+    account: mapCard_(body.card, s.cardMap),
+    merchant: clean_(body.merchant),
+    category: clean_(body.category),
+    note: clean_(body.note),
+    source: 'Apple Pay',
+  });
+}
+
+/**
+ * Called by the bank-notification Shortcut. Fields: app (ADCB/ADIB/…), title, body (the notification's text).
+ * Only card purchases are logged. Transfers, salary, refunds, ATM withdrawals, OTPs and the rest are
+ * ignored, so money moving between accounts never counts as spending.
+ */
+function addBankAlert_(body) {
+  var s = getSettings_();
+  var text = [body.title, body.body, body.text].map(clean_).filter(String).join(' · ');
+  var alert = parseBankAlert_(text);
+  if (!alert) return { ok: true, ignored: true, message: 'Not a card payment, so nothing was logged.' };
+  // the app name or title says which bank it is; the body can mention other banks (e.g. "at BOTIM MONEY")
+  var account = mapCard_([body.app, body.title].join(' '), s.cardMap);
+  if (!account.known) account = mapCard_(text, s.cardMap);
+  return logCardSpend_(s, {
+    money: alert.money,
+    account: account,
+    merchant: alert.merchant,
+    category: clean_(body.category),
+    note: '',
+    source: 'Bank alert',
+  });
+}
+
+var BANK_SPEND_RE = /\b(purchase|purchased|spent|spend|paid|payment|debited|debit card|credit card|card ending|used for|transaction|pos|e-?commerce|online)\b/i;
+var CURRENCIES = 'AED|USD|EUR|GBP|SAR|QAR|KWD|OMR|BHD|EGP|JOD|INR|PKR|TRY|CHF|JPY|CNY|CAD|AUD|SGD|HKD|THB|MYR';
+var BANK_IGNORE_RE = /\b(credited|credit of|received|receive|transfer|transferred|salary|deposit|refund|reversal|reversed|withdraw|withdrawn|withdrawal|atm|otp|one[- ]time|password|declined|failed|unsuccessful|insufficient|activated|enrolled|statement|due|minimum|bill generated)\b/i;
+
+/** "Purchase of AED 42.00 at CARREFOUR with card XXX5247 …" → { money, merchant } or null if it isn't a card payment. */
+function parseBankAlert_(text) {
+  var t = String(text || '');
+  if (!BANK_SPEND_RE.test(t) || BANK_IGNORE_RE.test(t)) return null;
+  // the amount sits next to its currency; bare numbers are card digits, dates or balances
+  var m = new RegExp('\\b(' + CURRENCIES + ')\\s?([\\d,]+(?:\\.\\d+)?)').exec(t) ||
+    new RegExp('([\\d,]+(?:\\.\\d+)?)\\s?(' + CURRENCIES + ')\\b').exec(t);
+  if (!m) return null;
+  var cur = /^\d/.test(m[1]) ? m[2] : m[1], num = /^\d/.test(m[1]) ? m[1] : m[2];
+  var amount = parseFloat(num.replace(/,/g, ''));
+  if (!(amount > 0)) return null;
+  var merchant = '';
+  // "at X" names the merchant; "to X" also appears in "linked to account …", so it's only a fallback
+  var end = '(?=\\s+(?:on|using|with|via|for|card|ref)\\b|\\s*[.,;·|]\\s|\\s*[.,;·|]?$|\\s+\\d{1,2}[\\/\\-]\\d)';
+  var mm = new RegExp('\\b(?:at|@)\\s+(.+?)' + end, 'i').exec(t) || new RegExp('\\b(?:paid to|payment to)\\s+(.+?)' + end, 'i').exec(t);
+  if (mm) merchant = clean_(mm[1]).replace(/^the\s+/i, '');
+  return { money: { amount: Math.round(amount * 100) / 100, currency: cur.toUpperCase() }, merchant: merchant };
+}
+
+/** Shared by Apple Pay and bank alerts: files one card payment and builds the notification text. */
+function logCardSpend_(s, p) {
+  var money = p.money, account = p.account, merchant = p.merchant, category = p.category;
   if (!category || /later|skip|review/i.test(category)) category = '';
   if (category && SPEND_CATEGORIES.indexOf(category) < 0) category = matchCategory_(category) || '';
   var remembered = '';
   if (!category && merchant) remembered = category = rememberedCategory_(merchant);
 
+  // paying one of your own accounts (e.g. a BOTIM top-up with the ADCB card) is moving money, not spending
+  var to = ownAccountIn_(merchant);
+  var isMove = to.known && to.name !== account.name && account.known;
+  if (isMove) category = remembered = '';
+
   var date = new Date();
+  var prefix = p.source === 'Apple Pay' ? 'ap-' : 'ba-';
   var entry = {
-    id: 'ap-' + hash_([money.amount, money.currency, merchant, account.name, Utilities.formatDate(date, TZ, 'yyyyMMddHHmm')].join('|')),
+    id: prefix + hash_([money.amount, money.currency, merchant, account.name, Utilities.formatDate(date, TZ, 'yyyyMMddHHmm')].join('|')),
     date: date.toISOString(),
-    type: 'Spend',
+    type: isMove ? 'Transfer' : 'Spend',
+    toAccount: isMove ? to.name : '',
     amount: money.amount,
     currency: money.currency,
     account: account.name,
     category: category,
     merchant: merchant,
-    note: clean_(body.note),
-    source: 'Apple Pay',
+    note: p.note || '',
+    source: p.source,
   };
   var problems = [];
   if (!(money.amount > 0)) problems.push('amount');
   if (!account.known) problems.push('card');
-  if (!category) problems.push('category');
+  if (!category && !isMove) problems.push('category');
   if (money.currency !== 'AED' && money.currency !== 'USD') problems.push('currency');
   entry.status = problems.length ? 'Review' : 'OK';
+
+  // A tap with Apple Pay fires both the Wallet automation and the bank's notification: keep only one.
+  var twin = money.amount > 0 ? twinOf_(entry, date) : null;
+  if (twin) {
+    // mark the pair so a later payment of the same amount isn't mistaken for this one
+    var fix = { source: PAIRED };
+    // the other source logged it as a purchase; the bank alert shows it was a top-up of your own account
+    if (isMove && twin.type === 'Spend') { fix.type = 'Transfer'; fix.toAccount = to.name; fix.category = ''; fix.status = 'OK'; }
+    twin = updateEntry_(twin.id, fix).entry;
+    var tmsg = 'Already logged · ' + fmtMoney_(twin.amount, twin.currency) + (twin.merchant ? ' · ' + twin.merchant : '') + ' · ' + twin.account;
+    if (twin.toAccount) tmsg = 'Already logged · moved ' + fmtMoney_(twin.amount, twin.currency) + ' from ' + twin.account + ' to ' + twin.toAccount;
+    return { ok: true, message: tmsg, entry: twin, duplicate: true };
+  }
 
   var res = addEntries_([entry]);
   var saved = res.entries[0];
   var cyc = cycleSummary_(saved.cycle);
   var msg = fmtMoney_(entry.amount, entry.currency) + (merchant ? ' · ' + merchant : '') + ' · ' + account.name;
+  if (isMove) msg = 'Moved ' + fmtMoney_(entry.amount, entry.currency) + ' from ' + account.name + ' to ' + to.name + ' · not spending';
   if (remembered) msg += ' · ' + remembered;
-  if (account.name === s.allowanceAccount) {
+  if (isMove) {
+    // nothing more: a move doesn't use the allowance
+  } else if (account.name === s.allowanceAccount) {
     msg += '\n' + fmtMoney_(Math.max(0, cyc.allowanceLeft), 'AED') + ' left of your allowance';
   } else if (account.known) {
     var bal = balanceInfo_(account.name);
@@ -256,6 +335,42 @@ function addApplePay_(body) {
   if (problems.indexOf('category') >= 0) msg += '\nAdded to Needs review';
   if (res.duplicates) msg = 'Already logged · ' + msg;
   return { ok: true, message: msg, entry: saved, duplicate: !!res.duplicates };
+}
+
+/** Which of your accounts a merchant name is, by its Wallet-name word ("BOTIM MONEY" → BOTIM). Whole words only. */
+function ownAccountIn_(merchant) {
+  var m = ' ' + String(merchant || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' ';
+  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  for (var i = 0; i < accs.length; i++) {
+    var key = String(accs[i].wallet || '').toLowerCase().trim();
+    if (key && m.indexOf(' ' + key + ' ') >= 0) return { name: accs[i].name, known: true };
+  }
+  return { known: false };
+}
+
+var TWIN_MINUTES = 15;
+var PAIRED = 'Apple Pay + Bank alert';
+
+/**
+ * The same payment reported by the other automatic source (Apple Pay vs bank alert): same account,
+ * amount and currency within TWIN_MINUTES. Each entry pairs at most once (its source becomes PAIRED), so two
+ * genuine payments of the same amount both stay logged.
+ */
+function twinOf_(entry, date) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return null;
+  var from = Math.max(2, sh.getLastRow() - 199);
+  var rows = sh.getRange(from, 1, sh.getLastRow() - from + 1, COLS.length).getValues().map(fromRow_);
+  var since = date.getTime() - TWIN_MINUTES * 60000;
+  var auto = { 'Apple Pay': 1, 'Bank alert': 1 };
+  var same = function (e) {
+    return (e.type === 'Spend' || e.type === 'Transfer') && auto[e.source] && e.account === entry.account && e.currency === entry.currency &&
+      Math.abs(e.amount - entry.amount) < 0.005 && new Date(e.date).getTime() >= since;
+  };
+  // unpaired entries from the other source, oldest first; an entry already paired never matches again
+  var others = rows.filter(function (e) { return same(e) && e.source !== entry.source && e.id !== entry.id; });
+  return others.length ? others[0] : null;
 }
 
 function addEntries_(list) {
