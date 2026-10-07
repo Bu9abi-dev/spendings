@@ -5,7 +5,7 @@
 globalThis.location = { search: '' };
 const store = await import('../docs/js/store.js');
 const model = await import('../docs/js/model.js');
-const { state, addEntry, updateEntry, deleteEntry, saveSettings, savePlan, addAccount, updateAccount, removeAccount, undo, canUndo, setDemo } = store;
+const { state, addEntry, updateEntry, deleteEntry, saveSettings, savePlan, addAccount, updateAccount, removeAccount, undo, canUndo, setDemo, dismissPlan, restorePlan } = store;
 
 let fails = 0, findings = 0;
 const ok = (c, m, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}${x ? '  ' + x : ''}`); if (!c) fails++; };
@@ -13,7 +13,7 @@ const finding = (m) => { console.log(`FINDING ${m}`); findings++; };
 
 const snap = () => JSON.parse(JSON.stringify({
   entries: [...state.entries].sort((a, b) => (a.id < b.id ? -1 : 1)),
-  plan: state.plan, accounts: state.accounts, settings: state.settings,
+  plan: state.plan, accounts: state.accounts, settings: state.settings, dismissed: state.dismissed,
 }));
 function diff(a, b, path = '') {
   if (JSON.stringify(a) === JSON.stringify(b)) return [];
@@ -116,6 +116,21 @@ console.log('── Repeated undo (10 mixed actions, then 10 undos) ──');
   let k = 0; while (canUndo() && k < 10) { undo(); k++; }
   const dd = diff(before, snap());
   ok(dd.length === 0 && k === 10, `10 undos return to the exact starting state (undid ${k})`, dd.slice(0, 5).join('; '));
+}
+
+console.log('── Dismissed payday prompts ──');
+{
+  const cyc = model.cycleOf(new Date(), state.settings.cycleStart);
+  const entriesBefore = JSON.stringify(state.entries), outBefore = state.outbox.length;
+  check('dismiss "Allowance not moved yet" for this cycle', () => dismissPlan('allowance', cyc));
+  dismissPlan('nafis', cyc);
+  ok(state.dismissed.nafis === cyc && JSON.stringify(state.entries) === entriesBefore && state.outbox.length === outBefore, 'dismissing logs no entry and sends nothing to the sheet');
+  check('bring back a dismissed prompt', () => restorePlan('nafis'));
+  dismissPlan('salary', '2000-01');
+  dismissPlan('fuel', cyc);
+  ok(!('salary' in state.dismissed) && state.dismissed.fuel === cyc, 'older cycles’ dismissals are dropped when a new one is written');
+  undo(); undo(); undo();
+  ok(!('nafis' in state.dismissed) && !('salary' in state.dismissed) && !('fuel' in state.dismissed), 'undo brings every dismissed prompt back');
 }
 
 console.log('── Undo across demo mode ──');

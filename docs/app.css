@@ -1096,6 +1096,16 @@ html.sheet-open { overflow: hidden; }
 .pace-bad { color: var(--warn); font-weight: 600; }
 .soon-btn { font: inherit; color: var(--good); font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; padding: 2px 0; }
 .soon-btn:active { opacity: 0.6; }
+/* ✕ to dismiss a payday prompt for this cycle: small to the eye, 32px to the finger */
+.dismiss-x { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; margin: -8px -6px -8px -2px; vertical-align: middle; color: var(--label-3); border-radius: 50%; }
+.dismiss-x svg { width: 14px; height: 14px; padding: 3px; box-sizing: content-box; border-radius: 50%; background: var(--fill-3); }
+.dismiss-x:active { opacity: 0.6; }
+.pd-x { margin: 0 -8px 0 -6px; flex: none; }
+.pd-restore, .resp-restore { font-size: 14px; flex: none; }
+.resp-line { display: flex; align-items: center; gap: 6px; border-bottom: 0.5px solid var(--sep); }
+.resp-line .resp-row { flex: 1; min-width: 0; border-bottom: 0; }
+.resp-x { margin: 0 -8px 0 0; flex: none; }
+.resp-row em.resp-done { color: var(--label-2); }
 
 /* where your money is: parts that add up to the total */
 .where { margin: 0 var(--gutter) 14px; padding: 16px; border-radius: var(--r-group); background: var(--bg-2); }

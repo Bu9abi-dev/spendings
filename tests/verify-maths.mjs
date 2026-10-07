@@ -13,8 +13,8 @@ const finding = (msg) => { console.log(`FINDING ${msg}`); findings++; };
 const near = (a, b, eps = 0.005) => Math.abs(a - b) < eps;
 
 /* The real Home numbers (docs/js/model.js homeNumbers / whereRows), with `now` injected. */
-function homeModel(entries, plan, s, now) {
-  const m = homeNumbers(entries, plan, s, now);
+function homeModel(entries, plan, s, now, dismissed = {}) {
+  const m = homeNumbers(entries, plan, s, now, dismissed);
   const { start, end } = cycleBounds(m.cyc, s.cycleStart);
   const len = (end - start) / 864e5;
   const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
@@ -277,6 +277,42 @@ console.log('\n── 6. Changing the cycle start day ──');
   // also: plan dates for day 27 items with start 25
   const due = dateInCycle('2026-11', 27, 25);
   console.log(`      plan "salary on the 27th" with start 25 → due ${due.toISOString()} (inside cycle 2026-11 = 25 Oct→24 Nov: ${due >= cycleBounds('2026-11', 25).start && due < cycleBounds('2026-11', 25).end})`);
+}
+
+console.log('\n── 7. Dismissed payday prompts (setting up mid-cycle) ──');
+{
+  setAccountList(DEFAULT_ACCOUNTS);
+  // tracking starts 7 Oct: balances matched with the bank, salary/Nafis/allowance already happened
+  const ents = [
+    E('Adjustment', 16485, 'ADIB', '2026-10-07T09:00:00+04:00'),
+    E('Adjustment', 3897, 'ADCB', '2026-10-07T09:00:00+04:00'),
+    E('Spend', 120, 'ADCB', '2026-10-07T12:00:00+04:00'),
+  ];
+  const plan = [
+    ...DEFAULT_PLAN.map((p) => ({ ...p })).filter((p) => p.kind !== 'Responsibility'),
+    { id: 'bills', name: 'Car & phone', kind: 'Responsibility', amount: 2325, day: 5, from: 'ADIB', to: '', category: 'Bills & Subscriptions' },
+  ];
+  const now = D('2026-10-07T13:00:00+04:00');
+  const before = homeModel(ents, plan, S, now);
+  const ids = before.status.filter((p) => !p.complete).map((p) => p.id);
+  console.log(`      not dismissed: open=${ids.join(',')} safe=${before.safe} unmoved=${before.allowanceUnmoved} toMove=${before.hubB.toMove} reserved=${before.hubB.reserved} expected=${before.hubB.expected}`);
+  ok(before.allowanceUnmoved && before.hubB.toMove === 3000 && before.hubB.reserved === 2325, 'without dismissing: allowance asks to be moved, ADIB holds back 3000 to move and 2325 for bills');
+  const dis = Object.fromEntries(ids.map((id) => [id, before.cyc]));
+  const after = homeModel(ents, plan, S, now, dis);
+  const rows = whereRows(after);
+  console.log(`      all dismissed: safe=${after.safe} unmoved=${after.allowanceUnmoved} toMove=${after.hubB.toMove} reserved=${after.hubB.reserved} expected=${after.hubB.expected} free=${after.hubB.free}`);
+  ok(after.status.every((p) => p.complete && p.dismissed && p.state === 'dismissed' && p.remaining === 0), 'every dismissed item counts as done with nothing left');
+  ok(!after.allowanceUnmoved && after.hubB.toMove === 0 && after.hubB.reserved === 0 && after.hubB.expected === 0, 'no prompt, nothing still to move, nothing reserved, nothing expected');
+  ok(after.total === before.total && [...after.bals].every(([k, b]) => b.balance === before.bals.get(k).balance), `dismissing changes no balance (total ${after.total})`);
+  ok(near(after.hubB.free, 16485), `ADIB emergency money is the whole ADIB balance: ${after.hubB.free}`);
+  ok(after.safe === after.allowLeft && near(after.safe, 2880), `Safe to spend is the allowance left (3000 − 120 = ${after.safe}), no longer capped while the move "waits"`);
+  ok(near(rowSum(rows), after.total), `"Where your money is" still adds up to the total: ${rowSum(rows)} vs ${after.total}`);
+  // a dismissal from the last cycle has expired: next cycle the prompts are back
+  const next = homeModel(ents, plan, S, D('2026-10-28T09:00:00+04:00'), dis);
+  ok(next.cyc === '2026-11' && next.allowanceUnmoved && next.status.every((p) => !p.dismissed) && next.hubB.toMove === 3000, 'next cycle: dismissals expire and the prompts come back');
+  // dismissing one item leaves the others alone
+  const one = homeModel(ents, plan, S, now, { nafis: before.cyc });
+  ok(one.status.find((p) => p.id === 'nafis').dismissed && one.allowanceUnmoved && one.hubB.reserved === 2325, 'dismissing Nafis only hides Nafis');
 }
 
 console.log(`\n${fails} failed checks, ${findings} findings`);

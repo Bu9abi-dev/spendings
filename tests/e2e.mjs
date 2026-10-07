@@ -169,5 +169,43 @@ entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, 
 assert.equal(entries.length, 0);
 
 assert.deepEqual(errors, []);
+// dismiss payday prompts (demo data: Nafis is due, the allowance has moved)
+{
+  const dc = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  const d = await dc.newPage();
+  d.on('pageerror', (e) => errors.push(e.message));
+  await d.goto('http://localhost:8765/?demo=1#home');
+  await d.waitForSelector('.payday');
+  const metaText = () => d.textContent('.lens-meta');
+  assert.match(await metaText(), /Nafis \+4,500 due/);
+  await d.click('.lens-meta [data-plan-dismiss="nafis"]');
+  await d.waitForTimeout(300);
+  assert.doesNotMatch(await metaText(), /Nafis/, 'Nafis prompt is gone from the Home line');
+  assert.match(await d.textContent('[data-plan-row="nafis"]'), /already done this cycle/);
+  assert.equal(await d.locator('[data-plan-row="nafis"] .pd-btn').count(), 0, 'no "It landed" button once dismissed');
+  assert.match(await d.textContent('.pd-count'), /4\/4/);
+  assert.match(await d.textContent('#toast'), /hidden until next cycle/);
+  await d.click('#toast .toast-action');
+  await d.waitForTimeout(300);
+  assert.match(await metaText(), /Nafis \+4,500 due/, 'Undo brings the prompt back');
+  await d.click('[data-plan-row="nafis"] [data-plan-dismiss]');
+  await d.waitForTimeout(300);
+  await d.click('[data-plan-row="nafis"] [data-plan-restore]');
+  await d.waitForTimeout(300);
+  assert.equal(await d.locator('[data-plan-row="nafis"] .pd-btn').count(), 1, '"Bring back" restores the It landed button');
+  // a responsibility on the ADIB view
+  await d.click('.seg[data-seg="ADIB"]');
+  await d.waitForSelector('.resp-line');
+  const respBefore = await d.locator('.resp-x').count();
+  assert.ok(respBefore > 0, 'responsibilities still to pay have a dismiss button');
+  await d.click('.resp-line .resp-x >> nth=0');
+  await d.waitForTimeout(300);
+  assert.match(await d.textContent('.resp'), /Paid this cycle/);
+  assert.equal(await d.locator('.resp-x').count(), respBefore - 1);
+  await d.screenshot({ path: '/tmp/e2e-dismiss-adib.png', fullPage: true });
+  await dc.close();
+}
+assert.deepEqual(errors, []);
+
 await b.close();
 console.log('e2e: all checks passed');

@@ -313,8 +313,10 @@ export function dateInCycle(cycle, day, startDay = 27) {
   return new Date(Date.UTC(yy, mm - 1, Math.min(day, last), 6) - 4 * 3600e3);
 }
 
-/** Where each plan item stands this cycle. */
-export function planStatus(plan, entries, cycle, settings, now = new Date()) {
+/** Where each plan item stands this cycle. `dismissed` ({ planId: cycle }) marks items you said
+    were already done this cycle: they count as complete, nothing is left of them, and the
+    dismissal expires when the cycle ends. */
+export function planStatus(plan, entries, cycle, settings, now = new Date(), dismissed = {}) {
   const inCycle = entries.filter((e) => e.cycle === cycle);
   return plan.map((p) => {
     const tagged = (e) => e.source === `Plan:${p.id}`;
@@ -330,10 +332,11 @@ export function planStatus(plan, entries, cycle, settings, now = new Date()) {
     } else {
       done = inCycle.filter((e) => e.type === 'Spend' && e.account === p.from && e.category === p.category).reduce((a, e) => a + toAED(e, settings), 0);
     }
-    const remaining = Math.max(0, p.amount - done);
-    const complete = p.kind === 'Responsibility' ? false : p.amount > 0 && done >= p.amount * 0.95;
-    const state = complete ? 'done' : !due ? 'open' : now >= due ? 'due' : 'upcoming';
-    return { ...p, due, done, remaining, complete, state };
+    const isDismissed = dismissed?.[p.id] === cycle;
+    const remaining = isDismissed ? 0 : Math.max(0, p.amount - done);
+    const complete = isDismissed || (p.kind === 'Responsibility' ? false : p.amount > 0 && done >= p.amount * 0.95);
+    const state = isDismissed ? 'dismissed' : complete ? 'done' : !due ? 'open' : now >= due ? 'due' : 'upcoming';
+    return { ...p, due, done, remaining, complete, dismissed: isDismissed, state };
   });
 }
 
@@ -364,11 +367,11 @@ export function hubFlow(entries, cycle, hub, settings) {
 /* ───────────────────────── Home numbers ───────────────────────── */
 
 /** The numbers Home shows: total money, Safe to spend and pace. Pure, so the checks run it too. */
-export function homeNumbers(entries, plan, settings, now = new Date()) {
+export function homeNumbers(entries, plan, settings, now = new Date(), dismissed = {}) {
   const s = settings, cyc = cycleOf(now, s.cycleStart);
   const bals = balances(entries, s);
   const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
-  const status = planStatus(plan, entries, cyc, s, now);
+  const status = planStatus(plan, entries, cyc, s, now, dismissed);
   const hub = s.emergencyAccount;
   const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
   const sum = summarize(entries, cyc, s, plan);
