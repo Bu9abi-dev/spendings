@@ -3,7 +3,7 @@
 // Usage: node tests/verify-maths.mjs   (prints PASS/FAIL/FINDING lines; exits 1 only on harness errors)
 import {
   ACCOUNTS, setAccountList, DEFAULT_ACCOUNTS, DEFAULT_PLAN, DEFAULT_SETTINGS, balances, summarize, cycleOf, cycleBounds,
-  cycleLength, daysLeft, planStatus, hubBreakdown, toAED, dateInCycle, fmt,
+  cycleLength, daysLeft, planStatus, hubBreakdown, toAED, dateInCycle, fmt, homeNumbers, whereRows,
 } from '../docs/js/model.js';
 import { makeEnv } from './fake-sheet.mjs';
 
@@ -12,39 +12,13 @@ const ok = (cond, msg, extra = '') => { console.log(`${cond ? 'PASS' : 'FAIL'}  
 const finding = (msg) => { console.log(`FINDING ${msg}`); findings++; };
 const near = (a, b, eps = 0.005) => Math.abs(a - b) < eps;
 
-/* Faithful mirror of docs/js/home.js model() (lines 30-62) and whereCard() rows (305-316),
-   with `now` injected instead of new Date()/Date.now(). */
+/* The real Home numbers (docs/js/model.js homeNumbers / whereRows), with `now` injected. */
 function homeModel(entries, plan, s, now) {
-  const cyc = cycleOf(now, s.cycleStart);
-  const bals = balances(entries, s);
-  const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
-  const status = planStatus(plan, entries, cyc, s, now);
-  const hub = s.emergencyAccount;
-  const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
-  const sum = summarize(entries, cyc, s);
-  const allowAcc = s.allowanceAccount;
-  const allowBal = bals.get(allowAcc)?.balance || 0;
-  const allowLeft = sum.allowanceLeft;
-  const safe = Math.min(allowLeft, Math.max(allowBal, 0));
-  const { start, end } = cycleBounds(cyc, s.cycleStart);
+  const m = homeNumbers(entries, plan, s, now);
+  const { start, end } = cycleBounds(m.cyc, s.cycleStart);
   const len = (end - start) / 864e5;
   const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
-  const expected = (s.allowance * elapsed) / len;
-  const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart, now) };
-  const allowanceUnmoved = allowLeft > allowBal + 0.5;
-  const unmovedPlanId = status.find((p) => p.kind === 'Move' && p.to === allowAcc && !p.complete)?.id || '';
-  return { cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, safe, pace, allowanceUnmoved, unmovedPlanId, len, elapsed };
-}
-function whereRows(m) {
-  const rows = [];
-  const add = (label, v) => { if (Math.abs(v) >= 0.5) rows.push({ label, v }); };
-  add('Safe to spend', m.safe);
-  if (m.allowAcc !== m.hub) add(`${m.allowAcc} carried over`, m.allowBal - m.safe);
-  add('Emergency money', m.hubB.free);
-  add('Responsibilities', m.hubB.reserved);
-  add('Still to move', m.hubB.toMove);
-  for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0);
-  return rows;
+  return { ...m, len, elapsed, unmovedPlanId: m.allowanceUnmoved ? m.allowMove.id : '' };
 }
 const rowSum = (rows) => rows.reduce((a, r) => a + r.v, 0);
 const shownSum = (rows) => rows.reduce((a, r) => a + Math.round(r.v), 0); // what the eye adds up (fmt whole)
@@ -130,12 +104,8 @@ console.log('\n── 3. Balances & "Where your money is" add up ──');
   ok(near(m.safe, 3000 - usd1999 - 210.33), `Safe to spend ${m.safe.toFixed(2)}`);
   const rows = whereRows(m);
   console.log('      rows:', rows.map((r) => `${r.label}=${r.v.toFixed(2)}`).join(' | '), `| total=${m.total.toFixed(2)}`);
-  const activeTotal = ACCOUNTS.reduce((a, x) => a + (m.bals.get(x.id)?.balance || 0), 0);
-  ok(near(rowSum(rows), activeTotal), `rows sum to the ACTIVE-account total (${rowSum(rows).toFixed(2)} = ${activeTotal.toFixed(2)})`);
-  if (!near(rowSum(rows), m.total)) finding(`BUG where-archived: rows sum ${rowSum(rows).toFixed(2)} ≠ "All your money" ${m.total.toFixed(2)} — the 700 in archived Wio is in the total but has no row (home.js model() total sums every balances() key; whereCard only loops ACCOUNTS)`);
-  ok(Math.round(rowSum(rows)) === Math.round(activeTotal), '');
-  const shown = shownSum(rows);
-  console.log(`      eye-check: rounded rows add to ${shown}, header/total shows ${fmt(activeTotal, { whole: true })}`);
+  ok(near(rowSum(rows), m.total), `rows sum to "All your money", archived Wio included (${rowSum(rows).toFixed(2)} = ${m.total.toFixed(2)})`);
+  console.log(`      eye-check: rounded rows add to ${shownSum(rows)}, header/total shows ${fmt(m.total, { whole: true })}`);
 }
 
 console.log('\n── 3b. Unknown Apple Pay card account (Code.gs mapCard_ → "Unknown card") ──');
@@ -193,20 +163,50 @@ setAccountList(DEFAULT_ACCOUNTS);
   const spendCarry = [...moved, E('Spend', 600, 'ADCB', '2026-09-28T10:00:00+04:00')];
   const sc = homeModel(spendCarry, DEFAULT_PLAN, S, D('2026-09-28T12:00:00+04:00'));
   console.log(`      after spending 600 on ADCB: safe=${sc.safe}, carried=${(sc.allowBal - sc.safe)}`);
-  ok(sc.safe === 2400, 'any ADCB spend counts against this cycle’s allowance; carry-over is never consumed first (design question)');
+  ok(sc.safe === 2400, 'any ADCB spend counts against this cycle’s allowance; the carried-over buffer is left alone');
   // mid-cycle extra top-up
   const topped = [...moved, E('Transfer', 500, 'ADIB', '2026-10-05T10:00:00+04:00', { toAccount: 'ADCB', note: 'extra' })];
   const t = homeModel(topped, DEFAULT_PLAN, S, D('2026-10-05T12:00:00+04:00'));
   const tr = whereRows(t);
   console.log('      extra 500 top-up rows:', tr.map((r) => `${r.label}=${r.v}`).join(' | '), `| plan allowance done=${t.status.find((p) => p.id === 'allowance').done}`);
-  ok(t.safe === 3000, 'mid-cycle extra ADIB→ADCB 500: Safe NOT inflated (still 3000), no double count in total');
-  if (tr.find((r) => r.label === 'ADCB carried over')?.v === 1100) finding('MINOR topup-label: the extra 500 is shown as "ADCB carried over · unspent from earlier cycles" (1100), which is mislabelled — it was topped up this cycle');
+  ok(t.safe === 3500 && t.status.find((p) => p.id === 'allowance').done === 3000, 'mid-cycle top-up ADIB→ADCB 500 adds to this cycle: Safe 3500, the planned move stays 3000');
+  ok(tr.find((r) => r.label === 'ADCB carried over')?.v === 600 && near(rowSum(tr), t.total), 'the top-up is not mislabelled as carried over (still 600), rows add up to the total');
   // top-up BEFORE payday move shrinks the move
   const early = [...base, E('Transfer', 500, 'ADIB', '2026-09-28T10:00:00+04:00', { toAccount: 'ADCB', note: 'extra' })];
   const em = homeModel(early, DEFAULT_PLAN, S, D('2026-09-28T12:00:00+04:00'));
   const ap = em.status.find((p) => p.id === 'allowance');
   console.log(`      top-up 500 before the plan move: plan done=${ap.done}, remaining=${ap.remaining} ("Move now" would move ${ap.remaining}), safe=${em.safe}`);
-  if (ap.remaining === 2500) finding('DESIGN topup-counts-as-plan: any ADIB→ADCB transfer counts toward the Allowance plan move (model.js:265 matches untagged transfers by from/to), so an extra 500 top-up made before payday makes "Move now" move only 2500 and Safe shows 1100 (capped by ADCB balance)');
+  ok(ap.remaining === 3000, 'a top-up does not shrink the planned allowance move ("Move now" still moves 3000)');
+  const em2 = homeModel([...early, E('Transfer', 3000, 'ADIB', '2026-09-28T13:00:00+04:00', { toAccount: 'ADCB', source: 'Plan:allowance' })], DEFAULT_PLAN, S, D('2026-09-28T14:00:00+04:00'));
+  ok(em2.safe === 3500, `after the move: Safe = 3000 + 500 top-up = ${em2.safe}`);
+  // a hand-typed full move on payday is the planned move, not a top-up
+  const typed = homeModel([...base, E('Transfer', 3000, 'ADIB', '2026-09-27T09:00:00+04:00', { toAccount: 'ADCB' })], DEFAULT_PLAN, S, D('2026-09-27T10:00:00+04:00'));
+  ok(typed.safe === 3000 && typed.status.find((p) => p.id === 'allowance').complete, 'a hand-typed 3000 ADIB→ADCB on payday counts as the allowance move (Safe 3000, not 6000)');
+}
+
+console.log('\n── 4b. Top-up before payday carries into the new cycle ──');
+setAccountList(DEFAULT_ACCOUNTS);
+{
+  const base = [
+    E('Adjustment', 2000, 'ADIB', '2026-08-20T10:00:00+04:00'),
+    E('Adjustment', 0, 'ADCB', '2026-08-20T10:00:00+04:00'),
+    E('Income', 6000, 'ADIB', '2026-08-27T08:00:00+04:00', { category: 'Salary', source: 'Plan:salary' }),
+    E('Transfer', 3000, 'ADIB', '2026-08-27T12:00:00+04:00', { toAccount: 'ADCB', source: 'Plan:allowance' }),
+    E('Spend', 2900, 'ADCB', '2026-09-10T12:00:00+04:00'), // 100 of the allowance left
+    E('Transfer', 500, 'ADIB', '2026-09-26T18:00:00+04:00', { toAccount: 'ADCB', note: 'top-up' }), // the day before payday
+  ];
+  const eve = homeModel(base, DEFAULT_PLAN, S, D('2026-09-26T20:00:00+04:00'));
+  ok(eve.safe === 600, `26 Sep after the top-up: Safe = 100 left + 500 top-up = ${eve.safe}`);
+  const pay = [...base, E('Transfer', 3000, 'ADIB', '2026-09-27T09:00:00+04:00', { toAccount: 'ADCB', source: 'Plan:allowance' })];
+  const p1 = homeModel(pay, DEFAULT_PLAN, S, D('2026-09-27T10:00:00+04:00'));
+  const r1 = whereRows(p1);
+  console.log('      payday rows:', r1.map((r) => `${r.label}=${r.v}`).join(' | '));
+  ok(p1.safe === 3500 && p1.sum.carryIn === 500, `payday: Safe = 3000 allowance + 500 top-up = ${p1.safe}`);
+  ok(r1.find((r) => r.label === 'ADCB carried over')?.v === 100 && near(rowSum(r1), p1.total), 'only the 100 of unspent allowance stays as the buffer; rows add up');
+  const half = homeModel([...base.slice(0, -1), E('Transfer', 500, 'ADIB', '2026-09-26T18:00:00+04:00', { toAccount: 'ADCB' }), E('Spend', 300, 'ADCB', '2026-09-26T19:00:00+04:00'), pay[pay.length - 1]], DEFAULT_PLAN, S, D('2026-09-27T10:00:00+04:00'));
+  ok(half.safe === 3300, `spent 300 more after the top-up (100 allowance + 200 of it): payday Safe = 3000 + 300 = ${half.safe}`);
+  const later = homeModel(pay, DEFAULT_PLAN, S, D('2026-10-27T10:00:00+04:00'));
+  ok(later.sum.carryIn === 0, 'the top-up carries one payday only; the cycle after resets');
 }
 
 console.log('\n── 5. Allowance pot: BOTIM, ADCB→BOTIM loophole, refunds ──');
@@ -223,19 +223,23 @@ setAccountList(DEFAULT_ACCOUNTS);
   const lo = [...base, E('Transfer', 1000, 'ADCB', '2026-10-01T12:00:00+04:00', { toAccount: 'BOTIM' }), E('Spend', 1000, 'BOTIM', '2026-10-02T12:00:00+04:00')];
   const m1 = homeModel(lo, DEFAULT_PLAN, S, now);
   console.log(`      ADCB→BOTIM 1000 then spend 1000 on BOTIM (ADCB had no carry-over): safe=${m1.safe}, allowLeft=${m1.allowLeft}, ADCB=${m1.allowBal}, pace spent=${m1.pace.spent}, unmoved=${m1.allowanceUnmoved}, button plan id='${m1.unmovedPlanId}'`);
-  ok(m1.safe === 2000, 'Safe still drops by 1000 through the ADCB balance cap');
-  ok(m1.pace.spent === 0, 'but pace / "x% spent" / allowance capsule ignore it (allowanceUsed=0, capsule says 100% left)');
-  if (m1.allowanceUnmoved && !m1.unmovedPlanId) finding('BUG ghost-unmoved: after ADCB→BOTIM 1000 the home meta shows "Allowance not moved yet" (allowLeft 3000 > ADCB 2000) although the move is complete; the button has data-plan-id="" so tapping it does nothing (home.js:60 & :136)');
+  ok(m1.safe === 3000 && m1.pace.spent === 0, 'moving ADCB→BOTIM is reallocating: Safe stays 3000, nothing counted as spent');
+  ok(!m1.allowanceUnmoved, 'no "Allowance not moved yet" after moving money on from ADCB');
+  const r1 = whereRows(m1);
+  ok(near(rowSum(r1), m1.total) && r1.find((r) => r.label === 'Safe to spend')?.v === 2000, 'Where card: 2000 of Safe to spend sits in ADCB, the rest under BOTIM; rows add up');
   // loophole with carry-over
   const lc = [E('Adjustment', 1500, 'ADCB', '2026-09-20T10:00:00+04:00'), ...base.filter((e) => e.account !== 'ADCB' || e.type !== 'Adjustment'), E('Transfer', 1000, 'ADCB', '2026-10-01T12:00:00+04:00', { toAccount: 'BOTIM' }), E('Spend', 1000, 'BOTIM', '2026-10-02T12:00:00+04:00')];
   const m2 = homeModel(lc, DEFAULT_PLAN, S, now);
   console.log(`      same, but ADCB carried 1500 in: safe=${m2.safe}, ADCB=${m2.allowBal}`);
-  if (m2.safe === 3000) finding('DESIGN loophole: with ≥1000 carried over in ADCB, moving ADCB→BOTIM and spending there leaves Safe to spend at 3000 — the spend escapes the allowance entirely');
+  ok(m2.safe === 3000, 'transfers out of ADCB never count as allowance spending (your rule)');
   // refund
   const rf = [...base, E('Spend', 500, 'ADCB', '2026-10-01T12:00:00+04:00'), E('Income', 89, 'ADCB', '2026-10-03T12:00:00+04:00', { category: 'Refund' })];
   const m3 = homeModel(rf, DEFAULT_PLAN, S, now);
   console.log(`      ADCB spend 500 then refund 89: safe=${m3.safe}, allowanceUsed=${m3.sum.allowanceUsed}, ADCB=${m3.allowBal}, carried=${(m3.allowBal - m3.safe).toFixed(2)}`);
-  if (m3.safe === 2500) finding('DESIGN refund: an ADCB Refund (Income) does not give allowance back — Safe stays 2500, the 89 appears as "ADCB carried over · unspent from earlier cycles"');
+  ok(m3.safe === 2589 && m3.sum.allowanceUsed === 411 && near(m3.allowBal - m3.safe, 0), 'refund 89 goes back exactly where it was: Safe 2589, nothing lands in carried over');
+  const rfOld = [...base, E('Income', 89, 'ADCB', '2026-10-03T12:00:00+04:00', { category: 'Refund' })]; // for a spend in an earlier cycle
+  const m3b = homeModel(rfOld, DEFAULT_PLAN, S, now);
+  ok(m3b.safe === 3000 && near(m3b.allowBal - m3b.safe, 89), 'refund for an earlier cycle’s spend: Safe stays 3000, the 89 goes back to the buffer');
   // ADCB → ADIB returned money
   const back = [...base, E('Transfer', 500, 'ADCB', '2026-10-01T12:00:00+04:00', { toAccount: 'ADIB' })];
   const m4 = homeModel(back, DEFAULT_PLAN, S, now);
@@ -245,7 +249,7 @@ setAccountList(DEFAULT_ACCOUNTS);
   const m5 = homeModel(ov, DEFAULT_PLAN, S, now);
   const r5 = whereRows(m5);
   console.log(`      overspent 3300 with 800 carry: safe=${m5.safe}, rows=${r5.map((r) => `${r.label}=${r.v}`).join(' | ')}`);
-  if (m5.safe < 0) finding(`MINOR negative-safe: Safe to spend goes negative (${m5.safe}) while ADCB still holds ${m5.allowBal}; the "carried over" row then shows ${m5.allowBal - m5.safe}, more than ADCB holds`);
+  ok(m5.safe === -300 && r5.find((r) => r.label === 'ADCB carried over')?.v === 500 && near(rowSum(r5), m5.total), 'overspent: Safe −300 (shown as over the allowance), the Where card shows what ADCB really holds');
 }
 
 console.log('\n── 6. Changing the cycle start day ──');
@@ -263,7 +267,7 @@ console.log('\n── 6. Changing the cycle start day ──');
   post({ action: 'settings', settings: { cycleStart: 25 } });
   L = post({ action: 'list' }).entries;
   const c1 = L.find((e) => e.id === 'c1');
-  console.log(`      after cycleStart → 25: sheet still says c1.cycle=${c1.cycle} (should be ${cycleOf(c1.date, 25)})`);
+  ok(c1.cycle === cycleOf(c1.date, 25), `after cycleStart → 25 the sheet re-tags: c1.cycle=${c1.cycle}`);
   if (c1.cycle !== cycleOf(c1.date, 25)) finding('BUG cyclestart-stale: Code.gs saveSettings_ never re-tags the Ledger "Cycle" column; on the next sync store.js:99 replaces the client’s re-tagged entries with the sheet’s stale ones, so summarize()/Safe to spend/pace (which filter on e.cycle) use the OLD cycle while cycleBounds/daysLeft use the new start day');
   const sNew = { ...S, cycleStart: 25 };
   const now = D('2026-10-26T12:00:00+04:00');

@@ -440,7 +440,7 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
   display: flex; gap: 8px;
   overflow-x: auto; scrollbar-width: none;
   padding: 12px var(--gutter) 2px;
-  touch-action: pan-x;
+  touch-action: pan-x pan-y;
 }
 .filter-chips::-webkit-scrollbar { display: none; }
 .fchip {

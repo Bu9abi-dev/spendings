@@ -96,7 +96,9 @@ export function sync() {
       const ids = new Set(server.map((e) => e.id));
       // keep optimistic local entries the sheet hasn't seen yet
       const local = state.entries.filter((e) => pending.has(e.id) && pending.get(e.id).op !== 'delete' && !ids.has(e.id));
-      state.entries = sortEntries([...server.map((e) => overlay(e, pending.get(e.id))), ...local]);
+      // the cycle always follows the date and today's start day, even if the sheet's column is stale
+      state.entries = sortEntries([...server.map((e) => overlay(e, pending.get(e.id))), ...local]
+        .map((e) => ({ ...e, cycle: cycleOf(e.date, state.settings.cycleStart) })));
       state.sync = { status: state.outbox.length ? 'pending' : 'ok', error: '', at: Date.now() };
       persist();
     } catch (e) {
@@ -144,11 +146,11 @@ function enqueue(op) {
 
 /* ───── Mutations (optimistic) ───── */
 
-function finalize(e) {
+function finalize(e, { keepAED = false } = {}) {
   const out = { ...e };
   if (!out.date || Number.isNaN(new Date(out.date).getTime())) out.date = new Date().toISOString();
   out.cycle = cycleOf(out.date, state.settings.cycleStart);
-  out.amountAED = toAED({ ...out, amountAED: null }, state.settings);
+  if (!keepAED) out.amountAED = toAED({ ...out, amountAED: null }, state.settings);
   if (out.type === 'Transfer' || out.type === 'Adjustment') out.category = '';
   if (out.type !== 'Transfer') out.toAccount = '';
   out.status = out.type === 'Adjustment' ? 'OK' : (out.type !== 'Transfer' && !out.category) || !(out.amount > 0) ? 'Review' : 'OK';
@@ -193,8 +195,10 @@ export function updateEntry(id, fields) {
   const i = state.entries.findIndex((x) => x.id === id);
   if (i < 0) return;
   const before = state.entries[i];
-  record(`Edited ${describe(before)}`, () => updateEntry(id, Object.fromEntries(ENTRY_FIELDS.map((k) => [k, before[k]]))));
-  const e = finalize({ ...state.entries[i], ...fields });
+  record(`Edited ${describe(before)}`, () => putBack(before));
+  // a USD entry keeps the rate it was priced at unless its amount or currency changes
+  const repriced = ('amount' in fields && +fields.amount !== +before.amount) || ('currency' in fields && fields.currency !== before.currency);
+  const e = finalize({ ...before, ...fields }, { keepAED: !repriced && before.amountAED != null && before.amountAED !== '' });
   state.entries[i] = e;
   sortEntries(state.entries);
   const sent = { ...fields, cycle: undefined };
@@ -203,6 +207,18 @@ export function updateEntry(id, fields) {
   persist(); emit('entries');
   sync();
   return e;
+}
+
+/** Undo of an edit: the entry exactly as it was, price and status included. */
+function putBack(before) {
+  const i = state.entries.findIndex((x) => x.id === before.id);
+  if (i < 0) return;
+  state.entries[i] = { ...before };
+  sortEntries(state.entries);
+  const fields = Object.fromEntries([...ENTRY_FIELDS, 'amountAED', 'status'].map((k) => [k, before[k]]));
+  if (!state.prefs.demo) enqueue({ op: 'update', id: before.id, fields });
+  persist(); emit('entries');
+  sync();
 }
 
 export function deleteEntry(id) {
@@ -235,8 +251,11 @@ export function saveSettings(patch) {
 // same normalisation as the sheet's Merchants tab
 const merchantKey = (m) => String(m || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
 export function savePlan(plan) {
-  const before = state.plan;
-  record('Changed the payday plan', () => savePlan(before));
+  const before = state.plan, allowanceBefore = state.settings.allowance;
+  record('Changed the payday plan', () => {
+    savePlan(before);
+    if (state.settings.allowance !== allowanceBefore) saveSettings({ allowance: allowanceBefore });
+  });
   state.plan = plan;
   if (!state.prefs.demo) {
     state.outbox = state.outbox.filter((o) => o.op !== 'plan');
@@ -343,6 +362,9 @@ export function loadDemo() {
 }
 
 export function setDemo(on) {
+  // undo never crosses between demo and real data: a demo entry must not land in the real sheet
+  history.length = 0;
+  emit('history');
   setPrefs({ demo: on });
   if (on) loadDemo();
   else {

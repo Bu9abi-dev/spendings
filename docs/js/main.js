@@ -142,7 +142,7 @@ function renderInsights() {
   const s = state.settings;
   const cyc = insightsCycle || currentCycle();
   const isCurrent = cyc === currentCycle();
-  const sum = summarize(state.entries, cyc, s);
+  const sum = summarize(state.entries, cyc, s, state.plan);
 
   const main = SPEND_CATEGORIES.filter((c) => c.slot);
   const otherTotal = ['Family & Gifts', 'Other', 'Uncategorised'].reduce((a, k) => a + (sum.byCategory.get(k) || 0), 0)
@@ -160,20 +160,22 @@ function renderInsights() {
   const today = isCurrent ? Math.min(len - 1, Math.floor((Date.now() - start) / 864e5)) : len - 1;
   const perDay = new Array(len).fill(0);
   for (const e of sum.entries) {
-    if (e.type !== 'Spend' || e.account !== s.allowanceAccount) continue;
+    // a refund into the allowance account gives that money back on the day it lands
+    const refund = e.type === 'Income' && e.category === 'Refund';
+    if ((e.type !== 'Spend' && !refund) || e.account !== s.allowanceAccount) continue;
     const i = Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / 864e5)));
-    perDay[i] += toAED(e, s);
+    perDay[i] += refund ? -toAED(e, s) : toAED(e, s);
   }
   let run = 0;
   const cumulative = perDay.map((v, i) => (i > today ? null : (run += v)));
-  const pace = perDay.map((_, i) => (s.allowance * (i + 1)) / len);
+  const pace = perDay.map((_, i) => (sum.allowancePot * (i + 1)) / len);
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const labels = perDay.map((_, i) => { const [y, m, d] = dayKey(new Date(start.getTime() + i * 864e5 + 6 * 3600e3)).split('-').map(Number); return `${d} ${MON[m - 1]}`; });
   const paceDelta = cumulative[today] - pace[today];
 
   // six cycles
   const six = Array.from({ length: 6 }, (_, i) => shiftCycle(cyc, i - 5)).map((c) => {
-    const x = summarize(state.entries, c, s);
+    const x = summarize(state.entries, c, s, state.plan);
     return { label: cycleName(c, false).split(' ')[0], income: x.income, spent: x.spent, current: c === cyc };
   });
 
@@ -204,7 +206,7 @@ function renderInsights() {
 
     <section class="panel">
       <h3 class="panel-title">Allowance pace</h3>
-      <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(s.allowance, { whole: true })}.
+      <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(sum.allowancePot, { whole: true })}.
         ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'pace-bad' : 'pace-good'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} over pace` : `On track · AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>
       <div class="series-legend"><span><i class="sw spend"></i>Spent so far</span><span><i class="sw pace"></i>Even pace</span></div>
       ${paceLine({ days: len, cumulative, pace, todayIndex: today, labels })}

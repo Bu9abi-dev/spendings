@@ -139,4 +139,37 @@ assert.deepEqual(list.merchants, {});
 assert.ok(list.accounts.length >= 4);
 assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).length, 1);
 
+// Allowance rules, editing a USD entry, and changing the cycle start day (fresh sheet)
+{
+  const env = makeEnv();
+  env.ctx.setup();
+  const tk = env.ctx.getToken_();
+  const p2 = (body) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify({ token: tk, ...body }) } }).text);
+  const cyc = env.ctx.cycleOf_(new Date(), 27);
+  const add = (id, e) => p2({ action: 'add', entry: { id, date: new Date().toISOString(), ...e } });
+  add('a1', { type: 'Transfer', amount: 3000, account: 'ADIB', toAccount: 'ADCB', source: 'Plan:allowance' });
+  add('a2', { type: 'Spend', amount: 500, account: 'ADCB', category: 'Shopping' });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2500);
+  add('a3', { type: 'Income', amount: 89, account: 'ADCB', category: 'Refund' });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2589, 'a refund gives the allowance back');
+  add('a4', { type: 'Transfer', amount: 1000, account: 'ADCB', toAccount: 'BOTIM' });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2589, 'moving money on is not spending');
+  add('a5', { type: 'Transfer', amount: 200, account: 'ADIB', toAccount: 'ADCB', note: 'top-up' });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2789, 'a top-up adds to the allowance');
+  // USD: changing only the note keeps the price; an undo can send the old price back
+  add('u1', { type: 'Spend', amount: 20, currency: 'USD', account: 'BOTIM', category: 'Shopping' });
+  const priced = p2({ action: 'list' }).entries.find((e) => e.id === 'u1').amountAED;
+  p2({ action: 'settings', settings: { usdRate: 3.7 } });
+  p2({ action: 'update', id: 'u1', fields: { note: 'gift' } });
+  assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'u1').amountAED, priced, 'note edit keeps the USD price');
+  p2({ action: 'update', id: 'u1', fields: { amount: 30 } });
+  assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'u1').amountAED, 111);
+  p2({ action: 'update', id: 'u1', fields: { amount: 20, amountAED: priced, status: 'OK' } });
+  assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'u1').amountAED, priced, 'undo restores the old price');
+  // a new cycle start day re-tags the ledger
+  p2({ action: 'add', entry: { id: 'c1', type: 'Spend', amount: 5, account: 'Cash', category: 'Other', date: '2026-10-26T10:00:00+04:00' } });
+  p2({ action: 'settings', settings: { cycleStart: 25 } });
+  assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'c1').cycle, '2026-11');
+}
+
 console.log('apps-script: all tests passed');

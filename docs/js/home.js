@@ -2,8 +2,8 @@
 // Tap or drag along the bar to focus an account: the number morphs, the details slide in
 // from the side you moved towards. Below: the payday plan and where this cycle's money went.
 import {
-  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, accountMeta, cycleOf, cycleName, cycleRange, daysLeft, summarize,
-  balances, planStatus, hubBreakdown, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
+  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, accountMeta, cycleName, cycleRange, daysLeft,
+  balances, homeNumbers, whereRows, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
 import { state, addEntry, savePlan, isConnected, isDemo, undo } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
@@ -28,37 +28,21 @@ function ago(iso) {
 /* ───────────────────────── Numbers ───────────────────────── */
 
 function model() {
-  const s = state.settings, cyc = cycleOf(new Date(), s.cycleStart);
-  const bals = balances(state.entries, s);
-  const matched = [...bals.values()].some((b) => b.matchedAt);
-  const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
-  const status = planStatus(state.plan, state.entries, cyc, s);
-  const hub = s.emergencyAccount;
-  const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
-  const sum = summarize(state.entries, cyc, s);
+  const s = state.settings;
+  const m = homeNumbers(state.entries, state.plan, s);
+  const matched = [...m.bals.values()].some((b) => b.matchedAt);
   // what each account had when this cycle began, and what has flowed in since
-  const startIso = cycleBounds(cyc, s.cycleStart).start.toISOString();
+  const startIso = cycleBounds(m.cyc, s.cycleStart).start.toISOString();
   const startBals = balances(state.entries.filter((e) => e.date < startIso), s);
   const inflow = new Map();
   for (const e of state.entries) {
-    if (e.cycle !== cyc || e.date < startIso) continue;
+    if (e.cycle !== m.cyc || e.date < startIso) continue;
     const v = toAED(e, s);
     if (e.type === 'Income') inflow.set(e.account, (inflow.get(e.account) || 0) + v);
     if (e.type === 'Transfer' && e.toAccount) inflow.set(e.toAccount, (inflow.get(e.toAccount) || 0) + v);
     if (e.type === 'Adjustment' && v > 0) inflow.set(e.account, (inflow.get(e.account) || 0) + v);
   }
-  // Safe to spend: what's left of this cycle's ADCB allowance, never more than ADCB actually holds.
-  const allowAcc = s.allowanceAccount;
-  const allowBal = bals.get(allowAcc)?.balance || 0;
-  const allowLeft = sum.allowanceLeft;
-  const safe = Math.min(allowLeft, Math.max(allowBal, 0));
-  const { start, end } = cycleBounds(cyc, s.cycleStart);
-  const len = (end - start) / 864e5;
-  const elapsed = Math.min(len, Math.max(0, (Date.now() - start) / 864e5));
-  const expected = (s.allowance * elapsed) / len;
-  const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart) };
-  const allowanceUnmoved = allowLeft > allowBal + 0.5;
-  return { s, cyc, bals, matched, total, status, hub, hubB, sum, startBals, inflow, allowAcc, allowBal, allowLeft, safe, pace, allowanceUnmoved };
+  return { ...m, matched, startBals, inflow };
 }
 
 const lensColor = (f) => (f === 'all' ? 'var(--label-2)' : accountMeta(f).color);
@@ -118,7 +102,7 @@ function label(m, f) {
 
 /* Pace: how this cycle's allowance spending compares with an even spread over the cycle. */
 function paceLine(m) {
-  const { delta, daysLeft: dl } = m.pace, tol = Math.max(15, m.s.allowance * 0.03);
+  const { delta, daysLeft: dl } = m.pace, tol = Math.max(15, m.sum.allowancePot * 0.03);
   const perDay = dl > 0 && m.safe > 0 ? ` · ${fmt(m.safe / dl, { whole: true })} a day for ${dl} ${dl === 1 ? 'day' : 'days'}` : '';
   if (m.allowLeft < 0) return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
   if (delta > tol) return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
@@ -133,12 +117,12 @@ function meta(m, f) {
     : `<span class="soon">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} on ${shortDate(nextIncome.due)}</span>`}` : '';
   if (!m.matched) return 'Match each account with your bank once, and these become your real numbers.';
   if (f === 'all') {
-    const unmoved = m.allowanceUnmoved ? ` · <button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.status.find((p) => p.kind === 'Move' && p.to === m.allowAcc && !p.complete)?.id || '')}">Allowance not moved yet</button>` : '';
+    const unmoved = m.allowanceUnmoved ? ` · <button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.allowMove.id)}">Allowance not moved yet</button>` : '';
     return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend · ${paceLine(m)}${unmoved}${expect}`;
   }
   if (f === m.hub) return `<b>${fmt(m.hubB.free, { whole: true })}</b> is yours after responsibilities${expect}`;
   if (f === m.s.allowanceAccount) {
-    const extra = m.allowBal - Math.max(0, m.safe);
+    const extra = m.allowBal - Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
     return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend${extra > 0.5 ? ` · <b>${fmt(extra, { whole: true })}</b> carried over from earlier cycles` : ''}`;
   }
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
@@ -280,24 +264,27 @@ function leftCard(m, f) {
 }
 
 
-/* Allowance liquid. On All it speaks in percent (left / spent), on the allowance account in AED. */
+/* Allowance liquid. On All it speaks in percent (left / spent), on the allowance account in AED.
+   "Of" is this cycle's whole allowance: the allowance plus any top-ups carried in or added. */
 function allowanceCard(m, percent = false) {
-  const s = m.s, left = m.allowLeft;
-  const level = s.allowance > 0 ? Math.max(0, Math.min(1, left / s.allowance)) : 0;
+  const sum = m.sum, pot = sum.allowancePot, left = m.allowLeft;
+  const level = pot > 0 ? Math.max(0, Math.min(1, left / pot)) : 0;
   const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
-  const spentPct = s.allowance > 0 ? Math.round((m.sum.allowanceUsed / s.allowance) * 100) : 0;
+  const spentPct = pot > 0 ? Math.round((sum.allowanceUsed / pot) * 100) : 0;
+  const extra = sum.carryIn + sum.topUps;
+  const of = extra > 0.5 ? `${fmt(pot, { whole: true })} (${fmt(sum.allowance, { whole: true })} + ${fmt(extra, { whole: true })} top-up)` : fmt(pot, { whole: true });
   if (percent) {
     return capsule({
       label: left < 0 ? 'Allowance used up' : 'Allowance left',
       value: { n: Math.round(level * 100), text: `${Math.round(level * 100)}%`, unit: 'pct' },
-      meta: `<b>${spentPct}% spent</b> · ${fmt(m.sum.allowanceUsed, { whole: true })} of ${fmt(s.allowance, { whole: true })} on ${esc(m.allowAcc)}`,
+      meta: `<b>${spentPct}% spent</b> · ${fmt(sum.allowanceUsed, { whole: true })} of ${of} on ${esc(m.allowAcc)}`,
       level, tone,
     });
   }
   return capsule({
     label: left < 0 ? 'Over the allowance' : 'Allowance left',
     value: { n: Math.abs(left), text: `AED ${fmt(Math.abs(left), { whole: true })}`, unit: 'aed' },
-    meta: `${spentPct}% spent · ${fmt(m.sum.allowanceUsed, { whole: true })} of ${fmt(s.allowance, { whole: true })} this cycle`,
+    meta: `${spentPct}% spent · ${fmt(sum.allowanceUsed, { whole: true })} of ${of} this cycle`,
     level, tone,
   });
 }
@@ -305,15 +292,7 @@ function allowanceCard(m, percent = false) {
 /* Where your money is: every part of the total, so the numbers visibly add up. */
 function whereCard(m) {
   if (!m.matched) return '';
-  const rows = [];
-  const add = (label, v, c, sub = '') => { if (Math.abs(v) >= 0.5) rows.push({ label, v, c, sub }); };
-  const allowColor = accountMeta(m.allowAcc).color, hubColor = accountMeta(m.hub).color;
-  add('Safe to spend', m.safe, allowColor, `${m.allowAcc} allowance left`);
-  if (m.allowAcc !== m.hub) add(`${m.allowAcc} carried over`, m.allowBal - m.safe, allowColor, 'unspent from earlier cycles');
-  add('Emergency money', m.hubB.free, hubColor, `${m.hub} after responsibilities`);
-  add('Responsibilities', m.hubB.reserved, 'var(--warn)', `held in ${m.hub} until paid`);
-  add('Still to move', m.hubB.toMove, 'var(--label-3)', `waiting in ${m.hub}`);
-  for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);
+  const rows = whereRows(m);
   return `<section class="where">
     <h3>Where your ${fmt(m.total, { whole: true })} is</h3>
     <div class="where-bar">${rows.filter((r) => r.v > 0).map((r) => `<span style="flex-grow:${r.v}; --c:${r.c}"></span>`).join('')}</div>
@@ -436,6 +415,9 @@ function placePill(animate) {
   if (!keys) return;
   const pill = keys.querySelector('.keys-pill'), key = keys.querySelector(`.key-acc[data-focus="${focus}"]`);
   if (!pill || !key) return;
+  if (key.offsetLeft < keys.scrollLeft || key.offsetLeft + key.offsetWidth > keys.scrollLeft + keys.clientWidth) {
+    keys.scrollTo({ left: key.offsetLeft - (keys.clientWidth - key.offsetWidth) / 2, behavior: animate && !reduceMotion() ? 'smooth' : 'auto' });
+  }
   const to = `translateX(${key.offsetLeft}px)`, w = `${key.offsetWidth}px`;
   const from = pill.style.transform, fromW = pill.style.width;
   pill.style.transform = to; pill.style.width = w;
@@ -511,6 +493,12 @@ export function bindHomeGestures(view) {
       e.target.setPointerCapture?.(e.pointerId);
     }
     if (scrub.zone === 'scrub') {
+      // more keys than fit: dragging near an edge scrolls the row so every account can be reached
+      const row = document.querySelector('.keys'), kr = row?.getBoundingClientRect();
+      if (kr && row.scrollWidth > row.clientWidth) {
+        if (e.clientX > kr.right - 32) row.scrollLeft += 14;
+        else if (e.clientX < kr.left + 32) row.scrollLeft -= 14;
+      }
       pillFollowing = true;
       followPill(e.clientX);
       const keys = [...document.querySelectorAll('.key-acc')];

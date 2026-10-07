@@ -292,6 +292,12 @@ function updateEntry_(id, fields) {
   if (!('status' in fields)) delete merged.status;
   var e = normalise_(merged, s);
   e.id = id;
+  // a foreign-currency entry keeps the rate it was priced at unless its amount or currency
+  // changes; an undo from the app sends the exact old price back
+  if (e.currency !== 'AED') {
+    if (fields.amountAED != null && fields.amountAED !== '' && !isNaN(Number(fields.amountAED))) e.amountAED = Number(fields.amountAED);
+    else if (e.amount === current.amount && e.currency === current.currency && current.amountAED != null) e.amountAED = current.amountAED;
+  }
   var created = sh.getRange(row, C['Created'] + 1).getValue() || new Date();
   sh.getRange(row, 1, 1, COLS.length).setValues([toRow_(e, created, new Date())]);
   if (e.merchant && e.category && e.type === 'Spend') rememberMerchant_(e.merchant, e.category);
@@ -337,8 +343,25 @@ function saveSettings_(patch) {
     if (k === 'allowance' || k === 'usdRate') v = Number(v) || DEFAULT_SETTINGS[labels[k]][1];
     if (/Account$/.test(k) && activeNames_().indexOf(v) < 0) return;
     sh.getRange(labels[k] + 2, 2).setValue(v);
+    if (k === 'cycleStart') retagCycles_(v);
   });
   return { ok: true, settings: listAll_().settings };
+}
+
+/** A new cycle start day moves entries between cycles: rewrite the Ledger's Cycle column. */
+function retagCycles_(startDay) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return;
+  var dates = sh.getRange(2, C['Date'] + 1, n, 1).getValues();
+  var cycles = dates.map(function (r) {
+    var d = r[0] instanceof Date ? r[0] : new Date(r[0]);
+    return [isNaN(d.getTime()) ? '' : cycleOf_(d, startDay)];
+  });
+  sh.getRange(2, C['Cycle'] + 1, n, 1).setValues(cycles);
+  var touched = {};
+  cycles.forEach(function (c) { if (c[0]) touched[c[0]] = true; });
+  Object.keys(touched).forEach(function (k) { ensureCycleTab_(k, true); });
 }
 
 /* ───────────────────────── Rows ───────────────────────── */
@@ -673,19 +696,74 @@ function cycleSummary_(cycle) {
   var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
   var n = sh.getLastRow() - 1;
   var out = { spent: 0, income: 0, byAccount: {}, allowanceUsed: 0 };
-  if (n > 0) {
-    sh.getRange(2, 1, n, COLS.length).getValues().forEach(function (r) {
-      if (String(r[C['Cycle']]) !== cycle) return;
-      var aed = Number(r[C['Amount (AED)']]) || 0;
-      if (r[C['Type']] === 'Spend') {
-        out.spent += aed;
-        out.byAccount[r[C['Account']]] = (out.byAccount[r[C['Account']]] || 0) + aed;
-        if (r[C['Account']] === s.allowanceAccount) out.allowanceUsed += aed;
-      } else if (r[C['Type']] === 'Income') out.income += aed;
-    });
-  }
-  out.allowanceLeft = s.allowance - out.allowanceUsed;
+  var rows = n > 0 ? sh.getRange(2, 1, n, COLS.length).getValues() : [];
+  rows.forEach(function (r) {
+    if (String(r[C['Cycle']]) !== cycle) return;
+    var aed = Number(r[C['Amount (AED)']]) || 0;
+    if (r[C['Type']] === 'Spend') {
+      out.spent += aed;
+      out.byAccount[r[C['Account']]] = (out.byAccount[r[C['Account']]] || 0) + aed;
+    } else if (r[C['Type']] === 'Income') out.income += aed;
+  });
+  var a = allowanceOf_(rows, cycle, s, readPlan_());
+  out.allowanceUsed = a.used;
+  out.allowanceLeft = a.left;
   return out;
+}
+
+/* The allowance, same rules as the app (docs/js/model.js allowanceOf):
+   transfers are reallocating, never spending; a refund into the allowance account gives the money
+   back; a top-up (main → allowance beyond the planned move) adds to the cycle it lands in, and
+   whatever of it is unspent at payday carries into the next cycle. */
+function allowanceOf_(rows, cycle, s, plan) {
+  var moves = (plan || []).filter(function (p) { return p.kind === 'Move' && p.to === s.allowanceAccount; });
+  if (!moves.length) moves = [{ id: 'allowance', amount: s.allowance, day: null }];
+  var now = allowanceCycle_(rows, cycle, s, moves);
+  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves);
+  var carryIn = Math.round(Math.min(prev.topUps, Math.max(0, s.allowance + prev.topUps - prev.used)) * 100) / 100;
+  var pot = s.allowance + now.topUps + carryIn;
+  return { used: now.used, topUps: now.topUps, carryIn: carryIn, pot: pot, left: pot - now.used };
+}
+
+function allowanceCycle_(rows, cycle, s, moves) {
+  var acc = s.allowanceAccount, hub = s.emergencyAccount;
+  var spent = 0, refunds = 0, topUps = 0;
+  rows.forEach(function (r) {
+    if (String(r[C['Cycle']]) !== cycle) return;
+    var aed = Number(r[C['Amount (AED)']]) || 0, type = r[C['Type']], from = r[C['Account']], to = r[C['To account']];
+    var source = String(r[C['Source']] || '');
+    if (type === 'Spend' && from === acc) spent += aed;
+    else if (type === 'Income' && from === acc && r[C['Category']] === 'Refund') refunds += aed;
+    else if (type === 'Transfer' && acc !== hub) {
+      if (from === hub && to === acc) {
+        var planned = moves.some(function (p) {
+          if (source === 'Plan:' + p.id) return true;
+          if (source.indexOf('Plan:') === 0 || !(p.amount > 0) || aed < p.amount * 0.95) return false;
+          if (!p.day) return true;
+          var d = r[C['Date']] instanceof Date ? r[C['Date']] : new Date(r[C['Date']]);
+          return Utilities.formatDate(d, TZ, 'yyyy-MM-dd') >= dueDayKey_(cycle, p.day, s.cycleStart);
+        });
+        if (!planned) topUps += aed;
+      } else if (from === acc && to === hub && source.indexOf('Plan:') !== 0) topUps -= aed;
+    }
+  });
+  topUps = Math.max(0, topUps);
+  return { spent: spent, refunds: refunds, topUps: topUps, used: Math.max(0, spent - refunds) };
+}
+
+function shiftCycle_(cycle, delta) {
+  var p = cycle.split('-').map(Number), y = p[0], m = p[1] + delta;
+  while (m > 12) { m -= 12; y += 1; }
+  while (m < 1) { m += 12; y -= 1; }
+  return y + '-' + (m < 10 ? '0' : '') + m;
+}
+
+/** "yyyy-MM-dd" of day-of-month `day` inside `cycle`. */
+function dueDayKey_(cycle, day, startDay) {
+  var p = cycle.split('-').map(Number), y = p[0], m = p[1];
+  if (startDay > 1 && day >= startDay) { m -= 1; if (m < 1) { m = 12; y -= 1; } }
+  var last = new Date(Date.UTC(y, m, 0)).getUTCDate(), d = Math.min(day, last);
+  return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
 }
 
 /* ───────────────────────── Generated tabs ───────────────────────── */
@@ -722,7 +800,8 @@ function ensureCycleTab_(cycle, force) {
     ['Money out', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend")'],
     ['Net', '=B4-B5'],
     ['Allowance', "=Settings!B2"],
-    ['Allowance left', '=Settings!B2-SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',Settings!B3)'],
+    // a refund into the allowance account gives that money back
+    ['Allowance left', '=Settings!B2-SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',Settings!B3)+SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',Settings!B3,' + cat + ',"Refund")'],
     ['Needs review', '=COUNTIFS(' + cy + ',' + cyc + ',' + sts + ',"Review")'],
   ];
   sh.getRange(4, 1, summary.length, 2).setValues(summary);
@@ -820,7 +899,8 @@ function ensureOverview_(force) {
   sh.getRange('B5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income"))))');
   sh.getRange('C5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"))))');
   sh.getRange('D5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income")-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"))))');
-  sh.getRange('E5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,Settings!B2-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend",' + acc + ',Settings!B3))))');
+  var cat = L + 'J:J';
+  sh.getRange('E5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,Settings!B2-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend",' + acc + ',Settings!B3)+SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income",' + acc + ',Settings!B3,' + cat + ',"Refund"))))');
   sh.getRange('F5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,COUNTIFS(' + cy + ',c,' + sts + ',"Review"))))');
   sh.getRange('A4:F4').setFontWeight('bold').setBackground(SOFT);
   sh.getRange('B5:E200').setNumberFormat('"AED "#,##0.00');

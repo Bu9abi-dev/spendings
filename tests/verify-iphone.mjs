@@ -81,13 +81,19 @@ for (const ph of PHONES) {
     const k2 = await p.evaluate(() => { const k = document.querySelector('.keys'); const last = [...k.querySelectorAll('.key-acc')].pop().getBoundingClientRect(); return { sw: k.scrollWidth, cw: k.clientWidth, lastRight: Math.round(last.right), vw: innerWidth }; });
     console.log(`      with 6 accounts: .keys scrollWidth ${k2.sw} / clientWidth ${k2.cw}; last key right edge ${k2.lastRight} (viewport ${k2.vw})`);
     if (k2.sw > k2.cw + 1) {
-      // try a horizontal touch pan on the keys row
+      // scrub along the keys row to its right edge and keep moving there: the row should scroll
       const cdp = await ctx.newCDPSession(p);
       const box = await p.locator('.keys').boundingBox();
-      await cdp.send('Input.synthesizeScrollGesture', { x: Math.round(box.x + box.width - 40), y: Math.round(box.y + box.height / 2), xDistance: -200, yDistance: 0, gestureSourceType: 'touch', speed: 800 });
-      await p.waitForTimeout(300);
-      const sl = await p.evaluate(() => document.querySelector('.keys').scrollLeft);
-      if (sl === 0) finding(`MINOR keys-unreachable (${ph.name}): with 6 accounts the account keys overflow (${k2.sw}px in ${k2.cw}px) but .keys has touch-action: pan-y, so a finger can't scroll it (scrollLeft stayed 0); the scrub gesture also only hits visible keys`);
+      const y = Math.round(box.y + box.height / 2), x0 = Math.round(box.x + 60), x1 = Math.round(box.x + box.width - 12);
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: x0, y }] });
+      for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(x0 + ((x1 - x0) * i) / 10), y }] });
+      for (let i = 0; i < 30; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 - (i % 2), y }] });
+      await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
+      await p.waitForTimeout(500);
+      const after = await p.evaluate(() => ({ sl: document.querySelector('.keys').scrollLeft, focus: document.querySelector('.lens').dataset.focus }));
+      console.log(`      scrub to the edge: scrollLeft ${after.sl}, focused ${after.focus}`);
+      ok(after.sl > 0 && after.focus === 'Mashreq', `${ph.name}: with 6 accounts, scrubbing to the edge scrolls the keys and reaches the last account`);
+      await p.click('.key-acc[data-focus="all"]').catch(() => {});
     }
     await p.evaluate(async () => { const s = await import('/js/store.js'); s.undo(); s.undo(); });
   }
@@ -177,25 +183,28 @@ for (const ph of PHONES) {
 
   // numbers on screen vs the maths (demo data)
   {
+    await p.click('.key-acc[data-focus="all"]'); await p.waitForTimeout(500);
     const r = await p.evaluate(async () => {
       const M = await import('/js/model.js'); const { state } = await import('/js/store.js');
-      const s = state.settings, cyc = M.cycleOf(new Date(), s.cycleStart);
-      const bals = M.balances(state.entries, s);
-      const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
-      const sum = M.summarize(state.entries, cyc, s);
-      const allowBal = bals.get(s.allowanceAccount).balance;
-      const safe = Math.min(sum.allowanceLeft, Math.max(allowBal, 0));
+      const m = M.homeNumbers(state.entries, state.plan, state.settings);
+      const { total, safe, allowBal } = m;
+      const sum = m.sum;
+      const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: Math.round(x.v) }));
+      await new Promise((r) => setTimeout(r, 300));
+      if (!document.querySelector('.where-row.total')) return { missing: location.hash + ' ' + document.querySelector('.lens-detail')?.innerHTML.slice(0, 200) };
       const rows = [...document.querySelectorAll('.where-row:not(.total)')].map((x) => ({ label: x.querySelector('b').textContent, v: +x.querySelector('.num').textContent.replace(/[,−]/g, (c) => (c === '−' ? '-' : '')) }));
       const shownTotal = +document.querySelector('.where-row.total .num').textContent.replace(/,/g, '');
       const meta = document.querySelector('.lens-meta').textContent;
       const hero = +document.querySelector('.lens .lv').dataset.v;
-      return { total, safe, rows, shownTotal, meta, hero, allowBal, used: sum.allowanceUsed };
+      return { total, safe, rows, shownTotal, meta, hero, allowBal, used: sum.allowanceUsed, expectRows };
     });
+    if (r.missing) throw new Error('Where card not on screen: ' + r.missing);
     console.log(`      demo: total ${r.total.toFixed(2)}, safe ${r.safe.toFixed(2)}, ADCB ${r.allowBal}, used ${r.used.toFixed(2)}; hero ${r.hero}; rows ${r.rows.map((x) => `${x.label}=${x.v}`).join(' | ')}; shown total ${r.shownTotal}`);
     console.log(`      lens meta: "${r.meta.trim()}"`);
     const rs = r.rows.reduce((a, x) => a + x.v, 0);
     ok(Math.abs(rs - r.shownTotal) <= 1, `Where rows on screen add to the shown total (${rs} vs ${r.shownTotal})`);
-    ok(r.rows.some((x) => x.label === 'Safe to spend' && Math.abs(x.v - Math.round(r.safe)) <= 0), 'Safe to spend row = min(allowance left, ADCB balance)');
+    ok(JSON.stringify(r.rows) === JSON.stringify(r.expectRows), 'Where rows on screen = model whereRows()');
+    ok(Math.abs(r.hero - r.total) < 0.01 && r.meta.includes(`${Math.round(r.safe).toLocaleString('en-US')} safe to spend`), 'All tab: hero is total money, Safe to spend on the line below');
   }
 
   // ghost "Allowance not moved yet"

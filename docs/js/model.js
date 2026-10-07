@@ -169,8 +169,62 @@ export function timeLabel(date) {
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
+/* ───────────────────────── Allowance ─────────────────────────
+   The rules, as Abdullah set them:
+   - Moving money between accounts is reallocating, never spending.
+   - Unused allowance stays in the allowance account as a buffer; Safe to spend resets each cycle.
+   - A refund into the allowance account adds back to the allowance, exactly undoing the spend;
+     whatever it can't add back (the spend was in an earlier cycle) lands in the buffer.
+   - A top-up (main → allowance, beyond the planned move) adds to the allowance of the cycle it
+     lands in, and whatever of it is still unspent at payday carries into the next cycle. */
+
+const isPlanTagged = (e) => String(e.source || '').startsWith('Plan:');
+
+/** The planned move(s) into the allowance account; without one, a single move of the allowance. */
+function allowanceMoves(plan, settings) {
+  const moves = (plan || []).filter((p) => p.kind === 'Move' && p.to === settings.allowanceAccount);
+  return moves.length ? moves : [{ id: 'allowance', amount: settings.allowance, day: null }];
+}
+
+/** Is this transfer into the allowance account a planned move (vs a top-up)? Tagged by the
+    "Move now" button, or typed by hand on/after its due day for (about) the full amount. */
+function isPlannedMove(e, p, cycle, settings) {
+  if (e.source === `Plan:${p.id}`) return true;
+  if (isPlanTagged(e) || !(p.amount > 0) || toAED(e, settings) < p.amount * 0.95) return false;
+  return !p.day || dayKey(e.date) >= dayKey(dateInCycle(cycle, p.day, settings.cycleStart));
+}
+
+/** One cycle's money in and out of the allowance account, transfers kept apart from spending. */
+function allowanceCycle(entries, cycle, settings, plan) {
+  const acc = settings.allowanceAccount, hub = settings.emergencyAccount;
+  const moves = allowanceMoves(plan, settings);
+  let spent = 0, refunds = 0, topUps = 0;
+  for (const e of entries) {
+    if (e.cycle !== cycle) continue;
+    const v = toAED(e, settings);
+    if (e.type === 'Spend' && e.account === acc) spent += v;
+    else if (e.type === 'Income' && e.account === acc && e.category === 'Refund') refunds += v;
+    else if (e.type === 'Transfer' && acc !== hub) {
+      if (e.account === hub && e.toAccount === acc && !moves.some((p) => isPlannedMove(e, p, cycle, settings))) topUps += v;
+      else if (e.account === acc && e.toAccount === hub && !isPlanTagged(e)) topUps -= v; // a top-up sent back
+    }
+  }
+  topUps = Math.max(0, topUps);
+  return { spent, refunds, topUps, used: Math.max(0, spent - refunds) };
+}
+
+/** This cycle's allowance: the allowance, plus top-ups, plus last cycle's unspent top-ups. */
+export function allowanceOf(entries, cycle, settings, plan) {
+  const now = allowanceCycle(entries, cycle, settings, plan);
+  const prev = allowanceCycle(entries, shiftCycle(cycle, -1), settings, plan);
+  // last cycle spent its allowance first, so its top-ups are what's left above the allowance
+  const carryIn = Math.round(Math.min(prev.topUps, Math.max(0, settings.allowance + prev.topUps - prev.used)) * 100) / 100;
+  const pot = settings.allowance + now.topUps + carryIn;
+  return { ...now, carryIn, pot, left: pot - now.used };
+}
+
 /** Everything the screens need for one cycle. */
-export function summarize(entries, cycle, settings) {
+export function summarize(entries, cycle, settings, plan = []) {
   const inCycle = entries.filter((e) => e.cycle === cycle);
   const s = {
     cycle, entries: inCycle, income: 0, spent: 0, allowanceUsed: 0, review: 0,
@@ -201,8 +255,15 @@ export function summarize(entries, cycle, settings) {
     }
   }
   s.net = s.income - s.spent;
+  const a = allowanceOf(entries, cycle, settings, plan);
   s.allowance = settings.allowance;
-  s.allowanceLeft = settings.allowance - s.allowanceUsed;
+  s.allowanceSpent = s.allowanceUsed;
+  s.allowanceUsed = a.used;
+  s.allowanceRefunds = a.refunds;
+  s.topUps = a.topUps;
+  s.carryIn = a.carryIn;
+  s.allowancePot = a.pot;
+  s.allowanceLeft = a.left;
   return s;
 }
 
@@ -261,6 +322,9 @@ export function planStatus(plan, entries, cycle, settings, now = new Date()) {
     let done = 0;
     if (p.kind === 'Income') {
       done = inCycle.filter((e) => e.type === 'Income' && (tagged(e) || (e.account === p.to && e.category === p.category && p.category))).reduce((a, e) => a + toAED(e, settings), 0);
+    } else if (p.kind === 'Move' && p.to === settings.allowanceAccount) {
+      // a top-up is not the allowance move: only the tagged move, or a full one on/after payday
+      done = inCycle.filter((e) => e.type === 'Transfer' && e.account === p.from && e.toAccount === p.to && isPlannedMove(e, p, cycle, settings)).reduce((a, e) => a + toAED(e, settings), 0);
     } else if (p.kind === 'Move') {
       done = inCycle.filter((e) => e.type === 'Transfer' && (tagged(e) || (e.account === p.from && e.toAccount === p.to))).reduce((a, e) => a + toAED(e, settings), 0);
     } else {
@@ -295,4 +359,56 @@ export function hubFlow(entries, cycle, hub, settings) {
   const outTotal = [...outs.values()].reduce((a, b) => a + b, 0);
   if (inTotal > outTotal) outs.set('Kept', inTotal - outTotal);
   return { sources, outs, inTotal, outTotal };
+}
+
+/* ───────────────────────── Home numbers ───────────────────────── */
+
+/** The numbers Home shows: total money, Safe to spend and pace. Pure, so the checks run it too. */
+export function homeNumbers(entries, plan, settings, now = new Date()) {
+  const s = settings, cyc = cycleOf(now, s.cycleStart);
+  const bals = balances(entries, s);
+  const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
+  const status = planStatus(plan, entries, cyc, s, now);
+  const hub = s.emergencyAccount;
+  const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
+  const sum = summarize(entries, cyc, s, plan);
+  // Safe to spend: what's left of this cycle's allowance. Until the allowance has been moved it
+  // can't be more than the allowance account holds; after that, moving money on to another
+  // account is reallocating and doesn't lower it.
+  const allowAcc = s.allowanceAccount;
+  const allowBal = bals.get(allowAcc)?.balance || 0;
+  const allowLeft = sum.allowanceLeft;
+  const allowMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && !p.complete) || null;
+  const safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
+  const { start, end } = cycleBounds(cyc, s.cycleStart);
+  const len = (end - start) / 864e5;
+  const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
+  const expected = (sum.allowancePot * elapsed) / len;
+  const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart, now) };
+  const allowanceUnmoved = !!allowMove && (!allowMove.due || dayKey(now) >= dayKey(allowMove.due));
+  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved };
+}
+
+/** "Where your money is": every part of the total, so the numbers visibly add up. */
+export function whereRows(m) {
+  const rows = [];
+  const add = (label, v, c, sub = '') => { if (Math.abs(v) >= 0.5) rows.push({ label, v, c, sub }); };
+  const allowColor = accountMeta(m.allowAcc).color, hubColor = accountMeta(m.hub).color;
+  // rows say where money physically is, so only the part of Safe to spend still in the allowance
+  // account sits here; any part moved on shows under the account it went to
+  const safeHere = m.allowAcc === m.hub ? m.safe : Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
+  const movedOn = Math.max(0, m.safe) - safeHere;
+  add('Safe to spend', safeHere, allowColor, movedOn >= 0.5 ? `in ${m.allowAcc} · ${fmt(movedOn, { whole: true })} more moved to other accounts` : `${m.allowAcc} allowance left`);
+  if (m.allowAcc !== m.hub) add(`${m.allowAcc} carried over`, m.allowBal - safeHere, allowColor, 'unspent from earlier cycles');
+  add('Emergency money', m.hubB.free, hubColor, `${m.hub} after responsibilities`);
+  add('Responsibilities', m.hubB.reserved, 'var(--warn)', `held in ${m.hub} until paid`);
+  add('Still to move', m.hubB.toMove, 'var(--label-3)', `waiting in ${m.hub}`);
+  for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);
+  // money still sitting in an archived (or unknown) account is part of the total too
+  for (const [id, x] of m.bals) {
+    if (id === m.hub || id === m.allowAcc || ACCOUNTS.some((a) => a.id === id)) continue;
+    const a = accountMeta(id);
+    add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
+  }
+  return rows;
 }
