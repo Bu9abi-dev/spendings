@@ -5,7 +5,7 @@ import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, accountMeta, cycleName, cycleRange, daysLeft,
   balances, homeNumbers, whereRows, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
-import { state, addEntry, savePlan, isConnected, isDemo, undo, dismissPlan, restorePlan } from './store.js';
+import { state, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 
@@ -112,15 +112,17 @@ function paceLine(m) {
 
 /* A small ✕ beside every payday prompt: "already done this cycle", so it stops asking until the next one. */
 const dismissBtn = (p, cls = 'dismiss-x') => `<button type="button" class="${cls}" data-plan-dismiss="${esc(p.id)}" aria-label="Dismiss ${esc(p.name)} until next cycle">${icon('x', { size: 14 })}</button>`;
+/** The day a dismissed prompt comes back: the first day of the next cycle. */
+const backOn = (m) => shortDate(cycleBounds(m.cyc, m.s.cycleStart).end);
 
 function meta(m, f) {
   const nextIncome = m.status.find((p) => p.kind === 'Income' && !p.complete);
-  const expect = nextIncome ? ` · ${nextIncome.state === 'due'
+  const expect = nextIncome ? ` · <span class="prompt">${nextIncome.state === 'due'
     ? `<button type="button" class="soon soon-btn" data-plan-act="land" data-plan-id="${esc(nextIncome.id)}">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} due · tap when it lands</button>`
-    : `<span class="soon">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} on ${shortDate(nextIncome.due)}</span>`}${dismissBtn(nextIncome)}` : '';
+    : `<span class="soon">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} on ${shortDate(nextIncome.due)}</span>`}${dismissBtn(nextIncome)}</span>` : '';
   if (!m.matched) return 'Match each account with your bank once, and these become your real numbers.';
   if (f === 'all') {
-    const unmoved = m.allowanceUnmoved ? ` · <button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.allowMove.id)}">Allowance not moved yet</button>${dismissBtn(m.allowMove)}` : '';
+    const unmoved = m.allowanceUnmoved ? ` · <span class="prompt"><button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.allowMove.id)}">Allowance not moved yet</button>${dismissBtn(m.allowMove)}</span>` : '';
     return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend · ${paceLine(m)}${unmoved}${expect}`;
   }
   if (f === m.hub) return `<b>${fmt(m.hubB.free, { whole: true })}</b> is yours after responsibilities${expect}`;
@@ -228,7 +230,7 @@ function hubCard(m) {
       ${hubB.free < 0 ? `<p class="hub-note warn-text">${icon('warn', { size: 14 })} ${esc(hub)} is short by ${fmt(-hubB.free, { whole: true })} for what’s still planned.</p>` : ''}
       ${resp.length ? `<div class="resp">${resp.map((p) => `<div class="resp-line"><button type="button" class="resp-row" data-plan-edit="${esc(p.id)}">
           <span>${esc(p.name)}</span>
-          ${p.dismissed ? '<em class="resp-done">Paid this cycle</em>' : p.amount ? `<span class="resp-track"><i style="--w:${Math.min(100, (p.done / p.amount) * 100)}%"></i></span><b class="num">${p.remaining ? `${fmt(p.remaining, { whole: true })} left` : 'paid'}</b>` : '<em>Set amount</em>'}
+          ${p.dismissed ? `<em class="resp-done">Done · back ${backOn(m)}</em>` : p.amount ? `<span class="resp-track"><i style="--w:${Math.min(100, (p.done / p.amount) * 100)}%"></i></span><b class="num">${p.remaining ? `${fmt(p.remaining, { whole: true })} left` : 'paid'}</b>` : '<em>Set amount</em>'}
         </button>${p.dismissed
           ? `<button type="button" class="text-btn resp-restore" data-plan-restore="${esc(p.id)}">Bring back</button>`
           : p.remaining > 0 ? dismissBtn(p, 'dismiss-x resp-x') : ''}</div>`).join('')}</div>` : ''}
@@ -289,7 +291,7 @@ function allowanceCard(m, percent = false) {
   return capsule({
     label: left < 0 ? 'Over the allowance' : 'Allowance left',
     value: { n: Math.abs(left), text: `AED ${fmt(Math.abs(left), { whole: true })}`, unit: 'aed' },
-    meta: `${spentPct}% spent · ${fmt(sum.allowanceUsed, { whole: true })} of ${of} this cycle`,
+    meta: `${spentPct}% spent · ${fmt(sum.allowanceUsed, { whole: true })} of ${of} this cycle${m.spentBefore ? ` · ${fmt(m.spentBefore, { whole: true })} before you started tracking` : ''}`,
     level, tone,
   });
 }
@@ -321,7 +323,7 @@ function paydayCard(m) {
           : `${p.state === 'upcoming'
             ? `<span class="pd-when">${shortDate(p.due)}</span>`
             : `<button type="button" class="pd-btn" data-plan-act="${p.kind === 'Income' ? 'land' : 'move'}" data-plan-id="${esc(p.id)}">${p.kind === 'Income' ? 'It landed' : 'Move now'}</button>`}${dismissBtn(p, 'dismiss-x pd-x')}`;
-      const sub = p.dismissed ? `${fmt(p.amount, { whole: true })} ${what} · already done this cycle` : `${fmt(p.complete ? p.done : p.remaining, { whole: true })} ${what}`;
+      const sub = p.dismissed ? `${fmt(p.amount, { whole: true })} ${what} · done, back on ${backOn(m)}` : `${fmt(p.complete ? p.done : p.remaining, { whole: true })} ${what}`;
       return `<div class="pd-row${p.complete ? ' complete' : ''}" data-plan-row="${esc(p.id)}">
         <span class="pd-dot" style="--c:${p.kind === 'Income' ? 'var(--good)' : accountMeta(p.to).color}"></span>
         <span class="pd-main"><b>${esc(p.name)}</b><span>${sub}</span></span>
@@ -540,7 +542,8 @@ export function homeClick(t) {
   const pd = t.closest('[data-plan-dismiss]');
   if (pd) { dismissPrompt(pd.dataset.planDismiss); return true; }
   const pr = t.closest('[data-plan-restore]');
-  if (pr) { haptic(); restorePlan(pr.dataset.planRestore); return true; }
+  // a double tap on ✕ lands its second tap on "Bring back" in the same spot: ignore that one
+  if (pr) { if (Date.now() - lastDismiss.at > 600 || lastDismiss.id !== pr.dataset.planRestore) { haptic(); restorePlan(pr.dataset.planRestore); } return true; }
   const pa = t.closest('[data-plan-act]');
   if (pa) { runPlan(pa.dataset.planId); return true; }
   const pe = t.closest('[data-plan-edit]');
@@ -569,13 +572,20 @@ function runPlan(id) {
 }
 
 /** Already paid or moved before tracking started: hide it until the next cycle. No entry, no balance change. */
+let lastDismiss = { id: '', at: 0 };
 function dismissPrompt(id) {
   const m = model();
   const p = m.status.find((x) => x.id === id);
   if (!p) return;
   haptic();
   dismissPlan(id, m.cyc);
-  toast(`${esc(p.name)} hidden until next cycle`, { icon: icon('check', { size: 18 }), action: 'Undo', onAction: () => undo() });
+  lastDismiss = { id, at: Date.now() };
+  const step = lastAction();
+  // this toast's Undo brings back this prompt only, whatever was done since
+  toast(`${esc(p.name)} hidden until ${backOn(m)}`, {
+    icon: icon('check', { size: 18 }), action: 'Undo',
+    onAction: () => { if (!(id in state.dismissed)) return; if (lastAction() === step) undo(); else restorePlan(id); },
+  });
 }
 
 /* ───────────────────────── Match with bank ───────────────────────── */

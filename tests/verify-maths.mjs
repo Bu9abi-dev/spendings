@@ -315,5 +315,37 @@ console.log('\n── 7. Dismissed payday prompts (setting up mid-cycle) ──'
   ok(one.status.find((p) => p.id === 'nafis').dismissed && one.allowanceUnmoved && one.hubB.reserved === 2325, 'dismissing Nafis only hides Nafis');
 }
 
+console.log('\n── 7b. Dismissed allowance move with part of it spent before tracking ──');
+{
+  setAccountList(DEFAULT_ACCOUNTS);
+  // 7 Oct: the 3,000 allowance arrived on payday and 1,800 of it went before tracking began
+  const ents = [
+    E('Adjustment', 8000, 'ADIB', '2026-10-07T09:00:00+04:00'),
+    E('Adjustment', 1200, 'ADCB', '2026-10-07T09:00:00+04:00'),
+  ];
+  const plan = DEFAULT_PLAN.map((p) => ({ ...p })).filter((p) => p.kind !== 'Responsibility');
+  const now = D('2026-10-07T13:00:00+04:00');
+  const before = homeModel(ents, plan, S, now);
+  ok(before.safe === 1200 && before.allowanceUnmoved, `before dismissing: Safe to spend is the 1,200 in ADCB (${before.safe})`);
+  const dis = { salary: before.cyc, nafis: before.cyc, allowance: before.cyc };
+  const m = homeModel(ents, plan, S, now, dis);
+  const rows = whereRows(m);
+  console.log(`      allowance dismissed: safe=${m.safe} allowLeft=${m.allowLeft} spentBefore=${m.spentBefore} used=${m.sum.allowanceUsed} pace.spent=${m.pace.spent} rows=${rows.map((r) => `${r.label}=${r.v}${r.sub ? ` (${r.sub})` : ''}`).join(' | ')}`);
+  ok(m.safe === 1200 && m.allowLeft === 1200 && m.spentBefore === 1800, 'after dismissing: still 1,200 safe to spend; the missing 1,800 counts as spent before tracking');
+  ok(m.sum.allowanceUsed === 1800 && m.pace.spent === 1800, 'the allowance card and pace count the 1,800 as spent');
+  ok(!rows.some((r) => /moved to other accounts/.test(r.sub)) && near(rowSum(rows), m.total), '"Where your money is" shows nothing as moved and still adds up');
+  // later spending and a top-up move Safe to spend exactly as normal
+  const later = [...ents, E('Spend', 200, 'ADCB', '2026-10-08T12:00:00+04:00'), E('Transfer', 500, 'ADIB', '2026-10-09T12:00:00+04:00', { toAccount: 'ADCB' })];
+  const m2 = homeModel(later, plan, S, D('2026-10-09T13:00:00+04:00'), dis);
+  ok(m2.safe === 1500 && m2.spentBefore === 1800, `then spend 200 and top up 500: Safe to spend 1,200 − 200 + 500 = ${m2.safe}`);
+  // ADCB holding more than the allowance (an old buffer): nothing was spent before tracking
+  const rich = [E('Adjustment', 8000, 'ADIB', '2026-10-07T09:00:00+04:00'), E('Adjustment', 3600, 'ADCB', '2026-10-07T09:00:00+04:00')];
+  const m3 = homeModel(rich, plan, S, now, dis);
+  ok(m3.safe === 3000 && m3.spentBefore === 0, `ADCB 3,600 with the move dismissed: Safe to spend is the 3,000 allowance (${m3.safe}), 600 is buffer`);
+  // next cycle: no dismissal, normal rules
+  const next = homeModel(ents, plan, S, D('2026-10-28T09:00:00+04:00'), dis);
+  ok(next.spentBefore === 0 && next.allowanceUnmoved, 'next cycle: nothing assumed spent before tracking, the move prompt is back');
+}
+
 console.log(`\n${fails} failed checks, ${findings} findings`);
 process.exitCode = fails ? 1 : 0;

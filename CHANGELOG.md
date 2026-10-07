@@ -28,10 +28,12 @@ timeline
 ## v10: Dismiss payday prompts
 **7 October 2026** · no sheet update needed
 
-- Every payday prompt now has a small ✕ to dismiss it: "Salary due", "It landed", "Move now", "Allowance not moved yet" and a responsibility still to pay. Use it when the money already landed, moved or got paid before you started tracking.
-- A dismissed prompt stays hidden until the cycle ends. On the next payday it comes back as usual.
-- Dismissing logs nothing and doesn't change any balance. The item just stops counting as still to come, so ADIB's "Still to move" and "Responsibilities" drop, and Safe to spend is no longer held down to what ADCB holds.
-- In the Payday plan a dismissed item reads "already done this cycle" with a "Bring back" button. Undo brings it back too.
+- Every payday prompt now has a ✕ to dismiss it: "Salary due", "It landed", "Move now", "Allowance not moved yet" and a responsibility still to pay. Use it when the money already landed, moved or got paid before you started tracking.
+- A dismissed prompt stays hidden until the cycle ends, and the row says when it's back ("done, back on 27 Oct"). On the next payday it comes back as usual.
+- Dismissing logs nothing and doesn't change any balance. The item just stops counting as still to come, so ADIB's "Still to move" and "Responsibilities" drop.
+- Dismissing the allowance move keeps Safe to spend honest: it can't be more than ADCB holds. Whatever of the allowance isn't in ADCB counts as spent before you started tracking, and the allowance card says so.
+- The ✕ has a big tap area with a gap between it and "tap when it lands", so a near miss can't log the money twice.
+- The toast's Undo brings back only that prompt. "Bring back" on the row and the main undo button work too.
 - Dismissals are kept on your phone, not in the sheet.
 
 ---

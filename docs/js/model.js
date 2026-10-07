@@ -374,12 +374,18 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   const status = planStatus(plan, entries, cyc, s, now, dismissed);
   const hub = s.emergencyAccount;
   const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
-  const sum = summarize(entries, cyc, s, plan);
+  let sum = summarize(entries, cyc, s, plan);
   // Safe to spend: what's left of this cycle's allowance. Until the allowance has been moved it
   // can't be more than the allowance account holds; after that, moving money on to another
   // account is reallocating and doesn't lower it.
   const allowAcc = s.allowanceAccount;
   const allowBal = bals.get(allowAcc)?.balance || 0;
+  // A move dismissed as "already done" was never logged, so neither was what got spent from it
+  // before tracking began. The matched balance is the truth: whatever the allowance says is left
+  // beyond what the account holds was spent before tracking, and counts as spent.
+  const dismissedMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && p.dismissed);
+  const spentBefore = dismissedMove && allowAcc !== hub ? Math.max(0, Math.round((sum.allowanceLeft - Math.max(allowBal, 0)) * 100) / 100) : 0;
+  if (spentBefore) sum = { ...sum, allowanceUsed: sum.allowanceUsed + spentBefore, allowanceLeft: sum.allowanceLeft - spentBefore, spentBefore };
   const allowLeft = sum.allowanceLeft;
   const allowMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && !p.complete) || null;
   const safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
@@ -389,7 +395,7 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   const expected = (sum.allowancePot * elapsed) / len;
   const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart, now) };
   const allowanceUnmoved = !!allowMove && (!allowMove.due || dayKey(now) >= dayKey(allowMove.due));
-  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved };
+  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved, spentBefore };
 }
 
 /** "Where your money is": every part of the total, so the numbers visibly add up. */

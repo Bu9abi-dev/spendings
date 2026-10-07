@@ -181,18 +181,36 @@ assert.deepEqual(errors, []);
   await d.click('.lens-meta [data-plan-dismiss="nafis"]');
   await d.waitForTimeout(300);
   assert.doesNotMatch(await metaText(), /Nafis/, 'Nafis prompt is gone from the Home line');
-  assert.match(await d.textContent('[data-plan-row="nafis"]'), /already done this cycle/);
+  assert.match(await d.textContent('[data-plan-row="nafis"]'), /done, back on 27 Oct/);
   assert.equal(await d.locator('[data-plan-row="nafis"] .pd-btn').count(), 0, 'no "It landed" button once dismissed');
   assert.match(await d.textContent('.pd-count'), /4\/4/);
-  assert.match(await d.textContent('#toast'), /hidden until next cycle/);
+  assert.match(await d.textContent('#toast'), /hidden until 27 Oct/);
   await d.click('#toast .toast-action');
   await d.waitForTimeout(300);
   assert.match(await metaText(), /Nafis \+4,500 due/, 'Undo brings the prompt back');
   await d.click('[data-plan-row="nafis"] [data-plan-dismiss]');
-  await d.waitForTimeout(300);
+  await d.waitForTimeout(700);
   await d.click('[data-plan-row="nafis"] [data-plan-restore]');
   await d.waitForTimeout(300);
   assert.equal(await d.locator('[data-plan-row="nafis"] .pd-btn').count(), 1, '"Bring back" restores the It landed button');
+  // a near miss just left of the ✕ still hits the ✕, never "tap when it lands"
+  const xb = await d.locator('.lens-meta [data-plan-dismiss="nafis"]').boundingBox();
+  const hit = await d.evaluate(([x, y]) => document.elementFromPoint(x, y)?.closest('[data-plan-dismiss], [data-plan-act]')?.dataset.planDismiss ? 'x' : 'other', [xb.x + xb.width / 2 - 8, xb.y + xb.height / 2]);
+  assert.equal(hit, 'x', 'a tap 8px left of the ✕ centre still lands on the ✕');
+  // the toast's Undo only brings back its own dismissal, even after Bring back
+  await d.click('[data-plan-row="nafis"] [data-plan-dismiss]');
+  await d.waitForTimeout(700);
+  await d.click('[data-plan-row="nafis"] [data-plan-restore]');
+  await d.waitForTimeout(200);
+  await d.click('#toast .toast-action').catch(() => {});
+  await d.waitForTimeout(300);
+  assert.equal(await d.locator('[data-plan-row="nafis"] .pd-btn').count(), 1, 'toast Undo after Bring back does not dismiss again');
+  // a quick double tap on ✕ leaves it dismissed
+  await d.dblclick('[data-plan-row="nafis"] [data-plan-dismiss]');
+  await d.waitForTimeout(300);
+  assert.equal(await d.locator('[data-plan-row="nafis"] [data-plan-restore]').count(), 1, 'double tap on ✕ stays dismissed');
+  await d.click('[data-plan-row="nafis"] [data-plan-restore]');
+  await d.waitForTimeout(300);
   // a responsibility on the ADIB view
   await d.click('.seg[data-seg="ADIB"]');
   await d.waitForSelector('.resp-line');
@@ -200,7 +218,7 @@ assert.deepEqual(errors, []);
   assert.ok(respBefore > 0, 'responsibilities still to pay have a dismiss button');
   await d.click('.resp-line .resp-x >> nth=0');
   await d.waitForTimeout(300);
-  assert.match(await d.textContent('.resp'), /Paid this cycle/);
+  assert.match(await d.textContent('.resp'), /Done · back 27 Oct/);
   assert.equal(await d.locator('.resp-x').count(), respBefore - 1);
   await d.screenshot({ path: '/tmp/e2e-dismiss-adib.png', fullPage: true });
   await dc.close();
