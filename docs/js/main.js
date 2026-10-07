@@ -3,7 +3,7 @@ import {
   cycleName, cycleRange, daysLeft, cycleLength, cycleBounds, summarize, money, fmt, fmtCompact, dayKey, dayLabel, timeLabel, toAED, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, restoreEntry, saveSettings, setDemo, setPrefs,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, restoreEntry, saveSettings, setDemo, setPrefs, undo, canUndo, lastAction, resetAll,
 } from './store.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
@@ -11,6 +11,8 @@ import { icon } from './icons.js';
 import { donut, bindDonut, paceLine, bindPace, inOutBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, CARD_COLORS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
+import { accountsSettingsBlock, accountsClick, openAccount } from './accounts.js';
+import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
 const TABS = ['home', 'activity', 'insights', 'settings'];
@@ -22,6 +24,14 @@ const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
 /* ───────────────────────── Shared bits ───────────────────────── */
 
 function entryRow(e) {
+  if (e.type === 'Adjustment') {
+    const v = +e.amount || 0;
+    return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry adj" type="button" data-id="${esc(e.id)}">
+    <span class="row-icon" style="--tint:${accountMeta(e.account).color}">${icon('sync', { size: 20 })}</span>
+    <span class="row-main"><span class="row-title">Checked with bank</span><span class="row-sub">${esc(e.account)} · ${timeLabel(e.date)}</span></span>
+    <span class="row-amt num tr">${v === 0 ? '✓ matched' : `${v > 0 ? '+' : '−'}${fmt(Math.abs(v), { fixed: true })}`}</span>
+  </button></div>`;
+  }
   const isIn = e.type === 'Income', isTr = e.type === 'Transfer';
   const meta = isTr ? null : categoryMeta(e.category, e.type);
   const tint = isTr ? 'var(--label-2)' : isIn ? 'var(--good)' : meta ? seriesColor(meta.slot) : 'var(--warn)';
@@ -52,7 +62,16 @@ function syncBadge() {
 }
 
 function largeTitle(title, sub = '', right = '') {
-  return `<header class="large-title"><div><h1>${title}</h1>${sub ? `<p class="lt-sub">${sub}</p>` : ''}</div><div class="lt-right">${right}</div></header>`;
+  return `<header class="large-title"><div><h1>${title}</h1>${sub ? `<p class="lt-sub">${sub}</p>` : ''}</div><div class="lt-right"><span class="undo-slot">${undoButton()}</span>${right}</div></header>`;
+}
+function undoButton() {
+  return canUndo() ? `<button type="button" class="undo-btn" data-act="undo" aria-label="Undo: ${esc(lastAction())}" title="Undo: ${esc(lastAction())} (⌘Z)">${icon('undo', { size: 18 })}</button>` : '';
+}
+function doUndo() {
+  if (!canUndo()) return;
+  haptic();
+  const label = undo();
+  toast(`Undone · ${esc(label)}`, { icon: icon('undo', { size: 18 }) });
 }
 
 function demoBanner() {
@@ -60,75 +79,6 @@ function demoBanner() {
 }
 
 /* ───────────────────────── Home ───────────────────────── */
-
-function renderHome() {
-  const s = state.settings, cyc = currentCycle();
-  const sum = summarize(state.entries, cyc, s);
-  const left = sum.allowanceLeft, dl = daysLeft(cyc, s.cycleStart);
-  const level = s.allowance > 0 ? Math.max(0, Math.min(1, left / s.allowance)) : 0;
-  const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
-  const perDay = dl > 0 && left > 0 ? left / dl : 0;
-  const reviewItems = state.entries.filter((e) => e.status === 'Review');
-  const emergency = sum.byAccount.get(s.emergencyAccount)?.spent || 0;
-  const recent = state.entries.slice(0, 6);
-  const onboarding = !isConnected() && !isDemo();
-
-  return `
-    ${largeTitle(cycleName(cyc), `${cycleRange(cyc, s.cycleStart)} · ${dl} ${dl === 1 ? 'day' : 'days'} left`, syncBadge())}
-    ${demoBanner()}
-    ${onboarding ? `<section class="onboard">
-        <h2>Connect your Google Sheet</h2>
-        <p>Your entries are saved on this phone for now. Connect your sheet so every entry, including Apple Pay ones, lands in one place.</p>
-        <div class="onboard-actions"><button class="btn-primary" type="button" data-go="settings">Set up</button><button class="btn-plain" type="button" data-act="demo">Try demo data</button></div>
-      </section>` : ''}
-    <section class="capsule ${tone}" style="--level:${level}" aria-label="Allowance">
-      <div class="liquid" aria-hidden="true">
-        <svg class="wave w1" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 0 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
-        <svg class="wave w2" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 18 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
-        <div class="liquid-body"></div>
-      </div>
-      <div class="cap-rim" aria-hidden="true"></div>
-      <div class="cap-content">
-        <span class="cap-label">${left < 0 ? 'Over your allowance' : 'Allowance left'}</span>
-        <span class="cap-value num" data-value="${Math.abs(left)}" style="--chars:${`AED ${fmt(Math.abs(left), { whole: true })}`.length}">AED ${fmt(Math.abs(left), { whole: true })}</span>
-        <span class="cap-meta">${left < 0
-          ? `You’ve spent ${money(sum.allowanceUsed, 'AED', { whole: true })} of ${money(s.allowance, 'AED', { whole: true })} on ${esc(s.allowanceAccount)}`
-          : `of ${fmt(s.allowance, { whole: true })} on ${esc(s.allowanceAccount)}${perDay ? ` · about <b>AED ${fmt(perDay, { whole: true })}</b> a day` : ''}`}</span>
-      </div>
-    </section>
-
-    <section class="flow" aria-label="This cycle">
-      <div><span class="flow-label">${icon('in', { size: 15 })}Money in</span><span class="flow-val num in">${fmtCompact(sum.income)}</span></div>
-      <div><span class="flow-label">${icon('out', { size: 15 })}Money out</span><span class="flow-val num">${fmtCompact(sum.spent)}</span></div>
-      <div><span class="flow-label">Net</span><span class="flow-val num ${sum.net >= 0 ? 'in' : 'neg'}">${sum.net >= 0 ? '+' : '−'}${fmtCompact(Math.abs(sum.net))}</span></div>
-    </section>
-
-    ${quickAdd()}
-
-    ${reviewItems.length ? `<button class="review-row" type="button" data-act="review">
-        <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">${reviewItems.length} ${reviewItems.length === 1 ? 'payment' : 'payments'} to sort</span><span class="row-sub">Pick a category for each</span></span>
-        ${icon('chevR', { size: 18, cls: 'chev' })}
-      </button>` : ''}
-
-    <h3 class="group-title">Accounts this cycle</h3>
-    <section class="group">
-      ${ACCOUNTS.map((a) => {
-        const v = sum.byAccount.get(a.id) || { spent: 0, received: 0, count: 0 };
-        const warn = a.id === s.emergencyAccount && emergency > 0;
-        return `<div class="row acc-row">
-          <span class="acc-tile" style="--tint:${a.color}">${icon(a.id === 'Cash' ? 'cash' : 'card', { size: 20 })}</span>
-          <span class="row-main"><span class="row-title">${a.name}</span><span class="row-sub ${warn ? 'warn-text' : ''}">${warn ? `${icon('warn', { size: 13 })} Emergency card used` : a.role}</span></span>
-          <span class="acc-figs num"><span>${fmt(v.spent, { whole: true })}</span>${v.received ? `<small class="in">+${fmt(v.received, { whole: true })}</small>` : '<small>spent</small>'}</span>
-        </div>`;
-      }).join('')}
-    </section>
-
-    <div class="group-head"><h3 class="group-title">Recent</h3>${state.entries.length ? '<button class="text-btn" type="button" data-go="activity">See all</button>' : ''}</div>
-    <section class="group">
-      ${recent.length ? recent.map(entryRow).join('') : `<div class="empty">${icon('card', { size: 28 })}<p>No entries yet.</p><p class="muted">Pay with Apple Pay or tap <b>+</b> to add one.</p></div>`}
-    </section>`;
-}
 
 /* Frequent purchases from the last 60 days, one tap to log again. */
 function quickAdd() {
@@ -160,7 +110,7 @@ function renderActivity() {
   return `
     ${largeTitle('Activity', `${state.entries.length} ${state.entries.length === 1 ? 'entry' : 'entries'}`, syncBadge())}
     ${demoBanner()}
-    <div class="search">${icon('search', { size: 18 })}<input type="search" placeholder="Search merchant, note or category" value="${esc(activityFilter.q)}" aria-label="Search entries" enterkeyhint="search"></div>
+    <div class="search">${icon('search', { size: 18 })}<input type="search" placeholder="Search" value="${esc(activityFilter.q)}" aria-label="Search entries" enterkeyhint="search"></div>
     <div class="filter-chips" role="tablist" aria-label="Filter">
       ${[['all', 'All'], ['Spend', 'Spending'], ['Income', 'Income'], ['Transfer', 'Transfers'], ['review', 'Needs review']]
         .map(([k, l]) => `<button type="button" role="tab" class="fchip${activityFilter.kind === k ? ' on' : ''}" aria-selected="${activityFilter.kind === k}" data-kind="${k}">${l}</button>`).join('')}
@@ -192,7 +142,7 @@ function renderInsights() {
   const s = state.settings;
   const cyc = insightsCycle || currentCycle();
   const isCurrent = cyc === currentCycle();
-  const sum = summarize(state.entries, cyc, s);
+  const sum = summarize(state.entries, cyc, s, state.plan);
 
   const main = SPEND_CATEGORIES.filter((c) => c.slot);
   const otherTotal = ['Family & Gifts', 'Other', 'Uncategorised'].reduce((a, k) => a + (sum.byCategory.get(k) || 0), 0)
@@ -210,20 +160,22 @@ function renderInsights() {
   const today = isCurrent ? Math.min(len - 1, Math.floor((Date.now() - start) / 864e5)) : len - 1;
   const perDay = new Array(len).fill(0);
   for (const e of sum.entries) {
-    if (e.type !== 'Spend' || e.account !== s.allowanceAccount) continue;
+    // a refund into the allowance account gives that money back on the day it lands
+    const refund = e.type === 'Income' && e.category === 'Refund';
+    if ((e.type !== 'Spend' && !refund) || e.account !== s.allowanceAccount) continue;
     const i = Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / 864e5)));
-    perDay[i] += toAED(e, s);
+    perDay[i] += refund ? -toAED(e, s) : toAED(e, s);
   }
   let run = 0;
   const cumulative = perDay.map((v, i) => (i > today ? null : (run += v)));
-  const pace = perDay.map((_, i) => (s.allowance * (i + 1)) / len);
+  const pace = perDay.map((_, i) => (sum.allowancePot * (i + 1)) / len);
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const labels = perDay.map((_, i) => { const [y, m, d] = dayKey(new Date(start.getTime() + i * 864e5 + 6 * 3600e3)).split('-').map(Number); return `${d} ${MON[m - 1]}`; });
   const paceDelta = cumulative[today] - pace[today];
 
   // six cycles
   const six = Array.from({ length: 6 }, (_, i) => shiftCycle(cyc, i - 5)).map((c) => {
-    const x = summarize(state.entries, c, s);
+    const x = summarize(state.entries, c, s, state.plan);
     return { label: cycleName(c, false).split(' ')[0], income: x.income, spent: x.spent, current: c === cyc };
   });
 
@@ -254,8 +206,8 @@ function renderInsights() {
 
     <section class="panel">
       <h3 class="panel-title">Allowance pace</h3>
-      <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(s.allowance, { whole: true })}.
-        ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'neg' : 'in'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} ahead of pace` : `AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>
+      <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(sum.allowancePot, { whole: true })}.
+        ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'pace-bad' : 'pace-good'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} over pace` : `On track · AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>
       <div class="series-legend"><span><i class="sw spend"></i>Spent so far</span><span><i class="sw pace"></i>Even pace</span></div>
       ${paceLine({ days: len, cumulative, pace, todayIndex: today, labels })}
     </section>
@@ -299,12 +251,14 @@ function renderSettings() {
         <span class="row-main"><span class="row-title">${isConnected() ? 'Connected' : 'Not connected'}</span>
           <span class="row-sub">${isConnected() ? (state.sync.status === 'error' ? `<span class="warn-text">${esc(state.sync.error)}</span>` : `Last synced ${syncedAgo}${state.outbox.length ? ` · ${state.outbox.length} waiting` : ''}`) : 'Paste the Web app URL and app key from your sheet'}</span></span>
       </div>
+      ${isConnected() ? '<details class="conn-details"><summary class="row link-row"><span class="row-main"><span class="row-title">Connection details</span></span>' + icon('chevD', { size: 16, cls: 'chev' }) + '</summary>' : ''}
       <label class="row input-row"><span>Web app URL</span><input name="url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="row input-row"><span>App key</span><input name="token" type="text" placeholder="From Spendings → Show my app key" value="${esc(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <div class="row btn-row">
         <button type="button" class="btn-tinted" data-act="connect">${icon('link', { size: 18 })}Connect</button>
         <button type="button" class="btn-tinted" data-act="sync" ${isConnected() ? '' : 'disabled'}>${icon('sync', { size: 18 })}Sync now</button>
       </div>
+      ${isConnected() ? '</details>' : ''}
       ${state.sheetUrl ? `<a class="row link-row" href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${icon('sheet', { size: 20 })}<span>Open the sheet</span>${icon('chevR', { size: 16, cls: 'chev' })}</a>` : ''}
     </section>
     <p class="group-foot">The app key is like a password for your sheet. It stays on this phone and in your Shortcut, never in the app’s code.</p>
@@ -323,11 +277,19 @@ function renderSettings() {
       ${appearanceBlock()}
     </section>
 
+    <h3 class="group-title" id="accounts">Accounts</h3>
+    <section class="group">${accountsSettingsBlock()}</section>
+    <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
+
+    <h3 class="group-title" id="plan">Payday plan</h3>
+    <section class="group plan-settings">${planSettingsBlock()}</section>
+    <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
+
     <h3 class="group-title">Budget</h3>
     <section class="group form">
-      <label class="row input-row"><span>Allowance per cycle</span><span class="suffix-input"><em>AED</em><input name="allowance" type="number" inputmode="decimal" min="0" step="50" value="${s.allowance}"></span></label>
+      <button type="button" class="row link-row" data-go="settings" data-anchor="plan"><span class="row-main"><span class="row-title">Allowance per cycle</span><span class="row-sub">Set by the allowance move in your payday plan</span></span><b class="num">${fmt(s.allowance, { whole: true })}</b>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <label class="row input-row"><span>Allowance card</span><select name="allowanceAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.allowanceAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
-      <label class="row input-row"><span>Emergency card</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
+      <label class="row input-row"><span>Main account (pay lands)</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
       <label class="row input-row"><span>Cycle starts on the</span><select name="cycleStart">${Array.from({ length: 28 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${d === s.cycleStart ? 'selected' : ''}>${ordinal(d)}</option>`).join('')}</select></label>
       <label class="row input-row"><span>USD → AED</span><input name="usdRate" type="number" inputmode="decimal" step="0.0001" min="0" value="${s.usdRate}"></label>
     </section>
@@ -341,6 +303,7 @@ function renderSettings() {
 
     <h3 class="group-title">Data</h3>
     <section class="group">
+      <button type="button" class="row link-row" data-act="reset"><span class="row-icon" style="--tint:var(--neg)">${icon('trash', { size: 20 })}</span><span class="row-main"><span class="row-title danger-text">Reset sheet</span><span class="row-sub">Erase every entry and start fresh</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <button type="button" class="row link-row" data-act="export"><span class="row-icon" style="--tint:var(--tint-text)">${icon('download', { size: 20 })}</span><span class="row-main"><span class="row-title">Export CSV</span><span class="row-sub">Every entry, for backup</span></span></button>
       <label class="row toggle-row"><span class="row-icon" style="--tint:var(--series-7)">${icon('sparkle', { size: 20 })}</span>
         <span class="row-main"><span class="row-title">Demo data</span><span class="row-sub">Look around with made-up numbers</span></span>
@@ -353,7 +316,7 @@ function renderSettings() {
 function appearanceBlock() {
   const a = normalizeAppearance(state.prefs.appearance);
   const acc = ACCENTS.find((x) => x.id === a.accent);
-  const changed = JSON.stringify(a) !== JSON.stringify(normalizeAppearance(DEFAULT_APPEARANCE));
+  const changed = a.theme !== DEFAULT_APPEARANCE.theme || a.accent !== DEFAULT_APPEARANCE.accent;
   return `
     <div class="ap-label">Theme</div>
     <div class="theme-seg" role="radiogroup" aria-label="Theme">
@@ -364,15 +327,6 @@ function appearanceBlock() {
       ${ACCENTS.map((x) => `<button type="button" role="radio" class="swatch accent-swatch" aria-checked="${x.id === a.accent}" aria-label="${x.name}" data-accent="${x.id}" style="--sw:${x.l[0]}; --sw-top:${x.l[3]}">${icon('check', { size: 16 })}</button>`).join('')}
     </div>
     <p class="group-foot" style="padding:0">Used for buttons, the tab bar and the allowance liquid.</p>
-    ${ACCOUNTS.map((acct) => {
-      const cur = a.cards[acct.id];
-      return `<div class="card-pick">
-        <div class="ap-label"><i class="acc-dot" style="--chip:${acct.color}"></i>${acct.name} colour</div>
-        <div class="swatches" role="radiogroup" aria-label="${acct.name} colour">
-          ${CARD_COLORS.map((c) => `<button type="button" role="radio" class="swatch" aria-checked="${c.id === cur}" aria-label="${c.name}" data-card="${acct.id}" data-color="${c.id}" style="--sw:${c.hex}">${icon('check', { size: 14 })}</button>`).join('')}
-        </div>
-      </div>`;
-    }).join('')}
     ${changed ? '<button type="button" class="text-btn reset-btn" data-act="reset-look">Reset colours</button>' : ''}`;
 }
 
@@ -469,7 +423,10 @@ function openShortcutGuide() {
 
 /* ───────────────────────── Router & render ───────────────────────── */
 
-const RENDER = { home: renderHome, activity: renderActivity, insights: renderInsights, settings: renderSettings };
+const RENDER = {
+  home: () => renderHome({ largeTitle, syncBadge, demoBanner, quickAdd, entryRow }),
+  activity: renderActivity, insights: renderInsights, settings: renderSettings,
+};
 
 function render(reason) {
   // keep typing undisturbed in settings and search
@@ -484,7 +441,10 @@ function render(reason) {
   const prevCap = view.querySelector('.capsule');
   const prevLevel = prevCap ? +getComputedStyle(prevCap).getPropertyValue('--level') : null;
   const prevVal = prevCap?.querySelector('.cap-value')?.dataset.value;
+  const snap = tab === 'home' && view.dataset.tab === 'home' ? snapshotHome() : null;
   view.innerHTML = RENDER[tab]();
+  if (tab === 'home') afterHomeRender(snap);
+  animateFresh();
   view.dataset.tab = tab;
   bindDonut(view);
   bindPace(view);
@@ -502,7 +462,8 @@ function render(reason) {
     const target = +v.dataset.value;
     if (prevVal != null) {
       v.dataset.value = prevVal;
-      rollNumber(v, target, (n) => `AED ${fmt(n, { whole: true })}`);
+      const unit = v.dataset.unit;
+      rollNumber(v, target, (n) => (unit === 'pct' ? `${Math.round(n)}%` : `AED ${fmt(n, { whole: true })}`));
     }
   }
   document.querySelectorAll('.tabbar [data-tab]').forEach((b) => {
@@ -515,6 +476,8 @@ function render(reason) {
 
 function go(next) {
   if (!TABS.includes(next)) return;
+  const t = document.getElementById('toast');
+  if (!t.hidden) { t.classList.remove('show'); setTimeout(() => { t.hidden = true; }, 250); }
   if (next === tab) { window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
   tab = next;
   history.replaceState(null, '', `#${tab}`);
@@ -539,24 +502,39 @@ function moveDroplet() {
   }
 }
 
-/* Compact glass nav bar appears once the large title scrolls away (iOS behaviour). */
-let titleObs;
+/* Large title hands over to the compact glass bar continuously as you scroll (iOS behaviour). */
 function observeTitle() {
   const nav = document.getElementById('navbar');
   const h1 = view.querySelector('.large-title h1');
   nav.querySelector('.nav-title').textContent = h1?.textContent || '';
-  titleObs?.disconnect();
-  if (!h1) return;
-  titleObs = new IntersectionObserver(([en]) => nav.classList.toggle('show', !en.isIntersecting), { rootMargin: '-44px 0px 0px 0px' });
-  titleObs.observe(h1);
+  scrollChrome();
 }
+let chromeTick = false;
+function scrollChrome() {
+  const nav = document.getElementById('navbar'), h1 = view.querySelector('.large-title h1');
+  const p = Math.min(1, Math.max(0, (window.scrollY - 24) / 36));
+  nav.style.opacity = p;
+  nav.style.transform = `translateY(${(p - 1) * 4}px)`;
+  nav.classList.toggle('show', p > 0.5);
+  if (h1) { h1.style.opacity = 1 - p; h1.style.transform = `translateY(${-p * 8}px) scale(${1 - p * 0.05})`; }
+}
+window.addEventListener('scroll', () => {
+  if (chromeTick) return;
+  chromeTick = true;
+  requestAnimationFrame(() => { chromeTick = false; scrollChrome(); });
+}, { passive: true });
 
 /* ───────────────────────── Events ───────────────────────── */
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t))) return;
   const goBtn = t.closest('[data-go]');
-  if (goBtn) { haptic(); return go(goBtn.dataset.go); }
+  if (goBtn) {
+    haptic(); go(goBtn.dataset.go);
+    if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
+    return;
+  }
   const tabBtn = t.closest('.tabbar [data-tab]');
   if (tabBtn) { haptic(); return go(tabBtn.dataset.tab); }
   if (t.closest('.fab')) { haptic(); return openEntry(); }
@@ -572,7 +550,12 @@ document.addEventListener('click', async (ev) => {
   if (openSwipe && !t.closest('.swipe.open')) { closeSwipe(); return; }
   const row = t.closest('.entry[data-id]');
   if (row && view.contains(row) && openSwipe) { closeSwipe(); return; }
-  if (row && view.contains(row)) { const e = state.entries.find((x) => x.id === row.dataset.id); if (e) openEntry(e); return; }
+  if (row && view.contains(row)) {
+    const e = state.entries.find((x) => x.id === row.dataset.id);
+    if (e?.type === 'Adjustment') toast('Swipe left to remove a bank match', { icon: icon('sync', { size: 18 }) });
+    else if (e) openEntry(e);
+    return;
+  }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
   const cyc = t.closest('[data-cyc]');
@@ -581,8 +564,6 @@ document.addEventListener('click', async (ev) => {
   if (mode) return setAppearance({ theme: mode.dataset.themeMode });
   const accent = t.closest('[data-accent]');
   if (accent) return setAppearance({ accent: accent.dataset.accent });
-  const cardColor = t.closest('[data-card][data-color]');
-  if (cardColor) return setAppearance({ cards: { [cardColor.dataset.card]: cardColor.dataset.color } });
   const act = t.closest('[data-act]')?.dataset.act;
   if (!act || !view.contains(t)) return;
   if (act === 'reset-look') return setAppearance({ ...DEFAULT_APPEARANCE });
@@ -592,6 +573,8 @@ document.addEventListener('click', async (ev) => {
   if (act === 'demo') { setDemo(true); toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) }); }
   if (act === 'exit-demo') { setDemo(false); render(); }
   if (act === 'export') exportCSV();
+  if (act === 'undo') doUndo();
+  if (act === 'reset') openReset();
   if (act === 'connect') connect(t.closest('[data-act]'));
 });
 
@@ -611,6 +594,52 @@ async function connect(btn) {
   } catch (e) {
     toast(e.message, { icon: icon('warn', { size: 18 }), tone: 'warn' });
   } finally { btn.disabled = false; btn.classList.remove('busy'); }
+}
+
+/* Press and hold to confirm: a slip of the finger can't erase anything. */
+function openReset() {
+  const n = state.entries.length;
+  openSheet({
+    label: 'Reset sheet', tall: false,
+    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">Cancel</button><h2 class="sheet-title">Reset sheet</h2><span class="icon-btn-spacer"></span></header>
+      <div class="reset-body">
+        <div class="reset-icon">${icon('trash', { size: 28 })}</div>
+        <p class="reset-lede">This erases <b>${n} ${n === 1 ? 'entry' : 'entries'}</b>, the merchants the app learned, and the month tabs.</p>
+        <ul class="reset-keep">
+          <li>${icon('check', { size: 16 })}Your accounts, payday plan and settings stay.</li>
+          <li>${icon('check', { size: 16 })}${isConnected() && !isDemo() ? 'The sheet saves a hidden backup tab first, so nothing is truly lost.' : 'Export a CSV first if you want a copy.'}</li>
+        </ul>
+        <button type="button" class="hold-btn" data-hold><span class="hold-fill" aria-hidden="true"></span><span class="hold-label">Hold to erase everything</span></button>
+      </div>`,
+    onMount(sheet, close) {
+      sheet.querySelector('[data-act="cancel"]').onclick = () => close();
+      const btn = sheet.querySelector('[data-hold]'), fill = sheet.querySelector('.hold-fill'), label = sheet.querySelector('.hold-label');
+      let anim = null;
+      const start = (ev) => {
+        ev.preventDefault();
+        haptic();
+        anim = fill.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 1600, easing: 'linear', fill: 'forwards' });
+        label.textContent = 'Keep holding…';
+        anim.onfinish = () => {
+          haptic();
+          resetAll();
+          close();
+          toast('Sheet reset · starting fresh', { icon: icon('check', { size: 18 }), tone: 'good' });
+        };
+      };
+      const stop = () => {
+        if (!anim || anim.playState === 'finished') return;
+        const p = anim.currentTime / 1600;
+        anim.cancel();
+        fill.animate([{ transform: `scaleX(${p})` }, { transform: 'scaleX(0)' }], { duration: 260, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+        label.textContent = 'Hold to erase everything';
+      };
+      btn.addEventListener('pointerdown', start);
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => btn.addEventListener(t, stop));
+      btn.addEventListener('keydown', (ev) => { if ((ev.key === ' ' || ev.key === 'Enter') && !ev.repeat) start(ev); });
+      btn.addEventListener('keyup', (ev) => { if (ev.key === ' ' || ev.key === 'Enter') stop(); });
+    },
+  });
 }
 
 function exportCSV() {
@@ -642,7 +671,27 @@ view.addEventListener('change', async (ev) => {
   }
 });
 
-subscribe((reason) => { if (reason !== 'prefs') render(reason); });
+// entries that appear (Apple Pay sync, a save, an undo) slide into their list instead of popping in
+let knownIds = new Set(state.entries.map((e) => e.id));
+let freshIds = new Set();
+subscribe((reason) => {
+  if (reason === 'prefs') return;
+  if (reason === 'history') { const slot = view.querySelector('.undo-slot'); if (slot) slot.innerHTML = undoButton(); return; }
+  const ids = new Set(state.entries.map((e) => e.id));
+  freshIds = new Set([...ids].filter((id) => !knownIds.has(id)));
+  knownIds = ids;
+  render(reason);
+  freshIds = new Set();
+});
+function animateFresh() {
+  if (!freshIds.size || reduceMotion()) return;
+  view.querySelectorAll('.swipe[data-id]').forEach((w) => {
+    if (!freshIds.has(w.dataset.id)) return;
+    const h = w.offsetHeight, sp = spring(0.9, 0.42);
+    w.animate([{ height: '0px', opacity: 0 }, { height: `${h}px`, opacity: 1 }], { duration: sp.duration, easing: sp.easing });
+    w.querySelector('.entry')?.animate([{ transform: 'translateY(-12px) scale(0.98)' }, { transform: 'none' }], { duration: sp.duration, easing: sp.easing });
+  });
+}
 window.addEventListener('online', () => sync());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
 window.addEventListener('resize', () => moveDroplet());
@@ -663,7 +712,7 @@ function swipeDelete(wrap) {
   const finish = () => {
     openSwipe = null;
     deleteEntry(removed.id);
-    toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => restoreEntry(removed), icon: icon('trash', { size: 18 }) });
+    toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
   };
   if (reduceMotion()) return finish();
   const row = wrap.querySelector('.entry');
@@ -727,6 +776,18 @@ function handleDeepLink() {
 
 applyAppearance(state.prefs.appearance);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance(state.prefs.appearance));
+/* Keyboard: N new entry · 1–4 tabs · ←/→ accounts on Home · / search · ⌘Z undo */
+document.addEventListener('keydown', (ev) => {
+  const typing = ev.target.matches?.('input, textarea, select, [contenteditable]');
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z' && !ev.shiftKey && !typing) { ev.preventDefault(); doUndo(); return; }
+  if (typing || ev.metaKey || ev.ctrlKey || ev.altKey || document.documentElement.classList.contains('sheet-open') || document.documentElement.classList.contains('locked')) return;
+  if (ev.key === 'n' || ev.key === 'N' || ev.key === '+') { ev.preventDefault(); openEntry(); }
+  else if (/^[1-4]$/.test(ev.key)) go(TABS[+ev.key - 1]);
+  else if (ev.key === '/') { ev.preventDefault(); go('activity'); setTimeout(() => view.querySelector('.search input')?.focus(), 60); }
+  else if (tab === 'home' && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft')) { ev.preventDefault(); stepFocus(ev.key === 'ArrowRight' ? 1 : -1); }
+});
+
+bindHomeGestures(view);
 render();
 initLock();
 handleDeepLink();

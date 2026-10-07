@@ -56,10 +56,6 @@ export function applyAppearance(raw) {
     root.style.setProperty(`--p-${k}-l`, acc.l[i]);
     root.style.setProperty(`--p-${k}-d`, acc.d[i]);
   });
-  for (const [account, colorId] of Object.entries(a.cards)) {
-    const c = CARD_COLORS.find((x) => x.id === colorId) || CARD_COLORS[0];
-    root.style.setProperty(`--acc-${account.toLowerCase()}`, c.hex);
-  }
 
   // status bar colour follows the page
   const dark = a.theme === 'dark' || (a.theme === 'system' && matchMedia('(prefers-color-scheme: dark)').matches);

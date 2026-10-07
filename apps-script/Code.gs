@@ -10,6 +10,8 @@
  *   Overview   — one row per pay cycle: money in, money out, net, allowance left.
  *   Settings   — allowance, cycle start day, USD rate, Wallet card-name mapping.
  *   Merchants  — remembered merchant → category pairs (auto-categorises Apple Pay).
+ *   Accounts   — your accounts: name, note, colour, and which Apple Wallet card they are.
+ *   Plan       — payday plan: salary, Nafis, money you move between accounts, and responsibilities.
  *   "Oct 2026" — one tab per pay cycle (27th → 26th), named after the month it ends in.
  */
 
@@ -18,16 +20,37 @@ var LEDGER = 'Ledger';
 var OVERVIEW = 'Overview';
 var SETTINGS = 'Settings';
 var MERCHANTS = 'Merchants';
+var PLAN = 'Plan';
+var ACCOUNTS_TAB = 'Accounts';
 
 var COLS = ['ID', 'Date', 'Cycle', 'Type', 'Amount', 'Currency', 'Amount (AED)', 'Account',
   'To account', 'Category', 'Merchant', 'Note', 'Source', 'Status', 'Created', 'Updated'];
 var C = {}; COLS.forEach(function (n, i) { C[n] = i; });
 
-var TYPES = ['Spend', 'Income', 'Transfer'];
+// Adjustment = "match my bank": a signed correction that makes an account's balance equal the bank's.
+var TYPES = ['Spend', 'Income', 'Transfer', 'Adjustment'];
+// Starting accounts. After setup the Accounts tab is the source of truth; ACCOUNTS is refreshed from it per request.
 var ACCOUNTS = ['ADIB', 'ADCB', 'BOTIM', 'Cash'];
+var ACCOUNT_COLS = ['Name', 'Note', 'Colour', 'Wallet name contains', 'Archived'];
+var DEFAULT_ACCOUNTS = [
+  ['ADIB', 'Main · pay lands here', 'teal', 'adib', ''],
+  ['ADCB', 'Personal allowance', 'red', 'adcb', ''],
+  ['BOTIM', 'Extra card', 'purple', 'botim', ''],
+  ['Cash', 'Notes & coins', 'green', '', ''],
+];
+var COLOUR_IDS = ['red', 'orange', 'gold', 'green', 'teal', 'sky', 'blue', 'indigo', 'purple', 'pink', 'graphite'];
 var SPEND_CATEGORIES = ['Food & Drinks', 'Groceries', 'Transport & Fuel', 'Shopping',
   'Bills & Subscriptions', 'Entertainment', 'Health', 'Family & Gifts', 'Travel', 'Other'];
-var INCOME_CATEGORIES = ['Salary', 'Allowance', 'Gift', 'Refund', 'Other'];
+var INCOME_CATEGORIES = ['Salary', 'Nafis', 'Allowance', 'Gift', 'Refund', 'Other'];
+
+var PLAN_COLS = ['ID', 'Name', 'Kind', 'Amount', 'Day', 'From', 'To', 'Category'];
+var PLAN_KINDS = ['Income', 'Move', 'Responsibility'];
+var DEFAULT_PLAN = [
+  ['salary', 'Salary', 'Income', 6000, 27, '', 'ADIB', 'Salary'],
+  ['nafis', 'Nafis', 'Income', 4500, 1, '', 'ADIB', 'Nafis'],
+  ['allowance', 'Allowance', 'Move', 3000, 27, 'ADIB', 'ADCB', ''],
+  ['fuel', 'Fuel', 'Responsibility', 0, '', 'ADIB', '', 'Transport & Fuel'],
+];
 
 var DEFAULT_SETTINGS = [
   ['Allowance (AED per cycle)', 3000, 'How much of your own money you plan to spend each cycle.'],
@@ -73,7 +96,8 @@ function setup() {
   ledger.setColumnWidth(C['Merchant'] + 1, 170);
   ledger.setColumnWidth(C['Note'] + 1, 220);
   addValidation_(ledger, C['Type'], TYPES);
-  addValidation_(ledger, C['Account'], ACCOUNTS);
+  ensureAccounts_();
+  refreshAccountValidation_();
   addValidation_(ledger, C['Status'], ['OK', 'Review']);
 
   var settings = ensureSheet_(SETTINGS);
@@ -96,6 +120,8 @@ function setup() {
     merchants.getRange('D:D').setNumberFormat('yyyy-mm-dd');
   }
 
+  ensurePlan_();
+  ensureAccounts_();
   ensureOverview_();
   ensureCycleTab_(cycleOf_(new Date(), getSettings_().cycleStart));
 
@@ -165,6 +191,10 @@ function doPost(e) {
       case 'update': return json_(updateEntry_(body.id, body.fields || {}));
       case 'delete': return json_(deleteEntry_(body.id));
       case 'settings': return json_(saveSettings_(body.settings || {}));
+      case 'plan': return json_(savePlan_(body.plan || []));
+      case 'accounts': return json_(saveAccounts_(body.accounts || []));
+      case 'renameAccount': return json_(renameAccount_(body.from, body.to));
+      case 'reset': return json_(resetSheet_());
       default: return json_({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -219,8 +249,9 @@ function addApplePay_(body) {
   if (remembered) msg += ' · ' + remembered;
   if (account.name === s.allowanceAccount) {
     msg += '\n' + fmtMoney_(Math.max(0, cyc.allowanceLeft), 'AED') + ' left of your allowance';
-  } else if (account.name === s.emergencyAccount) {
-    msg += '\n' + s.emergencyAccount + ' is your emergency card — ' + fmtMoney_(cyc.byAccount[s.emergencyAccount] || 0, 'AED') + ' used this cycle';
+  } else if (account.known) {
+    var bal = balanceInfo_(account.name);
+    if (bal.matched) msg += '\n' + fmtMoney_(bal.total, 'AED') + ' left in ' + account.name;
   }
   if (problems.indexOf('category') >= 0) msg += '\nAdded to Needs review';
   if (res.duplicates) msg = 'Already logged · ' + msg;
@@ -261,6 +292,12 @@ function updateEntry_(id, fields) {
   if (!('status' in fields)) delete merged.status;
   var e = normalise_(merged, s);
   e.id = id;
+  // a foreign-currency entry keeps the rate it was priced at unless its amount or currency
+  // changes; an undo from the app sends the exact old price back
+  if (e.currency !== 'AED') {
+    if (fields.amountAED != null && fields.amountAED !== '' && !isNaN(Number(fields.amountAED))) e.amountAED = Number(fields.amountAED);
+    else if (e.amount === current.amount && e.currency === current.currency && current.amountAED != null) e.amountAED = current.amountAED;
+  }
   var created = sh.getRange(row, C['Created'] + 1).getValue() || new Date();
   sh.getRange(row, 1, 1, COLS.length).setValues([toRow_(e, created, new Date())]);
   if (e.merchant && e.category && e.type === 'Spend') rememberMerchant_(e.merchant, e.category);
@@ -289,6 +326,8 @@ function listAll_() {
       cycleStart: s.cycleStart, usdRate: s.usdRate,
     },
     merchants: merchantMap_(),
+    plan: readPlan_(),
+    accounts: readAccounts_(),
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };
@@ -302,10 +341,27 @@ function saveSettings_(patch) {
     var v = patch[k];
     if (k === 'cycleStart') v = Math.min(28, Math.max(1, parseInt(v, 10) || 1));
     if (k === 'allowance' || k === 'usdRate') v = Number(v) || DEFAULT_SETTINGS[labels[k]][1];
-    if (/Account$/.test(k) && ACCOUNTS.indexOf(v) < 0) return;
+    if (/Account$/.test(k) && activeNames_().indexOf(v) < 0) return;
     sh.getRange(labels[k] + 2, 2).setValue(v);
+    if (k === 'cycleStart') retagCycles_(v);
   });
   return { ok: true, settings: listAll_().settings };
+}
+
+/** A new cycle start day moves entries between cycles: rewrite the Ledger's Cycle column. */
+function retagCycles_(startDay) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return;
+  var dates = sh.getRange(2, C['Date'] + 1, n, 1).getValues();
+  var cycles = dates.map(function (r) {
+    var d = r[0] instanceof Date ? r[0] : new Date(r[0]);
+    return [isNaN(d.getTime()) ? '' : cycleOf_(d, startDay)];
+  });
+  sh.getRange(2, C['Cycle'] + 1, n, 1).setValues(cycles);
+  var touched = {};
+  cycles.forEach(function (c) { if (c[0]) touched[c[0]] = true; });
+  Object.keys(touched).forEach(function (k) { ensureCycleTab_(k, true); });
 }
 
 /* ───────────────────────── Rows ───────────────────────── */
@@ -313,14 +369,14 @@ function saveSettings_(patch) {
 function normalise_(raw, s) {
   var type = TYPES.indexOf(raw.type) >= 0 ? raw.type : 'Spend';
   var currency = String(raw.currency || 'AED').toUpperCase().trim().slice(0, 3) || 'AED';
-  var amount = Math.round(Math.abs(Number(raw.amount) || 0) * 100) / 100;
+  var amount = Math.round((type === 'Adjustment' ? Number(raw.amount) || 0 : Math.abs(Number(raw.amount) || 0)) * 100) / 100;
   var date = raw.date ? new Date(raw.date) : new Date();
   if (isNaN(date.getTime())) date = new Date();
   var aed = currency === 'AED' ? amount : currency === 'USD' ? Math.round(amount * s.usdRate * 100) / 100 : '';
-  var account = ACCOUNTS.indexOf(raw.account) >= 0 ? raw.account : clean_(raw.account) || 'Cash';
-  var toAccount = type === 'Transfer' ? (ACCOUNTS.indexOf(raw.toAccount) >= 0 ? raw.toAccount : '') : '';
-  var category = type === 'Transfer' ? '' : clean_(raw.category);
-  var status = raw.status === 'Review' || raw.status === 'OK' ? raw.status
+  var account = clean_(raw.account) || 'Cash';
+  var toAccount = type === 'Transfer' ? clean_(raw.toAccount) : '';
+  var category = type === 'Transfer' || type === 'Adjustment' ? '' : clean_(raw.category);
+  var status = type === 'Adjustment' ? 'OK' : raw.status === 'Review' || raw.status === 'OK' ? raw.status
     : (type !== 'Transfer' && !category) || !(amount > 0) ? 'Review' : 'OK';
   return {
     id: clean_(raw.id) || 'x-' + Utilities.getUuid().slice(0, 13),
@@ -372,6 +428,167 @@ function idIndex_(sh) {
   return map;
 }
 
+/* ───────────────────────── Balances & plan ───────────────────────── */
+
+/** What an account holds now, in AED: everything in, minus everything out, plus bank matches. */
+function balanceOf_(account) { return balanceInfo_(account).total; }
+
+/** matched = the account has been matched to the bank at least once, so its balance is real. */
+function balanceInfo_(account) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  var n = sh.getLastRow() - 1, total = 0, matched = false;
+  if (n <= 0) return { total: 0, matched: false };
+  sh.getRange(2, 1, n, COLS.length).getValues().forEach(function (r) {
+    var v = Number(r[C['Amount (AED)']]) || 0, t = r[C['Type']];
+    if (r[C['Account']] === account) {
+      if (t === 'Adjustment') matched = true;
+      if (t === 'Income' || t === 'Adjustment') total += v;
+      else if (t === 'Spend' || t === 'Transfer') total -= v;
+    }
+    if (t === 'Transfer' && r[C['To account']] === account) total += v;
+  });
+  return { total: Math.round(total * 100) / 100, matched: matched };
+}
+
+function ensurePlan_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(PLAN);
+  if (sh) return sh;
+  sh = ensureSheet_(PLAN);
+  sh.getRange(1, 1, 1, PLAN_COLS.length).setValues([PLAN_COLS]);
+  sh.getRange(2, 1, DEFAULT_PLAN.length, PLAN_COLS.length).setValues(DEFAULT_PLAN);
+  styleHeader_(sh, PLAN_COLS.length);
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 120); sh.setColumnWidth(8, 170);
+  addValidation_(sh, 2, PLAN_KINDS);
+  sh.getRange('D:D').setNumberFormat('#,##0');
+  sh.getRange(DEFAULT_PLAN.length + 3, 1).setValue('Income = money that lands each cycle. Move = money you send between accounts. Responsibility = what an account must still pay (it counts down as you spend in that category).').setFontColor(MUTED);
+  return sh;
+}
+
+function readPlan_() {
+  var sh = ensurePlan_();
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return [];
+  return sh.getRange(2, 1, n, PLAN_COLS.length).getValues()
+    .filter(function (r) { return r[0] && PLAN_KINDS.indexOf(String(r[2])) >= 0; })
+    .map(function (r) {
+      return { id: String(r[0]), name: String(r[1]), kind: String(r[2]), amount: Number(r[3]) || 0,
+        day: r[4] === '' ? null : Math.min(31, Math.max(1, parseInt(r[4], 10) || 1)),
+        from: String(r[5] || ''), to: String(r[6] || ''), category: String(r[7] || '') };
+    });
+}
+
+function savePlan_(items) {
+  var sh = ensurePlan_();
+  var rows = (items || []).slice(0, 40).map(function (p) {
+    var kind = PLAN_KINDS.indexOf(p.kind) >= 0 ? p.kind : 'Responsibility';
+    return [clean_(p.id) || 'p-' + Utilities.getUuid().slice(0, 8), clean_(p.name) || kind, kind,
+      Math.max(0, Number(p.amount) || 0), p.day ? Math.min(31, Math.max(1, parseInt(p.day, 10) || 1)) : '',
+      allNames_().indexOf(p.from) >= 0 ? p.from : '', allNames_().indexOf(p.to) >= 0 ? p.to : '', clean_(p.category)];
+  });
+  var n = sh.getLastRow() - 1;
+  if (n > 0) sh.getRange(2, 1, n, PLAN_COLS.length).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, PLAN_COLS.length).setValues(rows);
+  return { ok: true, plan: readPlan_() };
+}
+
+/* ───────────────────────── Reset ───────────────────────── */
+
+/** Start fresh from the app: copy the Ledger to a hidden backup tab, then clear entries,
+    learned merchants and the cycle tabs. Accounts, plan and settings are kept. */
+function resetSheet_() {
+  var ss = SpreadsheetApp.getActive();
+  var led = ss.getSheetByName(LEDGER);
+  var n = led.getLastRow() - 1, backup = '';
+  if (n > 0) {
+    backup = 'Backup ' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH.mm');
+    var b = ss.insertSheet(backup, ss.getSheets().length);
+    b.getRange(1, 1, n + 1, COLS.length).setValues(led.getRange(1, 1, n + 1, COLS.length).getValues());
+    b.hideSheet();
+    led.getRange(2, 1, n, COLS.length).clearContent();
+  }
+  var mer = ss.getSheetByName(MERCHANTS);
+  if (mer && mer.getLastRow() > 1) mer.getRange(2, 1, mer.getLastRow() - 1, 4).clearContent();
+  ss.getSheets().forEach(function (sh) { if (tabNameToCycle_(sh.getName())) ss.deleteSheet(sh); });
+  ensureCycleTab_(cycleOf_(new Date(), getSettings_().cycleStart), true);
+  ensureOverview_(true);
+  return { ok: true, backup: backup };
+}
+
+/* ───────────────────────── Accounts ───────────────────────── */
+
+function ensureAccounts_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(ACCOUNTS_TAB);
+  if (sh) return sh;
+  sh = ensureSheet_(ACCOUNTS_TAB);
+  sh.getRange(1, 1, 1, ACCOUNT_COLS.length).setValues([ACCOUNT_COLS]);
+  sh.getRange(2, 1, DEFAULT_ACCOUNTS.length, ACCOUNT_COLS.length).setValues(DEFAULT_ACCOUNTS);
+  styleHeader_(sh, ACCOUNT_COLS.length);
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 220); sh.setColumnWidth(4, 190);
+  return sh;
+}
+
+/** Accounts in display order. Rename them from the app so past entries follow. */
+function readAccounts_() {
+  var sh = ensureAccounts_();
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return [];
+  return sh.getRange(2, 1, n, ACCOUNT_COLS.length).getValues()
+    .filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r) {
+      return { name: String(r[0]).trim(), note: String(r[1] || ''), color: COLOUR_IDS.indexOf(String(r[2])) >= 0 ? String(r[2]) : 'graphite',
+        wallet: String(r[3] || ''), archived: r[4] === true || /^(yes|true|x)$/i.test(String(r[4])) };
+    });
+}
+function allNames_() { return readAccounts_().map(function (a) { return a.name; }); }
+function activeNames_() { return readAccounts_().filter(function (a) { return !a.archived; }).map(function (a) { return a.name; }); }
+
+function refreshAccountValidation_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  if (sh) addValidation_(sh, C['Account'], activeNames_());
+}
+
+function saveAccounts_(list) {
+  var seen = {};
+  var rows = (list || []).slice(0, 20).map(function (a) {
+    var name = clean_(a.name).slice(0, 24);
+    return [name, clean_(a.note).slice(0, 60), COLOUR_IDS.indexOf(a.color) >= 0 ? a.color : 'graphite', clean_(a.wallet).slice(0, 40), a.archived ? 'yes' : ''];
+  }).filter(function (r) { if (!r[0] || seen[r[0].toLowerCase()]) return false; seen[r[0].toLowerCase()] = true; return true; });
+  if (!rows.length) return { ok: false, error: 'Keep at least one account.' };
+  var sh = ensureAccounts_();
+  var n = sh.getLastRow() - 1;
+  if (n > 0) sh.getRange(2, 1, n, ACCOUNT_COLS.length).clearContent();
+  sh.getRange(2, 1, rows.length, ACCOUNT_COLS.length).setValues(rows);
+  refreshAccountValidation_();
+  return { ok: true, accounts: readAccounts_() };
+}
+
+/** Rename everywhere: Accounts, every Ledger row, the Plan and Settings, so the sheet stays readable. */
+function renameAccount_(from, to) {
+  from = String(from || '').trim(); to = clean_(to).slice(0, 24);
+  if (!from || !to) return { ok: false, error: 'Give the account a name.' };
+  if (from === to) return { ok: true, accounts: readAccounts_() };
+  var names = allNames_();
+  // `from` may not be in the Accounts tab yet (added offline, then renamed); rows are still renamed.
+  if (names.some(function (n) { return n.toLowerCase() === to.toLowerCase() && n !== from; })) return { ok: false, error: 'You already have an account called ' + to + '.' };
+  var swap = function (sheet, col, rowStart) {
+    var n = sheet.getLastRow() - rowStart + 1;
+    if (n <= 0) return;
+    var rng = sheet.getRange(rowStart, col, n, 1), vals = rng.getValues(), changed = false;
+    vals.forEach(function (r) { if (String(r[0]) === from) { r[0] = to; changed = true; } });
+    if (changed) rng.setValues(vals);
+  };
+  var ss = SpreadsheetApp.getActive();
+  var acc = ensureAccounts_(); swap(acc, 1, 2);
+  var led = ss.getSheetByName(LEDGER); swap(led, C['Account'] + 1, 2); swap(led, C['To account'] + 1, 2);
+  var plan = ensurePlan_(); swap(plan, 6, 2); swap(plan, 7, 2);
+  var set = ss.getSheetByName(SETTINGS);
+  [3, 4].forEach(function (row) { if (String(set.getRange(row, 2).getValue()) === from) set.getRange(row, 2).setValue(to); });
+  refreshAccountValidation_();
+  return { ok: true, accounts: readAccounts_() };
+}
+
 /* ───────────────────────── Settings & merchants ───────────────────────── */
 
 function getSettings_() {
@@ -395,6 +612,14 @@ function getSettings_() {
 
 function mapCard_(card, cardMap) {
   var c = String(card || '').toLowerCase();
+  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  for (var j = 0; j < accs.length; j++) {
+    var key = String(accs[j].wallet || '').toLowerCase().trim();
+    if (key && c.indexOf(key) >= 0) return { name: accs[j].name, known: true };
+  }
+  for (var k = 0; k < accs.length; k++) {
+    if (accs[k].name && c.indexOf(accs[k].name.toLowerCase()) >= 0) return { name: accs[k].name, known: true };
+  }
   for (var i = 0; i < cardMap.length; i++) {
     if (cardMap[i][0] && c.indexOf(cardMap[i][0]) >= 0) return { name: cardMap[i][1], known: true };
   }
@@ -471,19 +696,74 @@ function cycleSummary_(cycle) {
   var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
   var n = sh.getLastRow() - 1;
   var out = { spent: 0, income: 0, byAccount: {}, allowanceUsed: 0 };
-  if (n > 0) {
-    sh.getRange(2, 1, n, COLS.length).getValues().forEach(function (r) {
-      if (String(r[C['Cycle']]) !== cycle) return;
-      var aed = Number(r[C['Amount (AED)']]) || 0;
-      if (r[C['Type']] === 'Spend') {
-        out.spent += aed;
-        out.byAccount[r[C['Account']]] = (out.byAccount[r[C['Account']]] || 0) + aed;
-        if (r[C['Account']] === s.allowanceAccount) out.allowanceUsed += aed;
-      } else if (r[C['Type']] === 'Income') out.income += aed;
-    });
-  }
-  out.allowanceLeft = s.allowance - out.allowanceUsed;
+  var rows = n > 0 ? sh.getRange(2, 1, n, COLS.length).getValues() : [];
+  rows.forEach(function (r) {
+    if (String(r[C['Cycle']]) !== cycle) return;
+    var aed = Number(r[C['Amount (AED)']]) || 0;
+    if (r[C['Type']] === 'Spend') {
+      out.spent += aed;
+      out.byAccount[r[C['Account']]] = (out.byAccount[r[C['Account']]] || 0) + aed;
+    } else if (r[C['Type']] === 'Income') out.income += aed;
+  });
+  var a = allowanceOf_(rows, cycle, s, readPlan_());
+  out.allowanceUsed = a.used;
+  out.allowanceLeft = a.left;
   return out;
+}
+
+/* The allowance, same rules as the app (docs/js/model.js allowanceOf):
+   transfers are reallocating, never spending; a refund into the allowance account gives the money
+   back; a top-up (main → allowance beyond the planned move) adds to the cycle it lands in, and
+   whatever of it is unspent at payday carries into the next cycle. */
+function allowanceOf_(rows, cycle, s, plan) {
+  var moves = (plan || []).filter(function (p) { return p.kind === 'Move' && p.to === s.allowanceAccount; });
+  if (!moves.length) moves = [{ id: 'allowance', amount: s.allowance, day: null }];
+  var now = allowanceCycle_(rows, cycle, s, moves);
+  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves);
+  var carryIn = Math.round(Math.min(prev.topUps, Math.max(0, s.allowance + prev.topUps - prev.used)) * 100) / 100;
+  var pot = s.allowance + now.topUps + carryIn;
+  return { used: now.used, topUps: now.topUps, carryIn: carryIn, pot: pot, left: pot - now.used };
+}
+
+function allowanceCycle_(rows, cycle, s, moves) {
+  var acc = s.allowanceAccount, hub = s.emergencyAccount;
+  var spent = 0, refunds = 0, topUps = 0;
+  rows.forEach(function (r) {
+    if (String(r[C['Cycle']]) !== cycle) return;
+    var aed = Number(r[C['Amount (AED)']]) || 0, type = r[C['Type']], from = r[C['Account']], to = r[C['To account']];
+    var source = String(r[C['Source']] || '');
+    if (type === 'Spend' && from === acc) spent += aed;
+    else if (type === 'Income' && from === acc && r[C['Category']] === 'Refund') refunds += aed;
+    else if (type === 'Transfer' && acc !== hub) {
+      if (from === hub && to === acc) {
+        var planned = moves.some(function (p) {
+          if (source === 'Plan:' + p.id) return true;
+          if (source.indexOf('Plan:') === 0 || !(p.amount > 0) || aed < p.amount * 0.95) return false;
+          if (!p.day) return true;
+          var d = r[C['Date']] instanceof Date ? r[C['Date']] : new Date(r[C['Date']]);
+          return Utilities.formatDate(d, TZ, 'yyyy-MM-dd') >= dueDayKey_(cycle, p.day, s.cycleStart);
+        });
+        if (!planned) topUps += aed;
+      } else if (from === acc && to === hub && source.indexOf('Plan:') !== 0) topUps -= aed;
+    }
+  });
+  topUps = Math.max(0, topUps);
+  return { spent: spent, refunds: refunds, topUps: topUps, used: Math.max(0, spent - refunds) };
+}
+
+function shiftCycle_(cycle, delta) {
+  var p = cycle.split('-').map(Number), y = p[0], m = p[1] + delta;
+  while (m > 12) { m -= 12; y += 1; }
+  while (m < 1) { m += 12; y -= 1; }
+  return y + '-' + (m < 10 ? '0' : '') + m;
+}
+
+/** "yyyy-MM-dd" of day-of-month `day` inside `cycle`. */
+function dueDayKey_(cycle, day, startDay) {
+  var p = cycle.split('-').map(Number), y = p[0], m = p[1];
+  if (startDay > 1 && day >= startDay) { m -= 1; if (m < 1) { m = 12; y -= 1; } }
+  var last = new Date(Date.UTC(y, m, 0)).getUTCDate(), d = Math.min(day, last);
+  return y + '-' + (m < 10 ? '0' : '') + m + '-' + (d < 10 ? '0' : '') + d;
 }
 
 /* ───────────────────────── Generated tabs ───────────────────────── */
@@ -520,7 +800,8 @@ function ensureCycleTab_(cycle, force) {
     ['Money out', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend")'],
     ['Net', '=B4-B5'],
     ['Allowance', "=Settings!B2"],
-    ['Allowance left', '=Settings!B2-SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',Settings!B3)'],
+    // a refund into the allowance account gives that money back
+    ['Allowance left', '=Settings!B2-SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',Settings!B3)+SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',Settings!B3,' + cat + ',"Refund")'],
     ['Needs review', '=COUNTIFS(' + cy + ',' + cyc + ',' + sts + ',"Review")'],
   ];
   sh.getRange(4, 1, summary.length, 2).setValues(summary);
@@ -541,7 +822,7 @@ function ensureCycleTab_(cycle, force) {
 
   var accTop = 4 + catRows.length + 2;
   sh.getRange(accTop, 4, 1, 3).setValues([['By account', 'Spent', 'Received']]);
-  var accRows = ACCOUNTS.map(function (a) {
+  var accRows = activeNames_().map(function (a) {
     return [a,
       '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',"' + a + '")',
       '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',"' + a + '")'];
@@ -585,7 +866,7 @@ function positionForCycle_(cycle) {
   // Newest cycle tabs sit right after the fixed tabs, newest first.
   var ss = SpreadsheetApp.getActive();
   var sheets = ss.getSheets();
-  var fixed = [OVERVIEW, LEDGER, SETTINGS, MERCHANTS];
+  var fixed = [OVERVIEW, LEDGER, ACCOUNTS_TAB, SETTINGS, MERCHANTS, PLAN];
   var idx = 0;
   for (var i = 0; i < sheets.length; i++) {
     var n = sheets[i].getName();
@@ -618,7 +899,8 @@ function ensureOverview_(force) {
   sh.getRange('B5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income"))))');
   sh.getRange('C5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"))))');
   sh.getRange('D5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income")-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"))))');
-  sh.getRange('E5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,Settings!B2-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend",' + acc + ',Settings!B3))))');
+  var cat = L + 'J:J';
+  sh.getRange('E5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,Settings!B2-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend",' + acc + ',Settings!B3)+SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income",' + acc + ',Settings!B3,' + cat + ',"Refund"))))');
   sh.getRange('F5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,COUNTIFS(' + cy + ',c,' + sts + ',"Review"))))');
   sh.getRange('A4:F4').setFontWeight('bold').setBackground(SOFT);
   sh.getRange('B5:E200').setNumberFormat('"AED "#,##0.00');

@@ -32,6 +32,8 @@ The sheet now has these tabs:
 | **Oct 2026**, **Nov 2026**… | One tab per cycle (27th → 26th), named after the month the cycle ends in. Each has totals, a category table with a donut chart, a per-account table, and every entry. New tabs appear automatically. |
 | **Ledger** | Every entry, one row each. This is the true record, and every other tab is calculated from it. You can fix typos here by hand. |
 | **Settings** | Allowance (3,000), allowance card (ADCB), emergency card (ADIB), cycle start day (27), USD rate (3.6725), and how Wallet card names map to your cards. |
+| **Accounts** | Your accounts: name, note, colour, and the text in its Apple Wallet card name. Manage them in the app under **Settings → Accounts**. Renaming there also renames every past entry. |
+| **Plan** | Your payday plan: Salary 6,000 and Nafis 4,500 into ADIB, the 3,000 allowance move to ADCB, and ADIB's responsibilities (fuel, bills…). Edit it here or in the app under **Settings → Payday plan**. |
 | **Merchants** | Merchant → category pairs the app has learned, e.g. Carrefour → Groceries. |
 
 > **If you change the script later:** use **Deploy → Manage deployments → ✏️ → Version: New version → Deploy**. This keeps the same URL. A *New deployment* would give you a new URL.
@@ -92,7 +94,15 @@ When you next pay with Apple Pay, you pick a category and get a notification lik
 - **Unrecognised card names:** if a card's Wallet name doesn't contain "ADIB", "ADCB" or "BOTIM", add a row to the mapping table in the sheet's **Settings** tab.
 - **No signal:** the Shortcut can't reach the sheet and shows an error. Add that payment with **+** in the app later. The app itself queues entries offline and syncs them when you're back online.
 
-## 4. Face ID lock (optional)
+## 4. Set your balances (1 minute)
+
+On Home, tap **Set your balances**. For each account, type what your bank app (or your wallet, for cash) shows right now.
+
+From then on:
+- The app keeps every balance up to date from what you log.
+- Whenever a balance looks off, open that account on Home and tap **Match with my … app**. The app records the difference as a correction, so the total always matches the bank.
+
+## 5. Face ID lock (optional)
 
 In the app, go to **Settings → Lock with Face ID**. The app then asks for Face ID when you open it, and again after it has been in the background for over a minute. This is a privacy screen on your phone; the real protection for your data is the app key.
 
