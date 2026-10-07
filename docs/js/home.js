@@ -62,7 +62,7 @@ function model() {
 }
 
 const lensColor = (f) => (f === 'all' ? 'var(--label-2)' : accountMeta(f).color);
-function valueFor(m, f) { return f === 'all' ? m.safe : m.bals.get(f)?.balance || 0; }
+function valueFor(m, f) { return f === 'all' ? m.total : m.bals.get(f)?.balance || 0; }
 
 function amountParts(v) {
   const neg = v < 0, a = Math.abs(Math.round(v * 100) / 100);
@@ -111,7 +111,7 @@ function amountHTML(v) {
 }
 
 function label(m, f) {
-  if (f === 'all') return `Safe to spend <span class="lens-role">· ${esc(m.allowAcc)} allowance left this cycle</span>`;
+  if (f === 'all') return 'All your money';
   const a = accountMeta(f);
   return `${a.name} <span class="lens-role">· ${f === m.hub ? 'pay lands here' : f === m.s.allowanceAccount ? 'allowance' : a.role.toLowerCase()}</span>`;
 }
@@ -134,7 +134,7 @@ function meta(m, f) {
   if (!m.matched) return 'Match each account with your bank once, and these become your real numbers.';
   if (f === 'all') {
     const unmoved = m.allowanceUnmoved ? ` · <button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.status.find((p) => p.kind === 'Move' && p.to === m.allowAcc && !p.complete)?.id || '')}">Allowance not moved yet</button>` : '';
-    return `${paceLine(m)}${unmoved}${expect}`;
+    return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend · ${paceLine(m)}${unmoved}${expect}`;
   }
   if (f === m.hub) return `<b>${fmt(m.hubB.free, { whole: true })}</b> is yours after responsibilities${expect}`;
   if (f === m.s.allowanceAccount) {
