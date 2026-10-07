@@ -19,6 +19,7 @@ timeline
         v6 : Undo everywhere : Reset sheet : iPhone keypad
         v7 : Safe to spend : Numbers that add up
         v8 : Allowance rules : Undo fixes : Live the same day
+        v9 : Online payments : Bank notifications : Logged once per tap
 ```
 
 ---
