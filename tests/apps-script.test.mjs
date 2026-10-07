@@ -172,4 +172,76 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'c1').cycle, '2026-11');
 }
 
+// Bank-app notifications (real ADCB wording)
+{
+  const env = makeEnv();
+  env.ctx.setup();
+  const tk = env.ctx.getToken_();
+  const p2 = (body) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify({ token: tk, ...body }) } }).text);
+  const ledger = () => p2({ action: 'list' }).entries;
+  const adcb = (amt, at) => `Debit Card XX5247 linked to account XX810001 was used for AED${amt} on Oct  7 2026  3:06PM at ${at}, AE. Available Balance AED 2335.14`;
+  const cyc = env.ctx.cycleOf_(new Date(), 27);
+
+  let a = env.ctx.parseBankAlert_(adcb('1.00', 'BOTIM MONEY'));
+  assert.deepEqual({ ...a.money }, { amount: 1, currency: 'AED' });
+  assert.equal(a.merchant, 'BOTIM MONEY');
+  assert.equal(env.ctx.parseBankAlert_('AED 6,000.00 has been credited to your account XX810001. Salary'), null);
+  assert.equal(env.ctx.parseBankAlert_('You have transferred AED 500.00 to account XX1234 on 07/10/2026'), null);
+  assert.equal(env.ctx.parseBankAlert_('Cash withdrawal of AED 200.00 at ATM DUBAI MALL with card XX5247'), null);
+  assert.equal(env.ctx.parseBankAlert_('Your OTP for purchase of AED 99.00 at AMAZON is 123456'), null);
+
+  // a top-up of your own BOTIM with the ADCB card is a move, not spending
+  const before = env.ctx.cycleSummary_(cyc).allowanceLeft;
+  let r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('1.00', 'BOTIM MONEY') });
+  assert.equal(r.entry.type, 'Transfer');
+  assert.equal(r.entry.account, 'ADCB');
+  assert.equal(r.entry.toAccount, 'BOTIM');
+  assert.equal(r.entry.status, 'OK');
+  assert.match(r.message, /Moved AED 1 from ADCB to BOTIM/);
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, before, 'a BOTIM top-up does not use the allowance');
+
+  // non-payments log nothing
+  const n0 = ledger().length;
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: 'AED 6,000.00 has been credited to your account XX810001.' });
+  assert.equal(r.ignored, true);
+  assert.equal(ledger().length, n0);
+
+  // a purchase: remembered merchant fills the category
+  p2({ action: 'add', entry: { id: 'm1', type: 'Spend', amount: 10, account: 'ADCB', category: 'Groceries', merchant: 'CARREFOUR', date: '2026-01-01T10:00:00+04:00' } });
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('42.50', 'CARREFOUR') });
+  assert.equal(r.entry.type, 'Spend');
+  assert.equal(r.entry.amount, 42.5);
+  assert.equal(r.entry.merchant, 'CARREFOUR');
+  assert.equal(r.entry.category, 'Groceries');
+  assert.equal(r.entry.source, 'Bank alert');
+  assert.match(r.message, /left of your allowance/);
+
+  // a tap fires both automations: the second one is recognised as the same payment
+  r = p2({ source: 'applepay', amount: 'AED 42.50', merchant: 'Carrefour Mall', card: 'ADCB Debit', category: 'Decide later' });
+  assert.equal(r.duplicate, true);
+  assert.match(r.message, /^Already logged/);
+  const spends = () => ledger().filter((e) => e.type === 'Spend' && e.amount === 42.5).length;
+  assert.equal(spends(), 1, 'counted once');
+  // …but a genuine second payment of the same amount is kept
+  p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('42.50', 'CARREFOUR') });
+  assert.equal(spends(), 1, 'same alert again in the same minute is the same entry');
+  r = p2({ source: 'applepay', amount: 'AED 42.50', merchant: 'Spinneys', card: 'ADCB Debit', category: 'Groceries' });
+  assert.equal(r.duplicate, false);
+  assert.equal(spends(), 2);
+
+  // Apple Pay first with an unrecognised merchant, then the bank shows it was a BOTIM top-up
+  r = p2({ source: 'applepay', amount: 'AED 75.00', merchant: 'Payit', card: 'ADCB Debit', category: 'Decide later' });
+  assert.equal(r.entry.type, 'Spend');
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('75.00', 'BOTIM MONEY') });
+  assert.equal(r.duplicate, true);
+  const fixed = ledger().filter((e) => e.amount === 75);
+  assert.equal(fixed.length, 1);
+  assert.equal(fixed[0].type, 'Transfer');
+  assert.equal(fixed[0].toAccount, 'BOTIM');
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, before - 42.5 * 2, 'only the two real purchases use the allowance');
+  // a merchant that merely contains an account's letters is still a purchase
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('12.00', 'CASHEW HOUSE') });
+  assert.equal(r.entry.type, 'Spend');
+}
+
 console.log('apps-script: all tests passed');

@@ -313,8 +313,10 @@ export function dateInCycle(cycle, day, startDay = 27) {
   return new Date(Date.UTC(yy, mm - 1, Math.min(day, last), 6) - 4 * 3600e3);
 }
 
-/** Where each plan item stands this cycle. */
-export function planStatus(plan, entries, cycle, settings, now = new Date()) {
+/** Where each plan item stands this cycle. `dismissed` ({ planId: cycle }) marks items you said
+    were already done this cycle: they count as complete, nothing is left of them, and the
+    dismissal expires when the cycle ends. */
+export function planStatus(plan, entries, cycle, settings, now = new Date(), dismissed = {}) {
   const inCycle = entries.filter((e) => e.cycle === cycle);
   return plan.map((p) => {
     const tagged = (e) => e.source === `Plan:${p.id}`;
@@ -330,10 +332,11 @@ export function planStatus(plan, entries, cycle, settings, now = new Date()) {
     } else {
       done = inCycle.filter((e) => e.type === 'Spend' && e.account === p.from && e.category === p.category).reduce((a, e) => a + toAED(e, settings), 0);
     }
-    const remaining = Math.max(0, p.amount - done);
-    const complete = p.kind === 'Responsibility' ? false : p.amount > 0 && done >= p.amount * 0.95;
-    const state = complete ? 'done' : !due ? 'open' : now >= due ? 'due' : 'upcoming';
-    return { ...p, due, done, remaining, complete, state };
+    const isDismissed = dismissed?.[p.id] === cycle;
+    const remaining = isDismissed ? 0 : Math.max(0, p.amount - done);
+    const complete = isDismissed || (p.kind === 'Responsibility' ? false : p.amount > 0 && done >= p.amount * 0.95);
+    const state = isDismissed ? 'dismissed' : complete ? 'done' : !due ? 'open' : now >= due ? 'due' : 'upcoming';
+    return { ...p, due, done, remaining, complete, dismissed: isDismissed, state };
   });
 }
 
@@ -364,19 +367,25 @@ export function hubFlow(entries, cycle, hub, settings) {
 /* ───────────────────────── Home numbers ───────────────────────── */
 
 /** The numbers Home shows: total money, Safe to spend and pace. Pure, so the checks run it too. */
-export function homeNumbers(entries, plan, settings, now = new Date()) {
+export function homeNumbers(entries, plan, settings, now = new Date(), dismissed = {}) {
   const s = settings, cyc = cycleOf(now, s.cycleStart);
   const bals = balances(entries, s);
   const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
-  const status = planStatus(plan, entries, cyc, s, now);
+  const status = planStatus(plan, entries, cyc, s, now, dismissed);
   const hub = s.emergencyAccount;
   const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
-  const sum = summarize(entries, cyc, s, plan);
+  let sum = summarize(entries, cyc, s, plan);
   // Safe to spend: what's left of this cycle's allowance. Until the allowance has been moved it
   // can't be more than the allowance account holds; after that, moving money on to another
   // account is reallocating and doesn't lower it.
   const allowAcc = s.allowanceAccount;
   const allowBal = bals.get(allowAcc)?.balance || 0;
+  // A move dismissed as "already done" was never logged, so neither was what got spent from it
+  // before tracking began. The matched balance is the truth: whatever the allowance says is left
+  // beyond what the account holds was spent before tracking, and counts as spent.
+  const dismissedMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && p.dismissed);
+  const spentBefore = dismissedMove && allowAcc !== hub ? Math.max(0, Math.round((sum.allowanceLeft - Math.max(allowBal, 0)) * 100) / 100) : 0;
+  if (spentBefore) sum = { ...sum, allowanceUsed: sum.allowanceUsed + spentBefore, allowanceLeft: sum.allowanceLeft - spentBefore, spentBefore };
   const allowLeft = sum.allowanceLeft;
   const allowMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && !p.complete) || null;
   const safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
@@ -386,7 +395,7 @@ export function homeNumbers(entries, plan, settings, now = new Date()) {
   const expected = (sum.allowancePot * elapsed) / len;
   const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart, now) };
   const allowanceUnmoved = !!allowMove && (!allowMove.due || dayKey(now) >= dayKey(allowMove.due));
-  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved };
+  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved, spentBefore };
 }
 
 /** "Where your money is": every part of the total, so the numbers visibly add up. */

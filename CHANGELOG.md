@@ -19,7 +19,33 @@ timeline
         v6 : Undo everywhere : Reset sheet : iPhone keypad
         v7 : Safe to spend : Numbers that add up
         v8 : Allowance rules : Undo fixes : Live the same day
+        v9 : Online payments : Bank notifications : Logged once per tap
+        v10 : Dismiss payday prompts : Back next cycle
 ```
+
+---
+
+## v10: Dismiss payday prompts
+**7 October 2026** · no sheet update needed
+
+- Every payday prompt now has a ✕ to dismiss it: "Salary due", "It landed", "Move now", "Allowance not moved yet" and a responsibility still to pay. Use it when the money already landed, moved or got paid before you started tracking.
+- A dismissed prompt stays hidden until the cycle ends, and the row says when it's back ("done, back on 27 Oct"). On the next payday it comes back as usual.
+- Dismissing logs nothing and doesn't change any balance. The item just stops counting as still to come, so ADIB's "Still to move" and "Responsibilities" drop.
+- Dismissing the allowance move keeps Safe to spend honest: it can't be more than ADCB holds. Whatever of the allowance isn't in ADCB counts as spent before you started tracking, and the allowance card says so.
+- The ✕ has a big tap area with a gap between it and "tap when it lands", so a near miss can't log the money twice.
+- The toast's Undo brings back only that prompt. "Bring back" on the row and the main undo button work too.
+- Dismissals are kept on your phone, not in the sheet.
+
+---
+
+## v9: Online payments from bank notifications
+**7 October 2026** · sheet update needed
+
+- Online and in-app payments are logged from your bank app's notification, through a new Shortcuts automation. Setup is in SETUP.md, section 3b.
+- Only card payments are logged. Salary, transfers, refunds, ATM withdrawals and OTP messages are ignored.
+- Topping up one of your own accounts with a card, like BOTIM from the ADCB card, is logged as a move between accounts, not spending.
+- A tap at a card machine sends both an Apple Pay trigger and a bank notification. The sheet sees they're the same payment and logs it once.
+- The sheet part needs the new `apps-script/Code.gs` pasted into Apps Script and a new version of the deployment published.
 
 ---
 

@@ -94,6 +94,29 @@ When you next pay with Apple Pay, you pick a category and get a notification lik
 - **Unrecognised card names:** if a card's Wallet name doesn't contain "ADIB", "ADCB" or "BOTIM", add a row to the mapping table in the sheet's **Settings** tab.
 - **No signal:** the Shortcut can't reach the sheet and shows an error. Add that payment with **+** in the app later. The app itself queues entries offline and syncs them when you're back online.
 
+### 3b. Bank-app notifications (online and in-app payments)
+
+The Apple Pay automation only fires when you tap your phone or Watch at a card machine. Online and in-app payments are caught from your bank app's notification instead. Make one of these per bank app (ADCB, ADIB):
+
+1. In **Shortcuts → Automation**, tap **+** and choose **Notification**.
+2. Set **App** to the bank app (for example ADCB) and **Title contains** to `ADCB` (ADCB's title is "ADCBAlert"). Choose **Run Immediately** and turn **Notify When Run** off. Tap **Next → Create New Shortcut**.
+3. Add **Get Contents of URL**: your Web app URL, Method **POST**, Request Body **JSON**, with these Text fields:
+
+   | Key | Value |
+   | --- | --- |
+   | `token` | your app key |
+   | `source` | `bank` |
+   | `app` | the bank's name, e.g. `ADCB` |
+   | `title` | Shortcut Input → **Title** |
+   | `body` | Shortcut Input → **Body** (if there's no Body, use **Shortcut Input** itself) |
+   | `category` | `Decide later` |
+4. Add **Get Dictionary Value** (Value for `message` in Contents of URL) and **Show Notification** with **Dictionary Value**, as in the Apple Pay Shortcut.
+
+**What it logs:**
+- Only card payments. Salary, transfers, refunds, ATM withdrawals, OTPs and other alerts are ignored, so moving money never counts as spending.
+- Paying one of your own accounts, like topping up BOTIM with the ADCB card ("…at BOTIM MONEY"), is logged as a move from ADCB to BOTIM, not as spending.
+- A tap at a card machine fires both automations. The second one is recognised as the same payment (same account and amount within 15 minutes) and isn't logged twice. The pair shows as "Apple Pay + Bank alert" in the Ledger's Source column.
+
 ## 4. Set your balances (1 minute)
 
 On Home, tap **Set your balances**. For each account, type what your bank app (or your wallet, for cash) shows right now.

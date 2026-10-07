@@ -2,7 +2,7 @@
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { demoEntries, DEMO_PLAN } from './demo.js';
 
-const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs' };
+const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
 
 const read = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full or blocked */ } };
@@ -19,6 +19,8 @@ export const state = {
   prefs: { lock: false, demo: false, credId: '', appearance: null, ...read(K.prefs, {}) },
   sync: { status: 'idle', error: '', at: 0 },
   sheetUrl: '',
+  // payday prompts hidden for one cycle: { planId: cycle }. Kept on this phone; changes no balances.
+  dismissed: read(K.dismissed, {}),
 };
 
 const cache = read(K.cache, null);
@@ -268,6 +270,37 @@ export function savePlan(plan) {
   sync();
 }
 
+/* ───── Dismissed prompts ─────
+   "Already done" for a plan item this cycle (it was paid or moved before you started tracking).
+   It only hides the prompt and stops the item being counted as still to come; no entry is logged
+   and no balance changes. Next cycle the prompt comes back. */
+
+function commitDismissed(map) {
+  state.dismissed = map;
+  if (!state.prefs.demo) write(K.dismissed, map);
+  emit('plan');
+}
+
+export function dismissPlan(id, cycle) {
+  const before = state.dismissed;
+  const name = state.plan.find((p) => p.id === id)?.name || 'prompt';
+  record(`Dismissed ${name}`, () => commitDismissed(before));
+  // older cycles' dismissals have expired, so they're dropped as new ones are written
+  const next = Object.fromEntries(Object.entries(before).filter(([, c]) => c >= cycle));
+  next[id] = cycle;
+  commitDismissed(next);
+}
+
+export function restorePlan(id) {
+  if (!(id in state.dismissed)) return;
+  const before = state.dismissed;
+  const name = state.plan.find((p) => p.id === id)?.name || 'prompt';
+  record(`Brought back ${name}`, () => commitDismissed(before));
+  const next = { ...before };
+  delete next[id];
+  commitDismissed(next);
+}
+
 /* ───── Accounts ───── */
 
 function commitAccounts(list, { queue = true } = {}) {
@@ -354,6 +387,7 @@ export function suggestCategory(merchant) {
 
 export function loadDemo() {
   state.prefs.demo = true;
+  state.dismissed = {};
   state.entries = sortEntries(demoEntries(state.settings));
   state.merchants = {};
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
@@ -366,6 +400,7 @@ export function setDemo(on) {
   history.length = 0;
   emit('history');
   setPrefs({ demo: on });
+  state.dismissed = on ? {} : read(K.dismissed, {});
   if (on) loadDemo();
   else {
     const c = read(K.cache, null);
