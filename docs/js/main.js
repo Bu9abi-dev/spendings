@@ -11,6 +11,7 @@ import { icon } from './icons.js';
 import { donut, bindDonut, paceLine, bindPace, inOutBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, CARD_COLORS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
+import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock } from './home.js';
 
 const view = document.getElementById('view');
 const TABS = ['home', 'activity', 'insights', 'settings'];
@@ -22,6 +23,14 @@ const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
 /* ───────────────────────── Shared bits ───────────────────────── */
 
 function entryRow(e) {
+  if (e.type === 'Adjustment') {
+    const v = +e.amount || 0;
+    return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry adj" type="button" data-id="${esc(e.id)}">
+    <span class="row-icon" style="--tint:${accountMeta(e.account).color}">${icon('sync', { size: 20 })}</span>
+    <span class="row-main"><span class="row-title">Matched with bank</span><span class="row-sub">${esc(e.account)} · ${timeLabel(e.date)}</span></span>
+    <span class="row-amt num tr">${v === 0 ? 'exact' : `${v > 0 ? '+' : '−'}${fmt(Math.abs(v), { fixed: true })}`}</span>
+  </button></div>`;
+  }
   const isIn = e.type === 'Income', isTr = e.type === 'Transfer';
   const meta = isTr ? null : categoryMeta(e.category, e.type);
   const tint = isTr ? 'var(--label-2)' : isIn ? 'var(--good)' : meta ? seriesColor(meta.slot) : 'var(--warn)';
@@ -60,75 +69,6 @@ function demoBanner() {
 }
 
 /* ───────────────────────── Home ───────────────────────── */
-
-function renderHome() {
-  const s = state.settings, cyc = currentCycle();
-  const sum = summarize(state.entries, cyc, s);
-  const left = sum.allowanceLeft, dl = daysLeft(cyc, s.cycleStart);
-  const level = s.allowance > 0 ? Math.max(0, Math.min(1, left / s.allowance)) : 0;
-  const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
-  const perDay = dl > 0 && left > 0 ? left / dl : 0;
-  const reviewItems = state.entries.filter((e) => e.status === 'Review');
-  const emergency = sum.byAccount.get(s.emergencyAccount)?.spent || 0;
-  const recent = state.entries.slice(0, 6);
-  const onboarding = !isConnected() && !isDemo();
-
-  return `
-    ${largeTitle(cycleName(cyc), `${cycleRange(cyc, s.cycleStart)} · ${dl} ${dl === 1 ? 'day' : 'days'} left`, syncBadge())}
-    ${demoBanner()}
-    ${onboarding ? `<section class="onboard">
-        <h2>Connect your Google Sheet</h2>
-        <p>Your entries are saved on this phone for now. Connect your sheet so every entry, including Apple Pay ones, lands in one place.</p>
-        <div class="onboard-actions"><button class="btn-primary" type="button" data-go="settings">Set up</button><button class="btn-plain" type="button" data-act="demo">Try demo data</button></div>
-      </section>` : ''}
-    <section class="capsule ${tone}" style="--level:${level}" aria-label="Allowance">
-      <div class="liquid" aria-hidden="true">
-        <svg class="wave w1" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 0 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
-        <svg class="wave w2" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 18 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
-        <div class="liquid-body"></div>
-      </div>
-      <div class="cap-rim" aria-hidden="true"></div>
-      <div class="cap-content">
-        <span class="cap-label">${left < 0 ? 'Over your allowance' : 'Allowance left'}</span>
-        <span class="cap-value num" data-value="${Math.abs(left)}" style="--chars:${`AED ${fmt(Math.abs(left), { whole: true })}`.length}">AED ${fmt(Math.abs(left), { whole: true })}</span>
-        <span class="cap-meta">${left < 0
-          ? `You’ve spent ${money(sum.allowanceUsed, 'AED', { whole: true })} of ${money(s.allowance, 'AED', { whole: true })} on ${esc(s.allowanceAccount)}`
-          : `of ${fmt(s.allowance, { whole: true })} on ${esc(s.allowanceAccount)}${perDay ? ` · about <b>AED ${fmt(perDay, { whole: true })}</b> a day` : ''}`}</span>
-      </div>
-    </section>
-
-    <section class="flow" aria-label="This cycle">
-      <div><span class="flow-label">${icon('in', { size: 15 })}Money in</span><span class="flow-val num in">${fmtCompact(sum.income)}</span></div>
-      <div><span class="flow-label">${icon('out', { size: 15 })}Money out</span><span class="flow-val num">${fmtCompact(sum.spent)}</span></div>
-      <div><span class="flow-label">Net</span><span class="flow-val num ${sum.net >= 0 ? 'in' : 'neg'}">${sum.net >= 0 ? '+' : '−'}${fmtCompact(Math.abs(sum.net))}</span></div>
-    </section>
-
-    ${quickAdd()}
-
-    ${reviewItems.length ? `<button class="review-row" type="button" data-act="review">
-        <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">${reviewItems.length} ${reviewItems.length === 1 ? 'payment' : 'payments'} to sort</span><span class="row-sub">Pick a category for each</span></span>
-        ${icon('chevR', { size: 18, cls: 'chev' })}
-      </button>` : ''}
-
-    <h3 class="group-title">Accounts this cycle</h3>
-    <section class="group">
-      ${ACCOUNTS.map((a) => {
-        const v = sum.byAccount.get(a.id) || { spent: 0, received: 0, count: 0 };
-        const warn = a.id === s.emergencyAccount && emergency > 0;
-        return `<div class="row acc-row">
-          <span class="acc-tile" style="--tint:${a.color}">${icon(a.id === 'Cash' ? 'cash' : 'card', { size: 20 })}</span>
-          <span class="row-main"><span class="row-title">${a.name}</span><span class="row-sub ${warn ? 'warn-text' : ''}">${warn ? `${icon('warn', { size: 13 })} Emergency card used` : a.role}</span></span>
-          <span class="acc-figs num"><span>${fmt(v.spent, { whole: true })}</span>${v.received ? `<small class="in">+${fmt(v.received, { whole: true })}</small>` : '<small>spent</small>'}</span>
-        </div>`;
-      }).join('')}
-    </section>
-
-    <div class="group-head"><h3 class="group-title">Recent</h3>${state.entries.length ? '<button class="text-btn" type="button" data-go="activity">See all</button>' : ''}</div>
-    <section class="group">
-      ${recent.length ? recent.map(entryRow).join('') : `<div class="empty">${icon('card', { size: 28 })}<p>No entries yet.</p><p class="muted">Pay with Apple Pay or tap <b>+</b> to add one.</p></div>`}
-    </section>`;
-}
 
 /* Frequent purchases from the last 60 days, one tap to log again. */
 function quickAdd() {
@@ -323,11 +263,15 @@ function renderSettings() {
       ${appearanceBlock()}
     </section>
 
+    <h3 class="group-title" id="plan">Payday plan</h3>
+    <section class="group plan-settings">${planSettingsBlock()}</section>
+    <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
+
     <h3 class="group-title">Budget</h3>
     <section class="group form">
       <label class="row input-row"><span>Allowance per cycle</span><span class="suffix-input"><em>AED</em><input name="allowance" type="number" inputmode="decimal" min="0" step="50" value="${s.allowance}"></span></label>
       <label class="row input-row"><span>Allowance card</span><select name="allowanceAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.allowanceAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
-      <label class="row input-row"><span>Emergency card</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
+      <label class="row input-row"><span>Main account (pay lands)</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
       <label class="row input-row"><span>Cycle starts on the</span><select name="cycleStart">${Array.from({ length: 28 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${d === s.cycleStart ? 'selected' : ''}>${ordinal(d)}</option>`).join('')}</select></label>
       <label class="row input-row"><span>USD → AED</span><input name="usdRate" type="number" inputmode="decimal" step="0.0001" min="0" value="${s.usdRate}"></label>
     </section>
@@ -469,7 +413,10 @@ function openShortcutGuide() {
 
 /* ───────────────────────── Router & render ───────────────────────── */
 
-const RENDER = { home: renderHome, activity: renderActivity, insights: renderInsights, settings: renderSettings };
+const RENDER = {
+  home: () => renderHome({ largeTitle, syncBadge, demoBanner, quickAdd, entryRow }),
+  activity: renderActivity, insights: renderInsights, settings: renderSettings,
+};
 
 function render(reason) {
   // keep typing undisturbed in settings and search
@@ -484,7 +431,9 @@ function render(reason) {
   const prevCap = view.querySelector('.capsule');
   const prevLevel = prevCap ? +getComputedStyle(prevCap).getPropertyValue('--level') : null;
   const prevVal = prevCap?.querySelector('.cap-value')?.dataset.value;
+  const snap = tab === 'home' && view.dataset.tab === 'home' ? snapshotHome() : null;
   view.innerHTML = RENDER[tab]();
+  if (tab === 'home') afterHomeRender(snap);
   view.dataset.tab = tab;
   bindDonut(view);
   bindPace(view);
@@ -555,8 +504,13 @@ function observeTitle() {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
+  if (view.contains(t) && homeClick(t)) return;
   const goBtn = t.closest('[data-go]');
-  if (goBtn) { haptic(); return go(goBtn.dataset.go); }
+  if (goBtn) {
+    haptic(); go(goBtn.dataset.go);
+    if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
+    return;
+  }
   const tabBtn = t.closest('.tabbar [data-tab]');
   if (tabBtn) { haptic(); return go(tabBtn.dataset.tab); }
   if (t.closest('.fab')) { haptic(); return openEntry(); }
@@ -572,7 +526,12 @@ document.addEventListener('click', async (ev) => {
   if (openSwipe && !t.closest('.swipe.open')) { closeSwipe(); return; }
   const row = t.closest('.entry[data-id]');
   if (row && view.contains(row) && openSwipe) { closeSwipe(); return; }
-  if (row && view.contains(row)) { const e = state.entries.find((x) => x.id === row.dataset.id); if (e) openEntry(e); return; }
+  if (row && view.contains(row)) {
+    const e = state.entries.find((x) => x.id === row.dataset.id);
+    if (e?.type === 'Adjustment') toast('Swipe left to remove a bank match', { icon: icon('sync', { size: 18 }) });
+    else if (e) openEntry(e);
+    return;
+  }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
   const cyc = t.closest('[data-cyc]');
@@ -727,6 +686,7 @@ function handleDeepLink() {
 
 applyAppearance(state.prefs.appearance);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance(state.prefs.appearance));
+bindHomeGestures(view);
 render();
 initLock();
 handleDeepLink();

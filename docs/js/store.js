@@ -1,6 +1,6 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, cycleOf, toAED, uid } from './model.js';
-import { demoEntries } from './demo.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, cycleOf, toAED, uid } from './model.js';
+import { demoEntries, DEMO_PLAN } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs' };
 
@@ -13,6 +13,7 @@ export const state = {
   entries: [],
   settings: { ...DEFAULT_SETTINGS },
   merchants: {},
+  plan: DEFAULT_PLAN.map((p) => ({ ...p })),
   outbox: read(K.outbox, []),
   prefs: { lock: false, demo: false, credId: '', appearance: null, ...read(K.prefs, {}) },
   sync: { status: 'idle', error: '', at: 0 },
@@ -20,7 +21,7 @@ export const state = {
 };
 
 const cache = read(K.cache, null);
-if (cache) Object.assign(state, { entries: cache.entries || [], settings: { ...DEFAULT_SETTINGS, ...cache.settings }, merchants: cache.merchants || {}, sheetUrl: cache.sheetUrl || '' });
+if (cache) Object.assign(state, { entries: cache.entries || [], settings: { ...DEFAULT_SETTINGS, ...cache.settings }, merchants: cache.merchants || {}, sheetUrl: cache.sheetUrl || '', plan: cache.plan?.length ? cache.plan : state.plan });
 
 export const isConnected = () => !!(state.conn.url && state.conn.token);
 export const isDemo = () => !!state.prefs.demo;
@@ -29,7 +30,7 @@ function emit(reason) { for (const fn of listeners) fn(reason); }
 
 function persist() {
   if (state.prefs.demo) return;
-  write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl });
+  write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl, plan: state.plan });
   write(K.outbox, state.outbox);
 }
 
@@ -85,6 +86,7 @@ export function sync() {
       const data = await call({ action: 'list' });
       state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
       state.merchants = data.merchants || {};
+      if (Array.isArray(data.plan) && !state.outbox.some((o) => o.op === 'plan')) state.plan = data.plan;
       state.sheetUrl = data.sheetUrl || '';
       const pending = new Map(state.outbox.map((o) => [o.id, o]));
       const server = (data.entries || []).filter((e) => !(pending.get(e.id)?.op === 'delete'));
@@ -115,6 +117,7 @@ async function flushOutbox() {
     else if (op.op === 'update') await call({ action: 'update', id: op.id, fields: op.fields });
     else if (op.op === 'delete') await call({ action: 'delete', id: op.id });
     else if (op.op === 'settings') await call({ action: 'settings', settings: op.settings });
+    else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
     state.outbox.shift();
     persist();
   }
@@ -140,9 +143,9 @@ function finalize(e) {
   if (!out.date || Number.isNaN(new Date(out.date).getTime())) out.date = new Date().toISOString();
   out.cycle = cycleOf(out.date, state.settings.cycleStart);
   out.amountAED = toAED({ ...out, amountAED: null }, state.settings);
-  if (out.type === 'Transfer') out.category = '';
-  else out.toAccount = '';
-  out.status = (out.type !== 'Transfer' && !out.category) || !(out.amount > 0) ? 'Review' : 'OK';
+  if (out.type === 'Transfer' || out.type === 'Adjustment') out.category = '';
+  if (out.type !== 'Transfer') out.toAccount = '';
+  out.status = out.type === 'Adjustment' ? 'OK' : (out.type !== 'Transfer' && !out.category) || !(out.amount > 0) ? 'Review' : 'OK';
   return out;
 }
 
@@ -196,6 +199,16 @@ export function saveSettings(patch) {
 
 // same normalisation as the sheet's Merchants tab
 const merchantKey = (m) => String(m || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
+export function savePlan(plan) {
+  state.plan = plan;
+  if (!state.prefs.demo) {
+    state.outbox = state.outbox.filter((o) => o.op !== 'plan');
+    enqueue({ op: 'plan', id: '', plan });
+  }
+  persist(); emit('plan');
+  sync();
+}
+
 export function suggestCategory(merchant) {
   const k = merchantKey(merchant);
   return k ? state.merchants[k] || '' : '';
@@ -207,6 +220,7 @@ export function loadDemo() {
   state.prefs.demo = true;
   state.entries = sortEntries(demoEntries(state.settings));
   state.merchants = {};
+  state.plan = DEMO_PLAN.map((p) => ({ ...p }));
 }
 
 export function setDemo(on) {
@@ -217,6 +231,7 @@ export function setDemo(on) {
     state.entries = c?.entries || [];
     state.merchants = c?.merchants || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(c?.settings || {}) };
+    state.plan = c?.plan?.length ? c.plan : DEFAULT_PLAN.map((p) => ({ ...p }));
   }
   emit('entries');
 }

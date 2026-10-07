@@ -58,7 +58,7 @@ assert.equal(again.duplicate, true);
 // unknown merchant without category → Review; ADIB warning
 r = post({ source: 'applepay', amount: 'AED 15', merchant: 'Noon', card: 'ADIB Cashback Visa', category: 'Decide later' });
 assert.equal(r.entry.status, 'Review');
-assert.match(r.message, /emergency card/);
+assert.doesNotMatch(r.message, /left in ADIB/); // balance not matched yet, so no balance line
 assert.match(r.message, /Needs review/);
 
 // update clears review, remembers merchant
@@ -83,5 +83,23 @@ assert.equal(list.entries.length, 4);
 r = post({ action: 'settings', settings: { allowance: 3500, cycleStart: 40 } });
 assert.equal(r.settings.allowance, 3500);
 assert.equal(r.settings.cycleStart, 28);
+
+// plan tab exists with defaults
+let plan = post({ action: 'list' }).plan;
+assert.deepEqual(plan.map((p) => p.id), ['salary', 'nafis', 'allowance', 'fuel']);
+assert.equal(plan.find((p) => p.id === 'nafis').amount, 4500);
+r = post({ action: 'plan', plan: [...plan, { name: 'Phone bill', kind: 'Responsibility', amount: 125, from: 'ADIB', category: 'Bills & Subscriptions' }] });
+assert.equal(r.plan.length, 5);
+assert.equal(r.plan[4].name, 'Phone bill');
+
+// adjustments keep their sign and count toward the balance
+r = post({ action: 'add', entry: { id: 'adj1', type: 'Adjustment', amount: 1000, account: 'ADIB', note: 'Match bank' } });
+assert.equal(r.entries[0].status, 'OK');
+r = post({ action: 'add', entry: { id: 'adj2', type: 'Adjustment', amount: -250.5, account: 'ADIB' } });
+assert.equal(r.entries[0].amount, -250.5);
+// ADIB so far: -36.73 (USD spend) -15 (Noon) +1000 -250.5
+assert.equal(ctx.balanceOf_('ADIB'), Math.round((1000 - 250.5 - 36.73 - 15) * 100) / 100);
+r = post({ source: 'applepay', amount: 'AED 20', merchant: 'ADNOC', card: 'ADIB Visa', category: 'Transport & Fuel' });
+assert.match(r.message, /left in ADIB/);
 
 console.log('apps-script: all tests passed');

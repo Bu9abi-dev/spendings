@@ -1,8 +1,8 @@
 // Domain constants, cycle maths, money formatting and aggregations. No DOM here.
 
 export const ACCOUNTS = [
+  { id: 'ADIB', name: 'ADIB', role: 'Main · pay lands here', color: 'var(--acc-adib)' },
   { id: 'ADCB', name: 'ADCB', role: 'Personal allowance', color: 'var(--acc-adcb)' },
-  { id: 'ADIB', name: 'ADIB', role: 'Emergency & online', color: 'var(--acc-adib)' },
   { id: 'BOTIM', name: 'BOTIM', role: 'Extra card', color: 'var(--acc-botim)' },
   { id: 'Cash', name: 'Cash', role: 'Notes & coins', color: 'var(--acc-cash)' },
 ];
@@ -22,12 +22,21 @@ export const SPEND_CATEGORIES = [
 ];
 export const INCOME_CATEGORIES = [
   { id: 'Salary', short: 'Salary', icon: 'briefcase' },
+  { id: 'Nafis', short: 'Nafis', icon: 'in' },
   { id: 'Allowance', short: 'Allowance', icon: 'wallet' },
   { id: 'Gift', short: 'Gift', icon: 'gift' },
   { id: 'Refund', short: 'Refund', icon: 'undo' },
   { id: 'Other', short: 'Other', icon: 'dots' },
 ];
 export const TYPES = ['Spend', 'Income', 'Transfer'];
+
+// The payday plan. Mirrors the sheet's Plan tab; used until the sheet answers.
+export const DEFAULT_PLAN = [
+  { id: 'salary', name: 'Salary', kind: 'Income', amount: 6000, day: 27, from: '', to: 'ADIB', category: 'Salary' },
+  { id: 'nafis', name: 'Nafis', kind: 'Income', amount: 4500, day: 1, from: '', to: 'ADIB', category: 'Nafis' },
+  { id: 'allowance', name: 'Allowance', kind: 'Move', amount: 3000, day: 27, from: 'ADIB', to: 'ADCB', category: '' },
+  { id: 'fuel', name: 'Fuel', kind: 'Responsibility', amount: 0, day: null, from: 'ADIB', to: '', category: 'Transport & Fuel' },
+];
 
 export const DEFAULT_SETTINGS = {
   allowance: 3000,
@@ -197,4 +206,81 @@ export function toCSV(entries) {
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
   return [cols.join(','), ...entries.map((e) => cols.map((c) => esc(e[c])).join(','))].join('\n');
+}
+
+/* ───────────────────────── Balances ───────────────────────── */
+
+/** What each account holds now (AED). matchedAt = last time it was matched to the bank. */
+export function balances(entries, settings) {
+  const out = new Map(ACCOUNTS.map((a) => [a.id, { balance: 0, matchedAt: null }]));
+  const get = (id) => out.get(id) || out.set(id, { balance: 0, matchedAt: null }).get(id);
+  for (const e of entries) {
+    const v = toAED(e, settings);
+    if (e.type === 'Income') get(e.account).balance += v;
+    else if (e.type === 'Spend') get(e.account).balance -= v;
+    else if (e.type === 'Adjustment') {
+      const a = get(e.account);
+      a.balance += v;
+      if (!a.matchedAt || e.date > a.matchedAt) a.matchedAt = e.date;
+    } else if (e.type === 'Transfer') {
+      get(e.account).balance -= v;
+      if (e.toAccount) get(e.toAccount).balance += v;
+    }
+  }
+  for (const a of out.values()) a.balance = Math.round(a.balance * 100) / 100;
+  return out;
+}
+
+/** The calendar date inside `cycle` that falls on day-of-month `day`. */
+export function dateInCycle(cycle, day, startDay = 27) {
+  const [y, m] = cycle.split('-').map(Number);
+  let yy = y, mm = m;
+  if (startDay > 1 && day >= startDay) { mm -= 1; if (mm < 1) { mm = 12; yy -= 1; } }
+  const last = new Date(Date.UTC(yy, mm, 0)).getUTCDate();
+  return new Date(Date.UTC(yy, mm - 1, Math.min(day, last), 6) - 4 * 3600e3);
+}
+
+/** Where each plan item stands this cycle. */
+export function planStatus(plan, entries, cycle, settings, now = new Date()) {
+  const inCycle = entries.filter((e) => e.cycle === cycle);
+  return plan.map((p) => {
+    const tagged = (e) => e.source === `Plan:${p.id}`;
+    const due = p.day ? dateInCycle(cycle, p.day, settings.cycleStart) : null;
+    let done = 0;
+    if (p.kind === 'Income') {
+      done = inCycle.filter((e) => e.type === 'Income' && (tagged(e) || (e.account === p.to && e.category === p.category && p.category))).reduce((a, e) => a + toAED(e, settings), 0);
+    } else if (p.kind === 'Move') {
+      done = inCycle.filter((e) => e.type === 'Transfer' && (tagged(e) || (e.account === p.from && e.toAccount === p.to))).reduce((a, e) => a + toAED(e, settings), 0);
+    } else {
+      done = inCycle.filter((e) => e.type === 'Spend' && e.account === p.from && e.category === p.category).reduce((a, e) => a + toAED(e, settings), 0);
+    }
+    const remaining = Math.max(0, p.amount - done);
+    const complete = p.kind === 'Responsibility' ? false : p.amount > 0 && done >= p.amount * 0.95;
+    const state = complete ? 'done' : !due ? 'open' : now >= due ? 'due' : 'upcoming';
+    return { ...p, due, done, remaining, complete, state };
+  });
+}
+
+/** The main account split into what it still owes, what it still has to move out, and what is free. */
+export function hubBreakdown(hub, bal, status) {
+  const reserved = status.filter((p) => p.kind === 'Responsibility' && p.from === hub).reduce((a, p) => a + p.remaining, 0);
+  const toMove = status.filter((p) => p.kind === 'Move' && p.from === hub && !p.complete).reduce((a, p) => a + p.remaining, 0);
+  const expected = status.filter((p) => p.kind === 'Income' && p.to === hub && !p.complete).reduce((a, p) => a + p.remaining, 0);
+  return { balance: bal, reserved, toMove, expected, free: bal - reserved - toMove };
+}
+
+/** This cycle's money through the main account: where it came from and where it went. */
+export function hubFlow(entries, cycle, hub, settings) {
+  const sources = new Map(), outs = new Map();
+  for (const e of entries) {
+    if (e.cycle !== cycle) continue;
+    const v = toAED(e, settings);
+    if (e.type === 'Income' && e.account === hub) sources.set(e.category || 'Other', (sources.get(e.category || 'Other') || 0) + v);
+    if (e.type === 'Transfer' && e.account === hub && e.toAccount) outs.set(e.toAccount, (outs.get(e.toAccount) || 0) + v);
+    if (e.type === 'Spend' && e.account === hub) outs.set('Spent', (outs.get('Spent') || 0) + v);
+  }
+  const inTotal = [...sources.values()].reduce((a, b) => a + b, 0);
+  const outTotal = [...outs.values()].reduce((a, b) => a + b, 0);
+  if (inTotal > outTotal) outs.set('Kept', inTotal - outTotal);
+  return { sources, outs, inTotal, outTotal };
 }

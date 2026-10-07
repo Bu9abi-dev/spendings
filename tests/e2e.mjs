@@ -73,8 +73,33 @@ await p.waitForTimeout(1000);
 entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
 assert.equal(entries.length, 3);
 
-// home reflects allowance: 3000 - 25 - 9.5 - 7
+// ADCB view reflects the allowance: 3000 - 25 - 9.5 - 7
+await p.click('.key-acc[data-focus="ADCB"]');
+await p.waitForSelector('.capsule');
 assert.match(await p.textContent('.cap-value'), /2,959|2,958/);
+
+// match ADIB with the bank: balance becomes exactly what was typed
+await p.click('.key-acc[data-focus="ADIB"]');
+await p.waitForSelector('[data-act="match"]');
+await p.click('[data-act="match"]');
+await p.waitForSelector('.match-amount');
+for (const k of ['1', '2', '0', '0']) await p.dispatchEvent(`.key[data-key="${k}"]`, 'pointerdown');
+await p.click('.sheet [data-act="save"]');
+await p.waitForTimeout(900);
+assert.match(await p.textContent('.lens-amount'), /1,200\.00/);
+entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
+assert.ok(entries.some((e) => e.type === 'Adjustment' && e.account === 'ADIB'));
+
+// payday plan: Nafis "It landed" logs income into ADIB and lifts the balance
+await p.click('.key-acc[data-focus="all"]');
+await p.waitForTimeout(300);
+const landed = await p.$('[data-plan-act="land"]');
+if (landed) {
+  await landed.click();
+  await p.waitForTimeout(900);
+  entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
+  assert.ok(entries.some((e) => e.type === 'Income' && e.account === 'ADIB' && /^Plan:/.test(e.source)));
+}
 assert.deepEqual(errors, []);
 await b.close();
 console.log('e2e: all checks passed');

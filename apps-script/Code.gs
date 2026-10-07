@@ -10,6 +10,7 @@
  *   Overview   — one row per pay cycle: money in, money out, net, allowance left.
  *   Settings   — allowance, cycle start day, USD rate, Wallet card-name mapping.
  *   Merchants  — remembered merchant → category pairs (auto-categorises Apple Pay).
+ *   Plan       — payday plan: salary, Nafis, money you move between accounts, and responsibilities.
  *   "Oct 2026" — one tab per pay cycle (27th → 26th), named after the month it ends in.
  */
 
@@ -18,16 +19,27 @@ var LEDGER = 'Ledger';
 var OVERVIEW = 'Overview';
 var SETTINGS = 'Settings';
 var MERCHANTS = 'Merchants';
+var PLAN = 'Plan';
 
 var COLS = ['ID', 'Date', 'Cycle', 'Type', 'Amount', 'Currency', 'Amount (AED)', 'Account',
   'To account', 'Category', 'Merchant', 'Note', 'Source', 'Status', 'Created', 'Updated'];
 var C = {}; COLS.forEach(function (n, i) { C[n] = i; });
 
-var TYPES = ['Spend', 'Income', 'Transfer'];
+// Adjustment = "match my bank": a signed correction that makes an account's balance equal the bank's.
+var TYPES = ['Spend', 'Income', 'Transfer', 'Adjustment'];
 var ACCOUNTS = ['ADIB', 'ADCB', 'BOTIM', 'Cash'];
 var SPEND_CATEGORIES = ['Food & Drinks', 'Groceries', 'Transport & Fuel', 'Shopping',
   'Bills & Subscriptions', 'Entertainment', 'Health', 'Family & Gifts', 'Travel', 'Other'];
-var INCOME_CATEGORIES = ['Salary', 'Allowance', 'Gift', 'Refund', 'Other'];
+var INCOME_CATEGORIES = ['Salary', 'Nafis', 'Allowance', 'Gift', 'Refund', 'Other'];
+
+var PLAN_COLS = ['ID', 'Name', 'Kind', 'Amount', 'Day', 'From', 'To', 'Category'];
+var PLAN_KINDS = ['Income', 'Move', 'Responsibility'];
+var DEFAULT_PLAN = [
+  ['salary', 'Salary', 'Income', 6000, 27, '', 'ADIB', 'Salary'],
+  ['nafis', 'Nafis', 'Income', 4500, 1, '', 'ADIB', 'Nafis'],
+  ['allowance', 'Allowance', 'Move', 3000, 27, 'ADIB', 'ADCB', ''],
+  ['fuel', 'Fuel', 'Responsibility', 0, '', 'ADIB', '', 'Transport & Fuel'],
+];
 
 var DEFAULT_SETTINGS = [
   ['Allowance (AED per cycle)', 3000, 'How much of your own money you plan to spend each cycle.'],
@@ -96,6 +108,7 @@ function setup() {
     merchants.getRange('D:D').setNumberFormat('yyyy-mm-dd');
   }
 
+  ensurePlan_();
   ensureOverview_();
   ensureCycleTab_(cycleOf_(new Date(), getSettings_().cycleStart));
 
@@ -165,6 +178,7 @@ function doPost(e) {
       case 'update': return json_(updateEntry_(body.id, body.fields || {}));
       case 'delete': return json_(deleteEntry_(body.id));
       case 'settings': return json_(saveSettings_(body.settings || {}));
+      case 'plan': return json_(savePlan_(body.plan || []));
       default: return json_({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -219,8 +233,9 @@ function addApplePay_(body) {
   if (remembered) msg += ' · ' + remembered;
   if (account.name === s.allowanceAccount) {
     msg += '\n' + fmtMoney_(Math.max(0, cyc.allowanceLeft), 'AED') + ' left of your allowance';
-  } else if (account.name === s.emergencyAccount) {
-    msg += '\n' + s.emergencyAccount + ' is your emergency card — ' + fmtMoney_(cyc.byAccount[s.emergencyAccount] || 0, 'AED') + ' used this cycle';
+  } else if (account.known) {
+    var bal = balanceInfo_(account.name);
+    if (bal.matched) msg += '\n' + fmtMoney_(bal.total, 'AED') + ' left in ' + account.name;
   }
   if (problems.indexOf('category') >= 0) msg += '\nAdded to Needs review';
   if (res.duplicates) msg = 'Already logged · ' + msg;
@@ -289,6 +304,7 @@ function listAll_() {
       cycleStart: s.cycleStart, usdRate: s.usdRate,
     },
     merchants: merchantMap_(),
+    plan: readPlan_(),
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };
@@ -313,14 +329,14 @@ function saveSettings_(patch) {
 function normalise_(raw, s) {
   var type = TYPES.indexOf(raw.type) >= 0 ? raw.type : 'Spend';
   var currency = String(raw.currency || 'AED').toUpperCase().trim().slice(0, 3) || 'AED';
-  var amount = Math.round(Math.abs(Number(raw.amount) || 0) * 100) / 100;
+  var amount = Math.round((type === 'Adjustment' ? Number(raw.amount) || 0 : Math.abs(Number(raw.amount) || 0)) * 100) / 100;
   var date = raw.date ? new Date(raw.date) : new Date();
   if (isNaN(date.getTime())) date = new Date();
   var aed = currency === 'AED' ? amount : currency === 'USD' ? Math.round(amount * s.usdRate * 100) / 100 : '';
   var account = ACCOUNTS.indexOf(raw.account) >= 0 ? raw.account : clean_(raw.account) || 'Cash';
   var toAccount = type === 'Transfer' ? (ACCOUNTS.indexOf(raw.toAccount) >= 0 ? raw.toAccount : '') : '';
-  var category = type === 'Transfer' ? '' : clean_(raw.category);
-  var status = raw.status === 'Review' || raw.status === 'OK' ? raw.status
+  var category = type === 'Transfer' || type === 'Adjustment' ? '' : clean_(raw.category);
+  var status = type === 'Adjustment' ? 'OK' : raw.status === 'Review' || raw.status === 'OK' ? raw.status
     : (type !== 'Transfer' && !category) || !(amount > 0) ? 'Review' : 'OK';
   return {
     id: clean_(raw.id) || 'x-' + Utilities.getUuid().slice(0, 13),
@@ -370,6 +386,70 @@ function idIndex_(sh) {
   if (n <= 0) return map;
   sh.getRange(2, 1, n, 1).getValues().forEach(function (r, i) { if (r[0]) map[String(r[0])] = i + 2; });
   return map;
+}
+
+/* ───────────────────────── Balances & plan ───────────────────────── */
+
+/** What an account holds now, in AED: everything in, minus everything out, plus bank matches. */
+function balanceOf_(account) { return balanceInfo_(account).total; }
+
+/** matched = the account has been matched to the bank at least once, so its balance is real. */
+function balanceInfo_(account) {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  var n = sh.getLastRow() - 1, total = 0, matched = false;
+  if (n <= 0) return { total: 0, matched: false };
+  sh.getRange(2, 1, n, COLS.length).getValues().forEach(function (r) {
+    var v = Number(r[C['Amount (AED)']]) || 0, t = r[C['Type']];
+    if (r[C['Account']] === account) {
+      if (t === 'Adjustment') matched = true;
+      if (t === 'Income' || t === 'Adjustment') total += v;
+      else if (t === 'Spend' || t === 'Transfer') total -= v;
+    }
+    if (t === 'Transfer' && r[C['To account']] === account) total += v;
+  });
+  return { total: Math.round(total * 100) / 100, matched: matched };
+}
+
+function ensurePlan_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(PLAN);
+  if (sh) return sh;
+  sh = ensureSheet_(PLAN);
+  sh.getRange(1, 1, 1, PLAN_COLS.length).setValues([PLAN_COLS]);
+  sh.getRange(2, 1, DEFAULT_PLAN.length, PLAN_COLS.length).setValues(DEFAULT_PLAN);
+  styleHeader_(sh, PLAN_COLS.length);
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 120); sh.setColumnWidth(8, 170);
+  addValidation_(sh, 2, PLAN_KINDS);
+  sh.getRange('D:D').setNumberFormat('#,##0');
+  sh.getRange(DEFAULT_PLAN.length + 3, 1).setValue('Income = money that lands each cycle. Move = money you send between accounts. Responsibility = what an account must still pay (it counts down as you spend in that category).').setFontColor(MUTED);
+  return sh;
+}
+
+function readPlan_() {
+  var sh = ensurePlan_();
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return [];
+  return sh.getRange(2, 1, n, PLAN_COLS.length).getValues()
+    .filter(function (r) { return r[0] && PLAN_KINDS.indexOf(String(r[2])) >= 0; })
+    .map(function (r) {
+      return { id: String(r[0]), name: String(r[1]), kind: String(r[2]), amount: Number(r[3]) || 0,
+        day: r[4] === '' ? null : Math.min(31, Math.max(1, parseInt(r[4], 10) || 1)),
+        from: String(r[5] || ''), to: String(r[6] || ''), category: String(r[7] || '') };
+    });
+}
+
+function savePlan_(items) {
+  var sh = ensurePlan_();
+  var rows = (items || []).slice(0, 40).map(function (p) {
+    var kind = PLAN_KINDS.indexOf(p.kind) >= 0 ? p.kind : 'Responsibility';
+    return [clean_(p.id) || 'p-' + Utilities.getUuid().slice(0, 8), clean_(p.name) || kind, kind,
+      Math.max(0, Number(p.amount) || 0), p.day ? Math.min(31, Math.max(1, parseInt(p.day, 10) || 1)) : '',
+      ACCOUNTS.indexOf(p.from) >= 0 ? p.from : '', ACCOUNTS.indexOf(p.to) >= 0 ? p.to : '', clean_(p.category)];
+  });
+  var n = sh.getLastRow() - 1;
+  if (n > 0) sh.getRange(2, 1, n, PLAN_COLS.length).clearContent();
+  if (rows.length) sh.getRange(2, 1, rows.length, PLAN_COLS.length).setValues(rows);
+  return { ok: true, plan: readPlan_() };
 }
 
 /* ───────────────────────── Settings & merchants ───────────────────────── */
