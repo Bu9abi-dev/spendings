@@ -4,6 +4,23 @@ How Spendings has changed, version by version, newest first.
 
 Version numbers follow the app's cache version (`VERSION` in `docs/sw.js`), so the number here is the one a phone is running. A version gets a new entry whenever that number goes up. Versions v4 to v8 reached the live app together through [PR #1](https://github.com/Bu9abi-dev/spendings/pull/1), merged on 7 October 2026. Changes to `apps-script/Code.gs` only reach the sheet after the code is pasted into Apps Script and a new version of the existing deployment is published.
 
+## Timeline
+
+```mermaid
+timeline
+    title Spendings versions
+    section 5 October 2026
+        v1 : First release : Google Sheet backend : Apple Pay logging
+        v2 : Appearance settings : Softer accent colour
+        v3 : Small-phone layout : Quick add : Swipe to delete
+    section 7 October 2026
+        v4 : Total money on Home : Payday plan : Match with bank
+        v5 : Your own accounts : Smoother motion
+        v6 : Undo everywhere : Reset sheet : iPhone keypad
+        v7 : Safe to spend : Numbers that add up
+        v8 : Allowance rules : Undo fixes : Live the same day
+```
+
 ---
 
 ## v8: Undo fixes and the allowance rules
