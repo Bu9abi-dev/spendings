@@ -1,5 +1,5 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, DEFAULT_PLAN, cycleOf, toAED, uid } from './model.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, balances, cycleOf, toAED, uid } from './model.js';
 import { demoEntries, DEMO_PLAN } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs' };
@@ -14,6 +14,7 @@ export const state = {
   settings: { ...DEFAULT_SETTINGS },
   merchants: {},
   plan: DEFAULT_PLAN.map((p) => ({ ...p })),
+  accounts: DEFAULT_ACCOUNTS.map((a) => ({ ...a })),
   outbox: read(K.outbox, []),
   prefs: { lock: false, demo: false, credId: '', appearance: null, ...read(K.prefs, {}) },
   sync: { status: 'idle', error: '', at: 0 },
@@ -21,7 +22,8 @@ export const state = {
 };
 
 const cache = read(K.cache, null);
-if (cache) Object.assign(state, { entries: cache.entries || [], settings: { ...DEFAULT_SETTINGS, ...cache.settings }, merchants: cache.merchants || {}, sheetUrl: cache.sheetUrl || '', plan: cache.plan?.length ? cache.plan : state.plan });
+if (cache) Object.assign(state, { entries: cache.entries || [], settings: { ...DEFAULT_SETTINGS, ...cache.settings }, merchants: cache.merchants || {}, sheetUrl: cache.sheetUrl || '', plan: cache.plan?.length ? cache.plan : state.plan, accounts: cache.accounts?.length ? cache.accounts : state.accounts });
+setAccountList(state.accounts);
 
 export const isConnected = () => !!(state.conn.url && state.conn.token);
 export const isDemo = () => !!state.prefs.demo;
@@ -30,7 +32,7 @@ function emit(reason) { for (const fn of listeners) fn(reason); }
 
 function persist() {
   if (state.prefs.demo) return;
-  write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl, plan: state.plan });
+  write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl, plan: state.plan, accounts: state.accounts });
   write(K.outbox, state.outbox);
 }
 
@@ -87,6 +89,7 @@ export function sync() {
       state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
       state.merchants = data.merchants || {};
       if (Array.isArray(data.plan) && !state.outbox.some((o) => o.op === 'plan')) state.plan = data.plan;
+      if (Array.isArray(data.accounts) && data.accounts.length && !state.outbox.some((o) => o.op === 'accounts' || o.op === 'rename')) { state.accounts = data.accounts; setAccountList(state.accounts); }
       state.sheetUrl = data.sheetUrl || '';
       const pending = new Map(state.outbox.map((o) => [o.id, o]));
       const server = (data.entries || []).filter((e) => !(pending.get(e.id)?.op === 'delete'));
@@ -118,6 +121,8 @@ async function flushOutbox() {
     else if (op.op === 'delete') await call({ action: 'delete', id: op.id });
     else if (op.op === 'settings') await call({ action: 'settings', settings: op.settings });
     else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
+    else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
+    else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
     state.outbox.shift();
     persist();
   }
@@ -209,6 +214,57 @@ export function savePlan(plan) {
   sync();
 }
 
+/* ───── Accounts ───── */
+
+function commitAccounts(list, { queue = true } = {}) {
+  state.accounts = list;
+  setAccountList(list);
+  if (queue && !state.prefs.demo) {
+    state.outbox = state.outbox.filter((o) => o.op !== 'accounts');
+    enqueue({ op: 'accounts', id: '', accounts: list });
+  }
+  persist(); emit('accounts');
+  sync();
+}
+
+export const nameTaken = (name, except = '') => state.accounts.some((a) => a.name.toLowerCase() === name.trim().toLowerCase() && a.name !== except);
+
+export function addAccount(a) {
+  commitAccounts([...state.accounts, { name: a.name.trim(), note: a.note || '', color: a.color || 'graphite', wallet: a.wallet || '', archived: false }]);
+}
+
+/** Change an account. A new name is carried through every entry, the plan and settings. */
+export function updateAccount(oldName, patch) {
+  const newName = (patch.name ?? oldName).trim();
+  if (newName !== oldName) {
+    const sw = (v) => (v === oldName ? newName : v);
+    state.entries = state.entries.map((e) => (e.account === oldName || e.toAccount === oldName ? { ...e, account: sw(e.account), toAccount: sw(e.toAccount) } : e));
+    state.plan = state.plan.map((p) => ({ ...p, from: sw(p.from), to: sw(p.to) }));
+    state.settings = { ...state.settings, allowanceAccount: sw(state.settings.allowanceAccount), emergencyAccount: sw(state.settings.emergencyAccount) };
+    state.outbox.forEach((o) => { if (o.entry) { o.entry.account = sw(o.entry.account); o.entry.toAccount = sw(o.entry.toAccount); } });
+    if (!state.prefs.demo) enqueue({ op: 'rename', id: '', from: oldName, to: newName });
+  }
+  commitAccounts(state.accounts.map((a) => (a.name === oldName ? { ...a, ...patch, name: newName } : a)));
+}
+
+/** Retire an account. Any money left in it is moved to `moveTo` first so the total stays right. */
+export function removeAccount(name, moveTo) {
+  const bal = balances(state.entries, state.settings).get(name)?.balance || 0;
+  if (Math.abs(bal) >= 0.01 && moveTo) {
+    addEntry(bal > 0
+      ? { type: 'Transfer', amount: bal, account: name, toAccount: moveTo, note: `Closing ${name}` }
+      : { type: 'Transfer', amount: -bal, account: moveTo, toAccount: name, note: `Closing ${name}` });
+  }
+  commitAccounts(state.accounts.map((a) => (a.name === name ? { ...a, archived: true } : a)));
+}
+
+export function moveAccount(name, delta) {
+  const list = [...state.accounts], i = list.findIndex((a) => a.name === name), j = i + delta;
+  if (i < 0 || j < 0 || j >= list.length) return;
+  [list[i], list[j]] = [list[j], list[i]];
+  commitAccounts(list);
+}
+
 export function suggestCategory(merchant) {
   const k = merchantKey(merchant);
   return k ? state.merchants[k] || '' : '';
@@ -221,6 +277,8 @@ export function loadDemo() {
   state.entries = sortEntries(demoEntries(state.settings));
   state.merchants = {};
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
+  state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
+  setAccountList(state.accounts);
 }
 
 export function setDemo(on) {
@@ -232,6 +290,8 @@ export function setDemo(on) {
     state.merchants = c?.merchants || {};
     state.settings = { ...DEFAULT_SETTINGS, ...(c?.settings || {}) };
     state.plan = c?.plan?.length ? c.plan : DEFAULT_PLAN.map((p) => ({ ...p }));
+    state.accounts = c?.accounts?.length ? c.accounts : DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
+    setAccountList(state.accounts);
   }
   emit('entries');
 }

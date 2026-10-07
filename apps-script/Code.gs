@@ -10,6 +10,7 @@
  *   Overview   — one row per pay cycle: money in, money out, net, allowance left.
  *   Settings   — allowance, cycle start day, USD rate, Wallet card-name mapping.
  *   Merchants  — remembered merchant → category pairs (auto-categorises Apple Pay).
+ *   Accounts   — your accounts: name, note, colour, and which Apple Wallet card they are.
  *   Plan       — payday plan: salary, Nafis, money you move between accounts, and responsibilities.
  *   "Oct 2026" — one tab per pay cycle (27th → 26th), named after the month it ends in.
  */
@@ -20,6 +21,7 @@ var OVERVIEW = 'Overview';
 var SETTINGS = 'Settings';
 var MERCHANTS = 'Merchants';
 var PLAN = 'Plan';
+var ACCOUNTS_TAB = 'Accounts';
 
 var COLS = ['ID', 'Date', 'Cycle', 'Type', 'Amount', 'Currency', 'Amount (AED)', 'Account',
   'To account', 'Category', 'Merchant', 'Note', 'Source', 'Status', 'Created', 'Updated'];
@@ -27,7 +29,16 @@ var C = {}; COLS.forEach(function (n, i) { C[n] = i; });
 
 // Adjustment = "match my bank": a signed correction that makes an account's balance equal the bank's.
 var TYPES = ['Spend', 'Income', 'Transfer', 'Adjustment'];
+// Starting accounts. After setup the Accounts tab is the source of truth; ACCOUNTS is refreshed from it per request.
 var ACCOUNTS = ['ADIB', 'ADCB', 'BOTIM', 'Cash'];
+var ACCOUNT_COLS = ['Name', 'Note', 'Colour', 'Wallet name contains', 'Archived'];
+var DEFAULT_ACCOUNTS = [
+  ['ADIB', 'Main · pay lands here', 'teal', 'adib', ''],
+  ['ADCB', 'Personal allowance', 'red', 'adcb', ''],
+  ['BOTIM', 'Extra card', 'purple', 'botim', ''],
+  ['Cash', 'Notes & coins', 'green', '', ''],
+];
+var COLOUR_IDS = ['red', 'orange', 'gold', 'green', 'teal', 'sky', 'blue', 'indigo', 'purple', 'pink', 'graphite'];
 var SPEND_CATEGORIES = ['Food & Drinks', 'Groceries', 'Transport & Fuel', 'Shopping',
   'Bills & Subscriptions', 'Entertainment', 'Health', 'Family & Gifts', 'Travel', 'Other'];
 var INCOME_CATEGORIES = ['Salary', 'Nafis', 'Allowance', 'Gift', 'Refund', 'Other'];
@@ -85,7 +96,8 @@ function setup() {
   ledger.setColumnWidth(C['Merchant'] + 1, 170);
   ledger.setColumnWidth(C['Note'] + 1, 220);
   addValidation_(ledger, C['Type'], TYPES);
-  addValidation_(ledger, C['Account'], ACCOUNTS);
+  ensureAccounts_();
+  refreshAccountValidation_();
   addValidation_(ledger, C['Status'], ['OK', 'Review']);
 
   var settings = ensureSheet_(SETTINGS);
@@ -109,6 +121,7 @@ function setup() {
   }
 
   ensurePlan_();
+  ensureAccounts_();
   ensureOverview_();
   ensureCycleTab_(cycleOf_(new Date(), getSettings_().cycleStart));
 
@@ -179,6 +192,8 @@ function doPost(e) {
       case 'delete': return json_(deleteEntry_(body.id));
       case 'settings': return json_(saveSettings_(body.settings || {}));
       case 'plan': return json_(savePlan_(body.plan || []));
+      case 'accounts': return json_(saveAccounts_(body.accounts || []));
+      case 'renameAccount': return json_(renameAccount_(body.from, body.to));
       default: return json_({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -305,6 +320,7 @@ function listAll_() {
     },
     merchants: merchantMap_(),
     plan: readPlan_(),
+    accounts: readAccounts_(),
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };
@@ -318,7 +334,7 @@ function saveSettings_(patch) {
     var v = patch[k];
     if (k === 'cycleStart') v = Math.min(28, Math.max(1, parseInt(v, 10) || 1));
     if (k === 'allowance' || k === 'usdRate') v = Number(v) || DEFAULT_SETTINGS[labels[k]][1];
-    if (/Account$/.test(k) && ACCOUNTS.indexOf(v) < 0) return;
+    if (/Account$/.test(k) && activeNames_().indexOf(v) < 0) return;
     sh.getRange(labels[k] + 2, 2).setValue(v);
   });
   return { ok: true, settings: listAll_().settings };
@@ -333,8 +349,8 @@ function normalise_(raw, s) {
   var date = raw.date ? new Date(raw.date) : new Date();
   if (isNaN(date.getTime())) date = new Date();
   var aed = currency === 'AED' ? amount : currency === 'USD' ? Math.round(amount * s.usdRate * 100) / 100 : '';
-  var account = ACCOUNTS.indexOf(raw.account) >= 0 ? raw.account : clean_(raw.account) || 'Cash';
-  var toAccount = type === 'Transfer' ? (ACCOUNTS.indexOf(raw.toAccount) >= 0 ? raw.toAccount : '') : '';
+  var account = clean_(raw.account) || 'Cash';
+  var toAccount = type === 'Transfer' ? clean_(raw.toAccount) : '';
   var category = type === 'Transfer' || type === 'Adjustment' ? '' : clean_(raw.category);
   var status = type === 'Adjustment' ? 'OK' : raw.status === 'Review' || raw.status === 'OK' ? raw.status
     : (type !== 'Transfer' && !category) || !(amount > 0) ? 'Review' : 'OK';
@@ -444,12 +460,86 @@ function savePlan_(items) {
     var kind = PLAN_KINDS.indexOf(p.kind) >= 0 ? p.kind : 'Responsibility';
     return [clean_(p.id) || 'p-' + Utilities.getUuid().slice(0, 8), clean_(p.name) || kind, kind,
       Math.max(0, Number(p.amount) || 0), p.day ? Math.min(31, Math.max(1, parseInt(p.day, 10) || 1)) : '',
-      ACCOUNTS.indexOf(p.from) >= 0 ? p.from : '', ACCOUNTS.indexOf(p.to) >= 0 ? p.to : '', clean_(p.category)];
+      allNames_().indexOf(p.from) >= 0 ? p.from : '', allNames_().indexOf(p.to) >= 0 ? p.to : '', clean_(p.category)];
   });
   var n = sh.getLastRow() - 1;
   if (n > 0) sh.getRange(2, 1, n, PLAN_COLS.length).clearContent();
   if (rows.length) sh.getRange(2, 1, rows.length, PLAN_COLS.length).setValues(rows);
   return { ok: true, plan: readPlan_() };
+}
+
+/* ───────────────────────── Accounts ───────────────────────── */
+
+function ensureAccounts_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(ACCOUNTS_TAB);
+  if (sh) return sh;
+  sh = ensureSheet_(ACCOUNTS_TAB);
+  sh.getRange(1, 1, 1, ACCOUNT_COLS.length).setValues([ACCOUNT_COLS]);
+  sh.getRange(2, 1, DEFAULT_ACCOUNTS.length, ACCOUNT_COLS.length).setValues(DEFAULT_ACCOUNTS);
+  styleHeader_(sh, ACCOUNT_COLS.length);
+  sh.setFrozenRows(1);
+  sh.setColumnWidth(1, 140); sh.setColumnWidth(2, 220); sh.setColumnWidth(4, 190);
+  return sh;
+}
+
+/** Accounts in display order. Rename them from the app so past entries follow. */
+function readAccounts_() {
+  var sh = ensureAccounts_();
+  var n = sh.getLastRow() - 1;
+  if (n <= 0) return [];
+  return sh.getRange(2, 1, n, ACCOUNT_COLS.length).getValues()
+    .filter(function (r) { return String(r[0]).trim(); })
+    .map(function (r) {
+      return { name: String(r[0]).trim(), note: String(r[1] || ''), color: COLOUR_IDS.indexOf(String(r[2])) >= 0 ? String(r[2]) : 'graphite',
+        wallet: String(r[3] || ''), archived: r[4] === true || /^(yes|true|x)$/i.test(String(r[4])) };
+    });
+}
+function allNames_() { return readAccounts_().map(function (a) { return a.name; }); }
+function activeNames_() { return readAccounts_().filter(function (a) { return !a.archived; }).map(function (a) { return a.name; }); }
+
+function refreshAccountValidation_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  if (sh) addValidation_(sh, C['Account'], activeNames_());
+}
+
+function saveAccounts_(list) {
+  var seen = {};
+  var rows = (list || []).slice(0, 20).map(function (a) {
+    var name = clean_(a.name).slice(0, 24);
+    return [name, clean_(a.note).slice(0, 60), COLOUR_IDS.indexOf(a.color) >= 0 ? a.color : 'graphite', clean_(a.wallet).slice(0, 40), a.archived ? 'yes' : ''];
+  }).filter(function (r) { if (!r[0] || seen[r[0].toLowerCase()]) return false; seen[r[0].toLowerCase()] = true; return true; });
+  if (!rows.length) return { ok: false, error: 'Keep at least one account.' };
+  var sh = ensureAccounts_();
+  var n = sh.getLastRow() - 1;
+  if (n > 0) sh.getRange(2, 1, n, ACCOUNT_COLS.length).clearContent();
+  sh.getRange(2, 1, rows.length, ACCOUNT_COLS.length).setValues(rows);
+  refreshAccountValidation_();
+  return { ok: true, accounts: readAccounts_() };
+}
+
+/** Rename everywhere: Accounts, every Ledger row, the Plan and Settings, so the sheet stays readable. */
+function renameAccount_(from, to) {
+  from = String(from || '').trim(); to = clean_(to).slice(0, 24);
+  if (!from || !to) return { ok: false, error: 'Give the account a name.' };
+  if (from === to) return { ok: true, accounts: readAccounts_() };
+  var names = allNames_();
+  // `from` may not be in the Accounts tab yet (added offline, then renamed); rows are still renamed.
+  if (names.some(function (n) { return n.toLowerCase() === to.toLowerCase() && n !== from; })) return { ok: false, error: 'You already have an account called ' + to + '.' };
+  var swap = function (sheet, col, rowStart) {
+    var n = sheet.getLastRow() - rowStart + 1;
+    if (n <= 0) return;
+    var rng = sheet.getRange(rowStart, col, n, 1), vals = rng.getValues(), changed = false;
+    vals.forEach(function (r) { if (String(r[0]) === from) { r[0] = to; changed = true; } });
+    if (changed) rng.setValues(vals);
+  };
+  var ss = SpreadsheetApp.getActive();
+  var acc = ensureAccounts_(); swap(acc, 1, 2);
+  var led = ss.getSheetByName(LEDGER); swap(led, C['Account'] + 1, 2); swap(led, C['To account'] + 1, 2);
+  var plan = ensurePlan_(); swap(plan, 6, 2); swap(plan, 7, 2);
+  var set = ss.getSheetByName(SETTINGS);
+  [3, 4].forEach(function (row) { if (String(set.getRange(row, 2).getValue()) === from) set.getRange(row, 2).setValue(to); });
+  refreshAccountValidation_();
+  return { ok: true, accounts: readAccounts_() };
 }
 
 /* ───────────────────────── Settings & merchants ───────────────────────── */
@@ -475,6 +565,14 @@ function getSettings_() {
 
 function mapCard_(card, cardMap) {
   var c = String(card || '').toLowerCase();
+  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  for (var j = 0; j < accs.length; j++) {
+    var key = String(accs[j].wallet || '').toLowerCase().trim();
+    if (key && c.indexOf(key) >= 0) return { name: accs[j].name, known: true };
+  }
+  for (var k = 0; k < accs.length; k++) {
+    if (accs[k].name && c.indexOf(accs[k].name.toLowerCase()) >= 0) return { name: accs[k].name, known: true };
+  }
   for (var i = 0; i < cardMap.length; i++) {
     if (cardMap[i][0] && c.indexOf(cardMap[i][0]) >= 0) return { name: cardMap[i][1], known: true };
   }
@@ -621,7 +719,7 @@ function ensureCycleTab_(cycle, force) {
 
   var accTop = 4 + catRows.length + 2;
   sh.getRange(accTop, 4, 1, 3).setValues([['By account', 'Spent', 'Received']]);
-  var accRows = ACCOUNTS.map(function (a) {
+  var accRows = activeNames_().map(function (a) {
     return [a,
       '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',"' + a + '")',
       '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',"' + a + '")'];
@@ -665,7 +763,7 @@ function positionForCycle_(cycle) {
   // Newest cycle tabs sit right after the fixed tabs, newest first.
   var ss = SpreadsheetApp.getActive();
   var sheets = ss.getSheets();
-  var fixed = [OVERVIEW, LEDGER, SETTINGS, MERCHANTS];
+  var fixed = [OVERVIEW, LEDGER, ACCOUNTS_TAB, SETTINGS, MERCHANTS, PLAN];
   var idx = 0;
   for (var i = 0; i < sheets.length; i++) {
     var n = sheets[i].getName();

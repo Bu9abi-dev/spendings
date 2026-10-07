@@ -1,11 +1,23 @@
+import { CARD_COLORS } from './theme.js';
 // Domain constants, cycle maths, money formatting and aggregations. No DOM here.
 
-export const ACCOUNTS = [
-  { id: 'ADIB', name: 'ADIB', role: 'Main · pay lands here', color: 'var(--acc-adib)' },
-  { id: 'ADCB', name: 'ADCB', role: 'Personal allowance', color: 'var(--acc-adcb)' },
-  { id: 'BOTIM', name: 'BOTIM', role: 'Extra card', color: 'var(--acc-botim)' },
-  { id: 'Cash', name: 'Cash', role: 'Notes & coins', color: 'var(--acc-cash)' },
+// The account list lives in the sheet's Accounts tab. ACCOUNTS (active) and the archive are
+// refreshed in place by setAccountList(), so every module always sees the current accounts.
+export const DEFAULT_ACCOUNTS = [
+  { name: 'ADIB', note: 'Main · pay lands here', color: 'teal', wallet: 'adib', archived: false },
+  { name: 'ADCB', note: 'Personal allowance', color: 'red', wallet: 'adcb', archived: false },
+  { name: 'BOTIM', note: 'Extra card', color: 'purple', wallet: 'botim', archived: false },
+  { name: 'Cash', note: 'Notes & coins', color: 'green', wallet: '', archived: false },
 ];
+export const ACCOUNTS = [];
+const ALL_ACCOUNTS = [];
+export const colorHex = (id) => (CARD_COLORS.find((c) => c.id === id) || CARD_COLORS[CARD_COLORS.length - 1]).hex;
+export function setAccountList(list) {
+  const view = (a) => ({ id: a.name, name: a.name, role: a.note || '', colorId: a.color, color: colorHex(a.color), wallet: a.wallet || '', archived: !!a.archived });
+  ALL_ACCOUNTS.splice(0, ALL_ACCOUNTS.length, ...list.map(view));
+  ACCOUNTS.splice(0, ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived));
+}
+setAccountList(DEFAULT_ACCOUNTS);
 
 // Fixed order = validated palette order (dataviz reference palette, adjacent pairs pass CVD).
 export const SPEND_CATEGORIES = [
@@ -55,7 +67,7 @@ export function categoryMeta(id, type = 'Spend') {
   return list.find((c) => c.id === id) || null;
 }
 export const seriesColor = (slot) => (slot ? `var(--series-${slot})` : 'var(--series-other)');
-export const accountMeta = (id) => ACCOUNTS.find((a) => a.id === id) || { id, name: id || 'Unknown', role: '', color: 'var(--series-other)' };
+export const accountMeta = (id) => ALL_ACCOUNTS.find((a) => a.id === id) || { id, name: id || 'Unknown', role: '', colorId: 'graphite', color: 'var(--series-other)', archived: true };
 
 /** Calendar parts of a date as seen in Dubai. */
 export function dubaiParts(date) {

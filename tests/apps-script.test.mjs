@@ -9,7 +9,8 @@ const token = ctx.getToken_();
 const post = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, ...body }) } }).text);
 
 // tabs
-assert.deepEqual(ss.getSheets().map((s) => s.name).slice(0, 4), ['Overview', 'Ledger', 'Settings', 'Merchants']);
+for (const tab of ['Overview', 'Ledger', 'Accounts', 'Settings', 'Merchants', 'Plan']) assert.ok(ss.getSheetByName(tab), tab);
+assert.equal(ss.getSheets()[0].name, 'Overview');
 
 // auth
 assert.equal(JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token: 'nope', action: 'ping' }) } }).text).ok, false);
@@ -101,5 +102,28 @@ assert.equal(r.entries[0].amount, -250.5);
 assert.equal(ctx.balanceOf_('ADIB'), Math.round((1000 - 250.5 - 36.73 - 15) * 100) / 100);
 r = post({ source: 'applepay', amount: 'AED 20', merchant: 'ADNOC', card: 'ADIB Visa', category: 'Transport & Fuel' });
 assert.match(r.message, /left in ADIB/);
+
+// accounts: defaults, add one, rename everywhere, archive
+let accs = post({ action: 'list' }).accounts;
+assert.deepEqual(accs.map((a) => a.name), ['ADIB', 'ADCB', 'BOTIM', 'Cash']);
+r = post({ action: 'accounts', accounts: [...accs, { name: 'Wio', note: 'Savings', color: 'sky', wallet: 'wio' }] });
+assert.equal(r.accounts.length, 5);
+r = post({ source: 'applepay', amount: 'AED 30', merchant: 'Lulu', card: 'Wio Personal', category: 'Groceries' });
+assert.equal(r.entry.account, 'Wio');
+r = post({ action: 'add', entry: { id: 'tw', type: 'Transfer', amount: 100, account: 'ADIB', toAccount: 'Wio' } });
+assert.equal(r.entries[0].toAccount, 'Wio');
+r = post({ action: 'renameAccount', from: 'Wio', to: 'Wio Savings' });
+assert.ok(r.ok);
+assert.ok(r.accounts.some((a) => a.name === 'Wio Savings'));
+list = post({ action: 'list' });
+assert.ok(list.entries.some((e) => e.account === 'Wio Savings'));
+assert.ok(list.entries.some((e) => e.toAccount === 'Wio Savings'));
+assert.ok(!list.entries.some((e) => e.account === 'Wio' || e.toAccount === 'Wio'));
+r = post({ action: 'renameAccount', from: 'ADCB', to: 'adib' });
+assert.equal(r.ok, false); // name clash, case-insensitive
+r = post({ action: 'renameAccount', from: 'ADCB', to: 'ADCB Allowance' });
+assert.equal(post({ action: 'list' }).settings.allowanceAccount, 'ADCB Allowance');
+r = post({ action: 'accounts', accounts: post({ action: 'list' }).accounts.map((a) => (a.name === 'Cash' ? { ...a, archived: true } : a)) });
+assert.equal(r.accounts.find((a) => a.name === 'Cash').archived, true);
 
 console.log('apps-script: all tests passed');

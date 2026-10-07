@@ -12,9 +12,9 @@ import { icon } from './icons.js';
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
 export const dirham = (cls = '') => `<svg class="dh ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15h3.2c4.6 0 7.8-3.1 7.8-7.5S14.8 4.5 10.2 4.5H7z"/><path d="M3.2 10.2h17.3M3.2 13.8h17.3"/></svg>`;
 
-const ORDER = ['all', ...ACCOUNTS.map((a) => a.id)];
+const order = () => ['all', ...ACCOUNTS.map((a) => a.id)];
 let focus = (() => { try { return sessionStorage.getItem('sp.focus') || 'all'; } catch { return 'all'; } })();
-if (!ORDER.includes(focus)) focus = 'all';
+
 let helpers = null;
 
 const ord = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
@@ -39,6 +39,7 @@ function model() {
   return { s, cyc, bals, matched, total, status, hub, hubB, sum };
 }
 
+const lensColor = (f) => (f === 'all' ? 'var(--label-2)' : accountMeta(f).color);
 function valueFor(m, f) { return f === 'all' ? m.total : m.bals.get(f)?.balance || 0; }
 
 function amountParts(v) {
@@ -47,9 +48,43 @@ function amountParts(v) {
   return { neg, int: `${neg ? '−' : ''}${fmt(int, { whole: true })}`, dec: `.${String(dec).padStart(2, '0')}` };
 }
 
+/* Odometer: each digit is a column 0–9 that springs to its digit. CSS transitions retarget from
+   wherever they are, so switching again mid-roll stays continuous. */
+const COL = Array.from({ length: 10 }, (_, d) => `<span>${d}</span>`).join('');
+const sigOf = (str) => str.replace(/\d/g, 'd');
+function odoHTML(str, startDigits = '') {
+  const digits = str.replace(/\D/g, '').length;
+  const pad = startDigits.padStart(digits, '0').slice(-digits);
+  let di = 0;
+  return [...str].map((ch) => (/\d/.test(ch)
+    ? `<span class="odo"><span class="odo-col" style="--d:${pad[di++] ?? 0}">${COL}</span></span>`
+    : `<span class="odo-sep">${ch}</span>`)).join('');
+}
+function setOdo(el, str, instant = false) {
+  if (el.dataset.sig !== sigOf(str)) {
+    el.innerHTML = odoHTML(str, (el.dataset.str || '').replace(/\D/g, ''));
+    el.dataset.sig = sigOf(str);
+    el.offsetWidth; // commit the starting digits so the change below animates
+  }
+  const digits = str.replace(/\D/g, '');
+  el.querySelectorAll('.odo-col').forEach((c, i) => {
+    if (instant) c.style.transition = 'none';
+    c.style.setProperty('--d', digits[i]);
+    if (instant) { c.offsetWidth; c.style.transition = ''; }
+  });
+  el.dataset.str = str;
+}
+function setAmount(lv, v, instant = false) {
+  const p = amountParts(v);
+  setOdo(lv.querySelector('.lv-int'), p.int, instant);
+  setOdo(lv.querySelector('.lv-dec'), p.dec, instant);
+  lv.setAttribute('aria-label', `AED ${p.int}${p.dec}`);
+  lv.dataset.v = v;
+}
+
 function amountHTML(v) {
   const p = amountParts(v);
-  return `${dirham()}<span class="lv num" data-v="${v}"><span class="lv-int">${p.int}</span><span class="lv-dec">${p.dec}</span></span>`;
+  return `${dirham()}<span class="lv num" data-v="${v}" role="text" aria-label="AED ${p.int}${p.dec}"><span class="lv-int" aria-hidden="true" data-sig="${sigOf(p.int)}" data-str="${p.int}">${odoHTML(p.int, p.int.replace(/\D/g, ''))}</span><span class="lv-dec" aria-hidden="true" data-sig="${sigOf(p.dec)}" data-str="${p.dec}">${odoHTML(p.dec, p.dec.replace(/\D/g, ''))}</span></span>`;
 }
 
 function label(m, f) {
@@ -79,6 +114,7 @@ function meta(m, f) {
 
 export function renderHome(h) {
   helpers = h;
+  if (focus !== 'all' && !ACCOUNTS.some((a) => a.id === focus)) focus = 'all';
   const m = model();
   const cyc = m.cyc, dl = daysLeft(cyc, m.s.cycleStart);
   const positive = ACCOUNTS.map((a) => Math.max(0, m.bals.get(a.id)?.balance || 0));
@@ -91,7 +127,7 @@ export function renderHome(h) {
         <p>Your entries are kept on this phone for now. Connect your sheet so everything, Apple Pay included, lands in one place.</p>
         <div class="onboard-actions"><button class="btn-primary" type="button" data-go="settings">Set up</button><button class="btn-plain" type="button" data-act="demo">Try demo data</button></div>
       </section>` : ''}
-    <section class="lens" data-focus="${focus}" aria-label="Balances">
+    <section class="lens" data-focus="${focus}" style="--lens-c:${lensColor(focus)}" aria-label="Balances">
       <div class="lens-label">${label(m, focus)}</div>
       <div class="lens-amount" aria-live="polite">${amountHTML(valueFor(m, focus))}</div>
       <p class="lens-meta">${meta(m, focus)}</p>
@@ -100,12 +136,13 @@ export function renderHome(h) {
       </div>
       <div class="keys" role="tablist" aria-label="Show account">
         <span class="keys-pill" aria-hidden="true"></span>
-        ${ORDER.map((id) => {
+        ${order().map((id) => {
           const on = focus === id;
           const v = id === 'all' ? m.total : m.bals.get(id)?.balance || 0;
           return `<button type="button" role="tab" class="key-acc${on ? ' on' : ''}" aria-selected="${on}" data-focus="${id}" style="--c:${id === 'all' ? 'var(--label)' : accountMeta(id).color}">
             <span class="ka-name">${id === 'all' ? 'All' : id}</span><span class="ka-val num">${m.matched ? fmtCompact(v) : '—'}</span></button>`;
         }).join('')}
+        <button type="button" class="key-acc key-add" data-acct-new="1" aria-label="Add an account">${icon('plus', { size: 18 })}</button>
       </div>
     </section>
     ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
@@ -156,8 +193,8 @@ function hubCard(m) {
   const { hubB, status, hub } = m;
   const parts = [
     { k: 'reserved', label: 'Responsibilities', v: Math.max(0, hubB.reserved), c: 'var(--warn)' },
-    { k: 'move', label: 'Still to move', v: Math.max(0, hubB.toMove), c: 'var(--acc-adcb)' },
-    { k: 'free', label: 'Emergency', v: Math.max(0, hubB.free), c: 'var(--acc-adib)' },
+    { k: 'move', label: 'Still to move', v: Math.max(0, hubB.toMove), c: 'var(--label-3)' },
+    { k: 'free', label: 'Emergency', v: Math.max(0, hubB.free), c: accountMeta(hub).color },
   ];
   const tot = parts.reduce((a, p) => a + p.v, 0) || 1;
   const resp = status.filter((p) => p.kind === 'Responsibility' && p.from === hub);
@@ -206,7 +243,7 @@ function paydayCard(m) {
         : p.state === 'upcoming'
           ? `<span class="pd-when">${shortDate(p.due)}</span>`
           : `<button type="button" class="pd-btn" data-plan-act="${p.kind === 'Income' ? 'land' : 'move'}" data-plan-id="${esc(p.id)}">${p.kind === 'Income' ? 'It landed' : 'Move now'}</button>`;
-      return `<div class="pd-row${p.complete ? ' complete' : ''}">
+      return `<div class="pd-row${p.complete ? ' complete' : ''}" data-plan-row="${esc(p.id)}">
         <span class="pd-dot" style="--c:${p.kind === 'Income' ? 'var(--good)' : accountMeta(p.to).color}"></span>
         <span class="pd-main"><b>${esc(p.name)}</b><span>${fmt(p.complete ? p.done : p.remaining, { whole: true })} ${what}</span></span>
         ${right}</div>`;
@@ -228,7 +265,7 @@ function flowCard(m) {
   const L = lay(src), R = lay(outs);
   const hH = Math.max(f.inTotal, f.outTotal) * k;
   const xL = 104, xC = 162, xR = 228, wN = 6, wC = 14;
-  const colorOut = (n) => n === 'Spent' ? 'var(--label-3)' : n === 'Kept' ? 'var(--acc-adib)' : accountMeta(n).color;
+  const colorOut = (n) => n === 'Spent' ? 'var(--label-3)' : n === 'Kept' ? accountMeta(m.hub).color : accountMeta(n).color;
   let ci = 0;
   const leftBands = L.map((n) => { const c0 = ci; ci += n.h; const y0 = n.y + (n.slotH - n.h) / 2; return `<path d="M${xL + wN} ${y0} C${xL + 40} ${y0} ${xC - 34} ${c0} ${xC} ${c0} L${xC} ${c0 + n.h} C${xC - 34} ${c0 + n.h} ${xL + 40} ${y0 + n.h} ${xL + wN} ${y0 + n.h} Z" class="band in"/>`; }).join('');
   ci = 0;
@@ -240,28 +277,13 @@ function flowCard(m) {
     <h3>How ${esc(m.hub)} moved money this cycle</h3>
     <svg viewBox="-4 -4 ${W + 8} ${total + 8}" class="flow-svg" role="img" aria-label="${esc(m.hub)} received ${fmt(f.inTotal, { whole: true })} and sent out ${fmt(f.outTotal, { whole: true })} this cycle">
       ${leftBands}${rightBands}
-      <rect x="${xC}" y="0" width="${wC}" height="${hH}" rx="3" class="node hub"/>
+      <rect x="${xC}" y="0" width="${wC}" height="${hH}" rx="3" style="fill:${accountMeta(m.hub).color}"/>
       ${labelL}${labelR}
     </svg>
   </section>`;
 }
 
 /* ───────────────────────── Motion ───────────────────────── */
-
-let shown = null; // the number currently on screen, so a new roll starts where the last one is
-let rollRaf = 0;
-function rollAmount(el, from, to) {
-  cancelAnimationFrame(rollRaf);
-  const set = (v) => { const p = amountParts(v); el.querySelector('.lv-int').textContent = p.int; el.querySelector('.lv-dec').textContent = p.dec; shown = v; };
-  if (reduceMotion() || from === to) return set(to);
-  const t0 = performance.now(), dur = 640;
-  const step = (t) => {
-    const p = Math.min(1, (t - t0) / dur);
-    set(from + (to - from) * (1 - Math.pow(1 - p, 4)));
-    if (p < 1) rollRaf = requestAnimationFrame(step);
-  };
-  rollRaf = requestAnimationFrame(step);
-}
 
 function swapContent(el, html, dir) {
   el.getAnimations().forEach((a) => a.cancel());
@@ -274,8 +296,8 @@ function swapContent(el, html, dir) {
 }
 
 function setFocus(next, { scrub = false } = {}) {
-  if (!ORDER.includes(next) || next === focus) return;
-  const dir = Math.sign(ORDER.indexOf(next) - ORDER.indexOf(focus)) || 1;
+  if (!order().includes(next) || next === focus) return;
+  const dir = Math.sign(order().indexOf(next) - order().indexOf(focus)) || 1;
   focus = next;
   try { sessionStorage.setItem('sp.focus', focus); } catch { /* private mode */ }
   haptic();
@@ -283,12 +305,11 @@ function setFocus(next, { scrub = false } = {}) {
   if (!lens) return;
   const m = model();
   lens.dataset.focus = focus;
+  lens.style.setProperty('--lens-c', lensColor(focus));
   lens.querySelectorAll('.seg').forEach((s) => s.classList.toggle('on', s.dataset.seg === focus));
   lens.querySelectorAll('.key-acc').forEach((k) => { const on = k.dataset.focus === focus; k.classList.toggle('on', on); k.setAttribute('aria-selected', String(on)); });
   placePill(true);
-  const amt = lens.querySelector('.lv');
-  rollAmount(amt, shown ?? +amt.dataset.v, valueFor(m, focus));
-  amt.dataset.v = valueFor(m, focus);
+  setAmount(lens.querySelector('.lv'), valueFor(m, focus));
   swapContent(lens.querySelector('.lens-label'), label(m, focus), dir);
   swapContent(lens.querySelector('.lens-meta'), meta(m, focus), dir);
   const det = document.querySelector('.lens-detail');
@@ -298,7 +319,17 @@ function setFocus(next, { scrub = false } = {}) {
 
 /* The pill under the focused key glides there on a spring, stretching a little on the way. */
 let pillAnim = null;
+let pillFollowing = false;
+function followPill(clientX) {
+  const keys = document.querySelector('.keys'), pill = keys?.querySelector('.keys-pill');
+  if (!pill) return;
+  pillAnim?.cancel();
+  const r = keys.getBoundingClientRect(), w = pill.offsetWidth;
+  const x = Math.max(0, Math.min(keys.scrollWidth - w, clientX - r.left + keys.scrollLeft - w / 2));
+  pill.style.transform = `translateX(${x}px) scale(1.04)`;
+}
 function placePill(animate) {
+  if (pillFollowing) return;
   const keys = document.querySelector('.keys');
   if (!keys) return;
   const pill = keys.querySelector('.keys-pill'), key = keys.querySelector(`.key-acc[data-focus="${focus}"]`);
@@ -317,7 +348,11 @@ function placePill(animate) {
 export function snapshotHome() {
   const lens = document.querySelector('.lens');
   if (!lens) return null;
-  return { v: shown ?? +lens.querySelector('.lv').dataset.v, grow: [...lens.querySelectorAll('.seg')].map((s) => s.style.flexGrow) };
+  return {
+    v: +lens.querySelector('.lv').dataset.v,
+    grow: [...lens.querySelectorAll('.seg')].map((s) => s.style.flexGrow),
+    done: new Set([...document.querySelectorAll('.pd-row.complete')].map((r) => r.dataset.planRow)),
+  };
 }
 
 export function afterHomeRender(snap) {
@@ -327,7 +362,13 @@ export function afterHomeRender(snap) {
   const amt = lens.querySelector('.lv');
   const target = +amt.dataset.v;
   if (snap) {
-    rollAmount(amt, snap.v, target);
+    if (snap.v !== target && !reduceMotion()) { setAmount(amt, snap.v, true); setAmount(amt, target); }
+    document.querySelectorAll('.pd-row.complete').forEach((r) => {
+      if (snap.done.has(r.dataset.planRow) || reduceMotion()) return;
+      const sp = spring(0.6, 0.45);
+      r.querySelector('.pd-done')?.animate([{ transform: 'scale(0.3) rotate(-30deg)', opacity: 0 }, { transform: 'none', opacity: 1 }], { duration: sp.duration, easing: sp.easing });
+      r.animate([{ backgroundColor: 'color-mix(in srgb, var(--good) 14%, transparent)' }, { backgroundColor: 'transparent' }], { duration: 900, easing: 'ease-out' });
+    });
     const segs = [...lens.querySelectorAll('.seg')];
     if (!reduceMotion() && snap.grow.length === segs.length && segs.some((s, i) => s.style.flexGrow !== snap.grow[i])) {
       const next = segs.map((s) => s.style.flexGrow);
@@ -336,7 +377,6 @@ export function afterHomeRender(snap) {
       segs.forEach((s, i) => { s.style.transition = ''; s.style.flexGrow = next[i]; });
     }
   } else {
-    shown = target;
     // cold start: the bar fills in once, left to right, so you see what the total is made of
     if (!reduceMotion() && !afterHomeRender.played) {
       afterHomeRender.played = true;
@@ -366,6 +406,8 @@ export function bindHomeGestures(view) {
       e.target.setPointerCapture?.(e.pointerId);
     }
     if (scrub.zone === 'scrub') {
+      pillFollowing = true;
+      followPill(e.clientX);
       const keys = [...document.querySelectorAll('.key-acc')];
       const hit = keys.find((k) => { const r = k.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right; });
       if (hit) setFocus(hit.dataset.focus, { scrub: true });
@@ -375,9 +417,10 @@ export function bindHomeGestures(view) {
     const s = scrub; scrub = null;
     if (!s || !s.on) return;
     swallow();
+    if (pillFollowing) { pillFollowing = false; placePill(true); }
     if (s.zone === 'swipe') {
       const dx = e.clientX - s.x0, v = dx / Math.max(1, e.timeStamp - s.t0);
-      if (Math.abs(dx) > 40 || Math.abs(v) > 0.5) setFocus(ORDER[Math.max(0, Math.min(ORDER.length - 1, ORDER.indexOf(focus) + (dx < 0 ? 1 : -1)))]);
+      if (Math.abs(dx) > 40 || Math.abs(v) > 0.5) setFocus(order()[Math.max(0, Math.min(order().length - 1, order().indexOf(focus) + (dx < 0 ? 1 : -1)))]);
     }
   };
   view.addEventListener('pointerup', end);
@@ -390,7 +433,7 @@ function swallow() { swallowing = true; setTimeout(() => { swallowing = false; }
 export function homeClick(t) {
   if (swallowing) return true;
   const key = t.closest('.key-acc');
-  if (key) { setFocus(key.dataset.focus); return true; }
+  if (key && key.dataset.focus) { setFocus(key.dataset.focus); return true; }
   const seg = t.closest('.seg');
   if (seg) { setFocus(seg.dataset.seg); return true; }
   const pa = t.closest('[data-plan-act]');

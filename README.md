@@ -11,6 +11,7 @@ A personal money tracker for iPhone. Apple Pay payments are logged as they happe
   - **ADIB view:** splits into responsibilities, money still to move, and emergency money.
   - **ADCB view:** shows the allowance as liquid in a glass capsule.
 - **Payday plan:** salary and Nafis wait for an "It landed" tap, and the allowance move is one tap. A to-scale flow drawing shows where ADIB's money went this cycle.
+- **Your accounts:** add, rename, recolour or remove accounts. A rename follows through every past entry and the sheet. When you remove an account, the app asks where its remaining money should go first.
 - **Match with bank:** type what a bank app shows and the app books the difference, so balances never drift.
 - **Insights:** category donut, allowance pace, per-account and income breakdowns, and the last six cycles.
 - **Design:** Apple's design language with Liquid Glass chrome, spring motion and dark mode. It respects Reduce Motion and Reduce Transparency.

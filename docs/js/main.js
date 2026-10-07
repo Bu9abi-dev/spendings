@@ -11,6 +11,7 @@ import { icon } from './icons.js';
 import { donut, bindDonut, paceLine, bindPace, inOutBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, CARD_COLORS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
+import { accountsSettingsBlock, accountsClick, openAccount } from './accounts.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock } from './home.js';
 
 const view = document.getElementById('view');
@@ -263,6 +264,10 @@ function renderSettings() {
       ${appearanceBlock()}
     </section>
 
+    <h3 class="group-title" id="accounts">Accounts</h3>
+    <section class="group">${accountsSettingsBlock()}</section>
+    <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
+
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
     <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
@@ -297,7 +302,7 @@ function renderSettings() {
 function appearanceBlock() {
   const a = normalizeAppearance(state.prefs.appearance);
   const acc = ACCENTS.find((x) => x.id === a.accent);
-  const changed = JSON.stringify(a) !== JSON.stringify(normalizeAppearance(DEFAULT_APPEARANCE));
+  const changed = a.theme !== DEFAULT_APPEARANCE.theme || a.accent !== DEFAULT_APPEARANCE.accent;
   return `
     <div class="ap-label">Theme</div>
     <div class="theme-seg" role="radiogroup" aria-label="Theme">
@@ -308,15 +313,6 @@ function appearanceBlock() {
       ${ACCENTS.map((x) => `<button type="button" role="radio" class="swatch accent-swatch" aria-checked="${x.id === a.accent}" aria-label="${x.name}" data-accent="${x.id}" style="--sw:${x.l[0]}; --sw-top:${x.l[3]}">${icon('check', { size: 16 })}</button>`).join('')}
     </div>
     <p class="group-foot" style="padding:0">Used for buttons, the tab bar and the allowance liquid.</p>
-    ${ACCOUNTS.map((acct) => {
-      const cur = a.cards[acct.id];
-      return `<div class="card-pick">
-        <div class="ap-label"><i class="acc-dot" style="--chip:${acct.color}"></i>${acct.name} colour</div>
-        <div class="swatches" role="radiogroup" aria-label="${acct.name} colour">
-          ${CARD_COLORS.map((c) => `<button type="button" role="radio" class="swatch" aria-checked="${c.id === cur}" aria-label="${c.name}" data-card="${acct.id}" data-color="${c.id}" style="--sw:${c.hex}">${icon('check', { size: 14 })}</button>`).join('')}
-        </div>
-      </div>`;
-    }).join('')}
     ${changed ? '<button type="button" class="text-btn reset-btn" data-act="reset-look">Reset colours</button>' : ''}`;
 }
 
@@ -434,6 +430,7 @@ function render(reason) {
   const snap = tab === 'home' && view.dataset.tab === 'home' ? snapshotHome() : null;
   view.innerHTML = RENDER[tab]();
   if (tab === 'home') afterHomeRender(snap);
+  animateFresh();
   view.dataset.tab = tab;
   bindDonut(view);
   bindPace(view);
@@ -488,23 +485,33 @@ function moveDroplet() {
   }
 }
 
-/* Compact glass nav bar appears once the large title scrolls away (iOS behaviour). */
-let titleObs;
+/* Large title hands over to the compact glass bar continuously as you scroll (iOS behaviour). */
 function observeTitle() {
   const nav = document.getElementById('navbar');
   const h1 = view.querySelector('.large-title h1');
   nav.querySelector('.nav-title').textContent = h1?.textContent || '';
-  titleObs?.disconnect();
-  if (!h1) return;
-  titleObs = new IntersectionObserver(([en]) => nav.classList.toggle('show', !en.isIntersecting), { rootMargin: '-44px 0px 0px 0px' });
-  titleObs.observe(h1);
+  scrollChrome();
 }
+let chromeTick = false;
+function scrollChrome() {
+  const nav = document.getElementById('navbar'), h1 = view.querySelector('.large-title h1');
+  const p = Math.min(1, Math.max(0, (window.scrollY - 24) / 36));
+  nav.style.opacity = p;
+  nav.style.transform = `translateY(${(p - 1) * 4}px)`;
+  nav.classList.toggle('show', p > 0.5);
+  if (h1) { h1.style.opacity = 1 - p; h1.style.transform = `translateY(${-p * 8}px) scale(${1 - p * 0.05})`; }
+}
+window.addEventListener('scroll', () => {
+  if (chromeTick) return;
+  chromeTick = true;
+  requestAnimationFrame(() => { chromeTick = false; scrollChrome(); });
+}, { passive: true });
 
 /* ───────────────────────── Events ───────────────────────── */
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && homeClick(t)) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic(); go(goBtn.dataset.go);
@@ -540,8 +547,6 @@ document.addEventListener('click', async (ev) => {
   if (mode) return setAppearance({ theme: mode.dataset.themeMode });
   const accent = t.closest('[data-accent]');
   if (accent) return setAppearance({ accent: accent.dataset.accent });
-  const cardColor = t.closest('[data-card][data-color]');
-  if (cardColor) return setAppearance({ cards: { [cardColor.dataset.card]: cardColor.dataset.color } });
   const act = t.closest('[data-act]')?.dataset.act;
   if (!act || !view.contains(t)) return;
   if (act === 'reset-look') return setAppearance({ ...DEFAULT_APPEARANCE });
@@ -601,7 +606,26 @@ view.addEventListener('change', async (ev) => {
   }
 });
 
-subscribe((reason) => { if (reason !== 'prefs') render(reason); });
+// entries that appear (Apple Pay sync, a save, an undo) slide into their list instead of popping in
+let knownIds = new Set(state.entries.map((e) => e.id));
+let freshIds = new Set();
+subscribe((reason) => {
+  if (reason === 'prefs') return;
+  const ids = new Set(state.entries.map((e) => e.id));
+  freshIds = new Set([...ids].filter((id) => !knownIds.has(id)));
+  knownIds = ids;
+  render(reason);
+  freshIds = new Set();
+});
+function animateFresh() {
+  if (!freshIds.size || reduceMotion()) return;
+  view.querySelectorAll('.swipe[data-id]').forEach((w) => {
+    if (!freshIds.has(w.dataset.id)) return;
+    const h = w.offsetHeight, sp = spring(0.9, 0.42);
+    w.animate([{ height: '0px', opacity: 0 }, { height: `${h}px`, opacity: 1 }], { duration: sp.duration, easing: sp.easing });
+    w.querySelector('.entry')?.animate([{ transform: 'translateY(-12px) scale(0.98)' }, { transform: 'none' }], { duration: sp.duration, easing: sp.easing });
+  });
+}
 window.addEventListener('online', () => sync());
 document.addEventListener('visibilitychange', () => { if (!document.hidden) sync(); });
 window.addEventListener('resize', () => moveDroplet());

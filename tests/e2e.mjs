@@ -86,7 +86,7 @@ await p.waitForSelector('.match-amount');
 for (const k of ['1', '2', '0', '0']) await p.dispatchEvent(`.key[data-key="${k}"]`, 'pointerdown');
 await p.click('.sheet [data-act="save"]');
 await p.waitForTimeout(900);
-assert.match(await p.textContent('.lens-amount'), /1,200\.00/);
+assert.match(await p.getAttribute('.lv', 'aria-label'), /1,200\.00/);
 entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
 assert.ok(entries.some((e) => e.type === 'Adjustment' && e.account === 'ADIB'));
 
@@ -100,6 +100,35 @@ if (landed) {
   entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
   assert.ok(entries.some((e) => e.type === 'Income' && e.account === 'ADIB' && /^Plan:/.test(e.source)));
 }
+// accounts: add "Wio", rename it, then remove it moving its money back to ADIB
+await p.click('.tabbar [data-tab="settings"]');
+await p.click('[data-acct-new]');
+await p.fill('#af-name', 'Wio');
+await p.fill('#af-wallet', 'wio');
+await p.click('.sheet [data-colour="sky"]');
+await p.click('.sheet [data-act="save"]');
+await p.waitForTimeout(900);
+let accs = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).accounts;
+assert.ok(accs.some((a) => a.name === 'Wio' && a.color === 'sky' && a.wallet === 'wio'));
+await p.click('.tabbar [data-tab="home"]');
+await p.click('.key-acc[data-focus="Wio"]');
+await p.waitForTimeout(300);
+assert.match(await p.textContent('.lens-label'), /Wio/);
+await p.click('.tabbar [data-tab="settings"]');
+await p.click('[data-acct-edit="Wio"]');
+await p.fill('#af-name', 'Wio Savings');
+await p.click('.sheet [data-act="save"]');
+await p.waitForTimeout(900);
+accs = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).accounts;
+assert.ok(accs.some((a) => a.name === 'Wio Savings') && !accs.some((a) => a.name === 'Wio'));
+await p.click('[data-acct-edit="Wio Savings"]');
+await p.click('.sheet [data-act="remove"]');
+await p.click('.sheet [data-act="confirm-remove"]');
+await p.waitForTimeout(900);
+accs = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).accounts;
+assert.equal(accs.find((a) => a.name === 'Wio Savings').archived, true);
+assert.ok(!(await p.$('[data-acct-edit="Wio Savings"]')));
+
 assert.deepEqual(errors, []);
 await b.close();
 console.log('e2e: all checks passed');

@@ -32,6 +32,7 @@ The sheet now has these tabs:
 | **Oct 2026**, **Nov 2026**… | One tab per cycle (27th → 26th), named after the month the cycle ends in. Each has totals, a category table with a donut chart, a per-account table, and every entry. New tabs appear automatically. |
 | **Ledger** | Every entry, one row each. This is the true record, and every other tab is calculated from it. You can fix typos here by hand. |
 | **Settings** | Allowance (3,000), allowance card (ADCB), emergency card (ADIB), cycle start day (27), USD rate (3.6725), and how Wallet card names map to your cards. |
+| **Accounts** | Your accounts: name, note, colour, and the text in its Apple Wallet card name. Manage them in the app under **Settings → Accounts**. Renaming there also renames every past entry. |
 | **Plan** | Your payday plan: Salary 6,000 and Nafis 4,500 into ADIB, the 3,000 allowance move to ADCB, and ADIB's responsibilities (fuel, bills…). Edit it here or in the app under **Settings → Payday plan**. |
 | **Merchants** | Merchant → category pairs the app has learned, e.g. Carrefour → Groceries. |
 
