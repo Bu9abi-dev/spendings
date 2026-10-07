@@ -194,6 +194,7 @@ function doPost(e) {
       case 'plan': return json_(savePlan_(body.plan || []));
       case 'accounts': return json_(saveAccounts_(body.accounts || []));
       case 'renameAccount': return json_(renameAccount_(body.from, body.to));
+      case 'reset': return json_(resetSheet_());
       default: return json_({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -466,6 +467,29 @@ function savePlan_(items) {
   if (n > 0) sh.getRange(2, 1, n, PLAN_COLS.length).clearContent();
   if (rows.length) sh.getRange(2, 1, rows.length, PLAN_COLS.length).setValues(rows);
   return { ok: true, plan: readPlan_() };
+}
+
+/* ───────────────────────── Reset ───────────────────────── */
+
+/** Start fresh from the app: copy the Ledger to a hidden backup tab, then clear entries,
+    learned merchants and the cycle tabs. Accounts, plan and settings are kept. */
+function resetSheet_() {
+  var ss = SpreadsheetApp.getActive();
+  var led = ss.getSheetByName(LEDGER);
+  var n = led.getLastRow() - 1, backup = '';
+  if (n > 0) {
+    backup = 'Backup ' + Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH.mm');
+    var b = ss.insertSheet(backup, ss.getSheets().length);
+    b.getRange(1, 1, n + 1, COLS.length).setValues(led.getRange(1, 1, n + 1, COLS.length).getValues());
+    b.hideSheet();
+    led.getRange(2, 1, n, COLS.length).clearContent();
+  }
+  var mer = ss.getSheetByName(MERCHANTS);
+  if (mer && mer.getLastRow() > 1) mer.getRange(2, 1, mer.getLastRow() - 1, 4).clearContent();
+  ss.getSheets().forEach(function (sh) { if (tabNameToCycle_(sh.getName())) ss.deleteSheet(sh); });
+  ensureCycleTab_(cycleOf_(new Date(), getSettings_().cycleStart), true);
+  ensureOverview_(true);
+  return { ok: true, backup: backup };
 }
 
 /* ───────────────────────── Accounts ───────────────────────── */

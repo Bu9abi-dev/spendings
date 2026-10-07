@@ -20,6 +20,8 @@ await c.route('https://script.google.com/**', async (route) => {
   await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out.text });
 });
 const p = await c.newPage();
+const serverEntries = () => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
+async function until(pred, ms = 5000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await p.waitForTimeout(100); } return pred(); }
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 await p.goto('http://localhost:8765/#settings');
@@ -128,6 +130,41 @@ await p.waitForTimeout(900);
 accs = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).accounts;
 assert.equal(accs.find((a) => a.name === 'Wio Savings').archived, true);
 assert.ok(!(await p.$('[data-acct-edit="Wio Savings"]')));
+
+// undo: the last change (removing Wio Savings) comes back
+await p.click('.tabbar [data-tab="home"]');
+await p.waitForSelector('.undo-btn');
+await p.click('.undo-btn');
+await p.waitForTimeout(900);
+accs = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).accounts;
+assert.equal(accs.find((a) => a.name === 'Wio Savings').archived, false);
+
+// iPhone keyboard mode: type the amount, Return walks to the next fields, Return on note saves
+await p.click('.fab');
+await p.waitForSelector('.sheet .keypad');
+await p.click('.sheet [data-act="keys"]');
+await p.fill('.amount-input', '12,5x');
+assert.equal(await p.inputValue('.amount-input'), '12.5');
+await p.click('.cat[data-cat="Food & Drinks"]');
+await p.focus('input[name="merchant"]');
+await p.keyboard.type('Bakery');
+await p.keyboard.press('Enter');
+assert.equal(await p.evaluate(() => document.activeElement.name), 'note');
+await p.keyboard.press('Enter');
+await p.waitForTimeout(900);
+await until(() => serverEntries().some((e) => e.merchant === 'Bakery'));
+entries = serverEntries();
+assert.ok(entries.some((e) => e.merchant === 'Bakery' && e.amount === 12.5));
+
+// reset: hold to erase
+await p.click('.tabbar [data-tab="settings"]');
+await p.click('[data-act="reset"]');
+await p.waitForSelector('[data-hold]');
+const hb = await p.locator('[data-hold]').boundingBox();
+await p.mouse.move(hb.x + 20, hb.y + 20); await p.mouse.down(); await p.waitForTimeout(1900); await p.mouse.up();
+await p.waitForTimeout(1500);
+entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
+assert.equal(entries.length, 0);
 
 assert.deepEqual(errors, []);
 await b.close();

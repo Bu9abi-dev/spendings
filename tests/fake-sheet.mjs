@@ -32,6 +32,7 @@ class Sheet {
         if (k === 'getValue') return () => sh.get(r, c);
         if (k === 'setValues') return (v) => { v.forEach((row, i) => row.forEach((x, j) => sh.set(r + i, c + j, x))); return range; };
         if (k === 'setValue' || k === 'setFormula') return (v) => { sh.set(r, c, v); return range; };
+        if (k === 'clearContent') return () => { for (let i = 0; i < nr; i++) for (let j = 0; j < nc; j++) sh.set(r + i, c + j, ''); return range; };
         return () => range;
       },
     });
@@ -46,7 +47,7 @@ class Sheet {
   insertChart(c) { this.charts.push(c); }
   newChart() { const b = new Proxy({}, { get: (_, k) => (k === 'build' ? () => ({}) : () => b) }); return b; }
 }
-for (const m of ['setFrozenRows', 'setColumnWidth', 'setColumnWidths', 'setHiddenGridlines']) Sheet.prototype[m] = function () { return this; };
+for (const m of ['setFrozenRows', 'setColumnWidth', 'setColumnWidths', 'setHiddenGridlines', 'hideSheet']) Sheet.prototype[m] = function () { return this; };
 
 export function makeEnv() {
   const sheets = [new Sheet('Sheet1')];

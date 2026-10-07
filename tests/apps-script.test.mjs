@@ -126,4 +126,17 @@ assert.equal(post({ action: 'list' }).settings.allowanceAccount, 'ADCB Allowance
 r = post({ action: 'accounts', accounts: post({ action: 'list' }).accounts.map((a) => (a.name === 'Cash' ? { ...a, archived: true } : a)) });
 assert.equal(r.accounts.find((a) => a.name === 'Cash').archived, true);
 
+// reset: entries and merchants cleared, a hidden backup keeps the old ledger, accounts survive
+const before = post({ action: 'list' }).entries.length;
+assert.ok(before > 0);
+r = post({ action: 'reset' });
+assert.ok(r.ok && r.backup.startsWith('Backup '));
+const backupTab = ss.getSheetByName(r.backup);
+assert.equal(backupTab.getLastRow() - 1, before);
+list = post({ action: 'list' });
+assert.equal(list.entries.length, 0);
+assert.deepEqual(list.merchants, {});
+assert.ok(list.accounts.length >= 4);
+assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).length, 1);
+
 console.log('apps-script: all tests passed');

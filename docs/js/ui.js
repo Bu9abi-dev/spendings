@@ -100,10 +100,28 @@ export function openSheet({ html, label = 'Sheet', onMount, onClose, tall = true
     anim.onfinish = () => { sheet.style.transform = `translateY(${y}px)`; anim?.cancel(); anim = null; done?.(); };
   }
 
+  // Keep the sheet above the iPhone keyboard: shrink to the visible area and keep the focused field in view.
+  const vv = window.visualViewport;
+  const fit = () => {
+    if (!vv) return;
+    const kb = Math.max(0, Math.round(window.innerHeight - vv.height - vv.offsetTop));
+    sheet.style.setProperty('--kb', `${kb}px`);
+    sheet.classList.toggle('kb-open', kb > 80);
+  };
+  vv?.addEventListener('resize', fit);
+  vv?.addEventListener('scroll', fit);
+  fit();
+  sheet.addEventListener('focusin', (ev) => {
+    if (!ev.target.matches('input, select, textarea')) return;
+    setTimeout(() => ev.target.scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' }), 280);
+  });
+
   let closed = false;
   function close(velocity = 0) {
     if (closed) return;
     closed = true;
+    vv?.removeEventListener('resize', fit);
+    vv?.removeEventListener('scroll', fit);
     app.classList.toggle('behind', stack.length > 1);
     animateTo(h() + 40, {
       velocity,

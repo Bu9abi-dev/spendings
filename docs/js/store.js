@@ -1,5 +1,5 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, balances, cycleOf, toAED, uid } from './model.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { demoEntries, DEMO_PLAN } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs' };
@@ -123,6 +123,7 @@ async function flushOutbox() {
     else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
     else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
     else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
+    else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
     state.outbox.shift();
     persist();
   }
@@ -154,11 +155,35 @@ function finalize(e) {
   return out;
 }
 
+/* ───── Undo ─────
+   Every change records how to reverse itself. undo() replays the reversal without recording it. */
+const history = [];
+let muted = 0;
+function record(label, reverse) {
+  if (muted) return;
+  history.push({ label, reverse });
+  if (history.length > 30) history.shift();
+  emit('history');
+}
+export const canUndo = () => history.length > 0;
+export const lastAction = () => history[history.length - 1]?.label || '';
+export function undo() {
+  const h = history.pop();
+  if (!h) return '';
+  muted++;
+  try { h.reverse(); } finally { muted--; }
+  emit('history');
+  return h.label;
+}
+const describe = (e) => `${money(e.amount, e.currency)}${e.merchant ? ` · ${e.merchant}` : e.type === 'Transfer' ? ` · ${e.account} → ${e.toAccount}` : ''}`;
+const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'category', 'merchant', 'note', 'date', 'source'];
+
 export function addEntry(fields) {
   const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields });
   state.entries = sortEntries([e, ...state.entries]);
   if (e.merchant && e.category && e.type === 'Spend') state.merchants[merchantKey(e.merchant)] = e.category;
   if (!state.prefs.demo) enqueue({ op: 'add', id: e.id, entry: e });
+  record(e.type === 'Adjustment' ? `Matched ${e.account} with bank` : `Added ${describe(e)}`, () => deleteEntry(e.id));
   persist(); emit('entries');
   sync();
   return e;
@@ -167,6 +192,8 @@ export function addEntry(fields) {
 export function updateEntry(id, fields) {
   const i = state.entries.findIndex((x) => x.id === id);
   if (i < 0) return;
+  const before = state.entries[i];
+  record(`Edited ${describe(before)}`, () => updateEntry(id, Object.fromEntries(ENTRY_FIELDS.map((k) => [k, before[k]]))));
   const e = finalize({ ...state.entries[i], ...fields });
   state.entries[i] = e;
   sortEntries(state.entries);
@@ -181,6 +208,7 @@ export function updateEntry(id, fields) {
 export function deleteEntry(id) {
   const removed = state.entries.find((x) => x.id === id);
   state.entries = state.entries.filter((x) => x.id !== id);
+  if (removed) record(`Deleted ${describe(removed)}`, () => restoreEntry(removed));
   if (!state.prefs.demo) enqueue({ op: 'delete', id });
   persist(); emit('entries');
   sync();
@@ -195,6 +223,8 @@ export function restoreEntry(entry) {
 }
 
 export function saveSettings(patch) {
+  const before = Object.fromEntries(Object.keys(patch).map((k) => [k, state.settings[k]]));
+  record('Changed a setting', () => saveSettings(before));
   state.settings = { ...state.settings, ...patch };
   state.entries = state.entries.map((e) => ({ ...e, cycle: cycleOf(e.date, state.settings.cycleStart) }));
   if (!state.prefs.demo) enqueue({ op: 'settings', id: 'settings', settings: patch });
@@ -205,6 +235,8 @@ export function saveSettings(patch) {
 // same normalisation as the sheet's Merchants tab
 const merchantKey = (m) => String(m || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
 export function savePlan(plan) {
+  const before = state.plan;
+  record('Changed the payday plan', () => savePlan(before));
   state.plan = plan;
   if (!state.prefs.demo) {
     state.outbox = state.outbox.filter((o) => o.op !== 'plan');
@@ -230,12 +262,17 @@ function commitAccounts(list, { queue = true } = {}) {
 export const nameTaken = (name, except = '') => state.accounts.some((a) => a.name.toLowerCase() === name.trim().toLowerCase() && a.name !== except);
 
 export function addAccount(a) {
+  const before = state.accounts;
+  record(`Added ${a.name.trim()}`, () => commitAccounts(before));
   commitAccounts([...state.accounts, { name: a.name.trim(), note: a.note || '', color: a.color || 'graphite', wallet: a.wallet || '', archived: false }]);
 }
 
 /** Change an account. A new name is carried through every entry, the plan and settings. */
 export function updateAccount(oldName, patch) {
   const newName = (patch.name ?? oldName).trim();
+  const prev = state.accounts.find((a) => a.name === oldName);
+  if (prev) record(newName !== oldName ? `Renamed ${oldName} to ${newName}` : `Edited ${oldName}`, () => updateAccount(newName, { ...prev }));
+  muted++;
   if (newName !== oldName) {
     const sw = (v) => (v === oldName ? newName : v);
     state.entries = state.entries.map((e) => (e.account === oldName || e.toAccount === oldName ? { ...e, account: sw(e.account), toAccount: sw(e.toAccount) } : e));
@@ -245,17 +282,35 @@ export function updateAccount(oldName, patch) {
     if (!state.prefs.demo) enqueue({ op: 'rename', id: '', from: oldName, to: newName });
   }
   commitAccounts(state.accounts.map((a) => (a.name === oldName ? { ...a, ...patch, name: newName } : a)));
+  muted--;
 }
 
 /** Retire an account. Any money left in it is moved to `moveTo` first so the total stays right. */
 export function removeAccount(name, moveTo) {
   const bal = balances(state.entries, state.settings).get(name)?.balance || 0;
+  const before = state.accounts;
+  let closing = null;
+  muted++;
   if (Math.abs(bal) >= 0.01 && moveTo) {
-    addEntry(bal > 0
+    closing = addEntry(bal > 0
       ? { type: 'Transfer', amount: bal, account: name, toAccount: moveTo, note: `Closing ${name}` }
       : { type: 'Transfer', amount: -bal, account: moveTo, toAccount: name, note: `Closing ${name}` });
   }
   commitAccounts(state.accounts.map((a) => (a.name === name ? { ...a, archived: true } : a)));
+  muted--;
+  record(`Removed ${name}`, () => { if (closing) deleteEntry(closing.id); commitAccounts(before); });
+}
+
+/* ───── Reset ───── */
+
+/** Erase every entry and learned merchant. The sheet keeps a backup copy of the Ledger first. */
+export function resetAll() {
+  state.entries = [];
+  state.merchants = {};
+  state.outbox = state.prefs.demo || !isConnected() ? [] : [{ op: 'reset', id: '' }];
+  history.length = 0;
+  persist(); emit('entries'); emit('history');
+  sync();
 }
 
 export function moveAccount(name, delta) {

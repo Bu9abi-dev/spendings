@@ -1,6 +1,6 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
 import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money, fmt, dubaiParts } from './model.js';
-import { state, addEntry, updateEntry, deleteEntry, restoreEntry, suggestCategory } from './store.js';
+import { state, addEntry, updateEntry, deleteEntry, suggestCategory, setPrefs, undo } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 
@@ -33,14 +33,18 @@ export function openEntry(existing = null, preset = {}) {
     </div>
     <div class="amount-row">
       <button class="cur-pill" type="button" data-act="currency" aria-label="Currency"></button>
-      <output class="amount num" aria-live="polite"></output>
+      <span class="amount-box">
+        <output class="amount num" aria-live="polite"></output>
+        <input class="amount-input num" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" aria-label="Amount" placeholder="0">
+      </span>
+      <button class="kb-toggle" type="button" data-act="keys" aria-label="Switch keyboard">${icon('keyboard', { size: 20 })}</button>
     </div>
     <p class="amount-sub"></p>
     <div class="sheet-scroll">
       <div class="field-group">
         <label class="field merchant-field">
           ${icon('store', { size: 20 })}
-          <input type="text" name="merchant" autocomplete="off" autocapitalize="words" enterkeyhint="done" maxlength="80" value="${esc(e.merchant)}">
+          <input type="text" name="merchant" autocomplete="off" autocapitalize="words" enterkeyhint="next" maxlength="80" value="${esc(e.merchant)}">
         </label>
       </div>
       <div class="block-label" data-label="account"></div>
@@ -95,6 +99,24 @@ export function openEntry(existing = null, preset = {}) {
         }
         seg.querySelectorAll('[data-type]').forEach((b) => b.setAttribute('aria-checked', String(b.dataset.type === e.type)));
       }
+
+      const amountInput = $('.amount-input');
+      const setNative = (on) => {
+        sheet.classList.toggle('native', on);
+        $('.kb-toggle').setAttribute('aria-label', on ? 'Use the app keypad' : 'Use the iPhone keyboard');
+        $('.kb-toggle').classList.toggle('on', on);
+        if (on) { amountInput.value = amountStr; setTimeout(() => amountInput.focus({ preventScroll: true }), 60); }
+      };
+      // the iPhone keyboard: keep only digits and one point, two decimals at most
+      amountInput.addEventListener('input', () => {
+        let v = amountInput.value.replace(/,/g, '.').replace(/[^0-9.]/g, '');
+        const [i, ...rest] = v.split('.');
+        v = (i || '').slice(0, 7) + (rest.length ? '.' + rest.join('').slice(0, 2) : '');
+        if (v !== amountInput.value) amountInput.value = v;
+        amountStr = v;
+        renderAmount();
+      });
+      amountInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); merchantInput.focus(); } });
 
       function renderAmount() {
         const shown = amountStr || '0';
@@ -182,6 +204,7 @@ export function openEntry(existing = null, preset = {}) {
       ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => del.addEventListener(t, () => clearTimeout(holdTimer)));
 
       sheet.addEventListener('keydown', (ev) => {
+        if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter' && !save.disabled) { ev.preventDefault(); save.click(); return; }
         if (ev.target.matches('input')) return;
         if (/^[0-9.]$/.test(ev.key)) sheet.querySelector(`[data-key="${ev.key}"]`)?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         if (ev.key === 'Backspace') del.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })), clearTimeout(holdTimer);
@@ -220,11 +243,12 @@ export function openEntry(existing = null, preset = {}) {
           setTimeout(() => openEntry(null, { type: e.type, amount: e.amount, currency: e.currency, account: e.account, toAccount: e.toAccount, category: e.category, merchant: merchantInput.value.trim(), note: noteInput.value.trim() }), 280);
           return;
         }
+        if (act === 'keys') { const on = !sheet.classList.contains('native'); setPrefs({ nativeKeys: on }); setNative(on); haptic(); return; }
         if (act === 'currency') { e.currency = e.currency === 'AED' ? 'USD' : 'AED'; haptic(); renderAmount(); }
         if (act === 'delete') {
           const removed = deleteEntry(existing.id);
           close();
-          toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => restoreEntry(removed), icon: icon('trash', { size: 18 }) });
+          toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => undo(), icon: icon('trash', { size: 18 }) });
         }
         if (act === 'save' && !save.disabled) {
           const fields = {
@@ -237,7 +261,7 @@ export function openEntry(existing = null, preset = {}) {
           if (existing) updateEntry(existing.id, fields);
           else addEntry(fields);
           close();
-          toast(`${existing ? 'Updated' : 'Saved'} · ${money(fields.amount, fields.currency)}${fields.category ? ' · ' + fields.category : ''}`, { icon: icon('check', { size: 18 }), tone: 'good' });
+          toast(`${existing ? 'Updated' : 'Saved'} · ${money(fields.amount, fields.currency)}${fields.category ? ' · ' + fields.category : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
         }
       });
 
@@ -246,10 +270,13 @@ export function openEntry(existing = null, preset = {}) {
       // text fields bring up the keyboard — tuck the keypad away meanwhile
       sheet.addEventListener('focusin', (ev) => { if (ev.target.matches('input[type="text"]')) sheet.classList.add('typing'); });
       sheet.addEventListener('focusout', (ev) => { if (ev.target.matches('input[type="text"]')) setTimeout(() => { if (!sheet.contains(document.activeElement) || !document.activeElement.matches('input[type="text"]')) sheet.classList.remove('typing'); }, 50); });
-      sheet.querySelectorAll('input[type="text"]').forEach((inp) => inp.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') inp.blur(); }));
+      // Return moves on: amount → where → note → save
+      merchantInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); noteInput.focus(); } });
+      noteInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); if (!save.disabled) save.click(); else noteInput.blur(); } });
 
       renderType();
       renderAmount();
+      setNative(!!state.prefs.nativeKeys);
       requestAnimationFrame(() => moveThumb(false));
     },
   });

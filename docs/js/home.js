@@ -3,9 +3,9 @@
 // from the side you moved towards. Below: the payday plan and where this cycle's money went.
 import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, accountMeta, cycleOf, cycleName, cycleRange, daysLeft, summarize,
-  balances, planStatus, hubBreakdown, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid,
+  balances, planStatus, hubBreakdown, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
-import { state, addEntry, deleteEntry, savePlan, isConnected, isDemo } from './store.js';
+import { state, addEntry, savePlan, isConnected, isDemo, undo } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 
@@ -36,7 +36,18 @@ function model() {
   const hub = s.emergencyAccount;
   const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
   const sum = summarize(state.entries, cyc, s);
-  return { s, cyc, bals, matched, total, status, hub, hubB, sum };
+  // what each account had when this cycle began, and what has flowed in since
+  const startIso = cycleBounds(cyc, s.cycleStart).start.toISOString();
+  const startBals = balances(state.entries.filter((e) => e.date < startIso), s);
+  const inflow = new Map();
+  for (const e of state.entries) {
+    if (e.cycle !== cyc || e.date < startIso) continue;
+    const v = toAED(e, s);
+    if (e.type === 'Income') inflow.set(e.account, (inflow.get(e.account) || 0) + v);
+    if (e.type === 'Transfer' && e.toAccount) inflow.set(e.toAccount, (inflow.get(e.toAccount) || 0) + v);
+    if (e.type === 'Adjustment' && v > 0) inflow.set(e.account, (inflow.get(e.account) || 0) + v);
+  }
+  return { s, cyc, bals, matched, total, status, hub, hubB, sum, startBals, inflow };
 }
 
 const lensColor = (f) => (f === 'all' ? 'var(--label-2)' : accountMeta(f).color);
@@ -157,6 +168,7 @@ function detailAll(m) {
   const h = helpers;
   const review = state.entries.filter((e) => e.status === 'Review');
   return `
+    ${allCard(m)}
     ${paydayCard(m)}
     ${flowCard(m)}
     ${review.length ? `<button class="review-row" type="button" data-act="review">
@@ -173,9 +185,9 @@ function detailAccount(m, f) {
   const recent = state.entries.filter((e) => e.account === f || e.toAccount === f).slice(0, 8);
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
   let body = '';
-  if (f === m.hub) body = hubCard(m);
+  if (f === m.hub) body = leftCard(m, f) + hubCard(m);
   else if (f === m.s.allowanceAccount) body = allowanceCard(m);
-  else body = `<section class="figures"><div><span>In this cycle</span><b class="num in">+${fmt(acc.received, { whole: true })}</b></div><div><span>Out this cycle</span><b class="num">${fmt(acc.spent, { whole: true })}</b></div></section>`;
+  else body = leftCard(m, f) + `<section class="figures"><div><span>In this cycle</span><b class="num in">+${fmt(m.inflow.get(f) || 0, { whole: true })}</b></div><div><span>Spent this cycle</span><b class="num">${fmt(acc.spent, { whole: true })}</b></div></section>`;
   return `
     ${body}
     <section class="group match-group">
@@ -209,6 +221,52 @@ function hubCard(m) {
         </button>`).join('')}</div>` : ''}
       <button type="button" class="text-btn add-resp" data-plan-new="Responsibility" data-from="${esc(hub)}">${icon('plus', { size: 16 })} Add a responsibility</button>
     </section>`;
+}
+
+/* The liquid capsule, shared by every view: the level is always "what's left of what you had". */
+function capsule({ label, value, meta, level, tone = '' }) {
+  return `<section class="capsule ${tone}" style="--level:${Math.max(0, Math.min(1, level))}" aria-label="${esc(label)}">
+      <div class="liquid" aria-hidden="true">
+        <svg class="wave w1" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 0 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
+        <svg class="wave w2" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 18 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
+        <div class="liquid-body"></div>
+      </div>
+      <div class="cap-rim" aria-hidden="true"></div>
+      <div class="cap-content">
+        <span class="cap-label">${label}</span>
+        <span class="cap-value num" data-value="${value.n}" style="--chars:${value.text.length}">${value.text}</span>
+        <span class="cap-meta">${meta}</span>
+      </div>
+    </section>`;
+}
+
+/** Left this cycle for one account: what it holds now, out of what it started with plus what came in. */
+function leftCard(m, f) {
+  const had = Math.max(0, (m.startBals.get(f)?.balance || 0) + (m.inflow.get(f) || 0));
+  const now = m.bals.get(f)?.balance || 0;
+  const spent = Math.max(0, had - now);
+  if (!had) return capsule({ label: 'Left this cycle', value: { n: now, text: `AED ${fmt(now, { whole: true })}` }, meta: 'Nothing came in yet this cycle', level: now > 0 ? 1 : 0 });
+  const level = now / had;
+  return capsule({
+    label: now < 0 ? 'Overdrawn' : 'Left this cycle',
+    value: { n: Math.abs(now), text: `AED ${fmt(Math.abs(now), { whole: true })}` },
+    meta: `of ${fmt(had, { whole: true })} · ${Math.round(Math.min(1, spent / had) * 100)}% gone`,
+    level, tone: now < 0 ? 'over' : level < 0.2 ? 'low' : '',
+  });
+}
+
+/** All accounts together, as percentages. Transfers between your own accounts cancel out. */
+function allCard(m) {
+  const had = [...ACCOUNTS].reduce((a, x) => a + (m.startBals.get(x.id)?.balance || 0), 0) + m.sum.income;
+  const now = m.total;
+  if (had <= 0) return '';
+  const left = Math.max(0, now / had), spentPct = Math.round(Math.max(0, 1 - left) * 100);
+  return capsule({
+    label: 'Left this cycle',
+    value: { n: Math.round(left * 100), text: `${Math.round(Math.min(left, 9.99) * 100)}%` },
+    meta: `<b>${spentPct}% spent</b> · ${fmt(now, { whole: true })} left of ${fmt(had, { whole: true })}`,
+    level: left, tone: left < 0.2 ? 'low' : '',
+  });
 }
 
 function allowanceCard(m) {
@@ -285,11 +343,21 @@ function flowCard(m) {
 
 /* ───────────────────────── Motion ───────────────────────── */
 
+function riseLiquid(root) {
+  if (reduceMotion()) return;
+  root.querySelectorAll('.capsule .liquid').forEach((l) => {
+    const lv = +l.closest('.capsule').style.getPropertyValue('--level') || 0;
+    const sp = spring(0.75, 0.9);
+    l.animate([{ transform: 'translateY(100%)' }, { transform: `translateY(${(1 - lv) * 100}%)` }], { duration: sp.duration, easing: sp.easing });
+  });
+}
+
 function swapContent(el, html, dir) {
   el.getAnimations().forEach((a) => a.cancel());
   if (reduceMotion()) { el.innerHTML = html; return; }
   el.animate([{ opacity: 1, transform: 'none', filter: 'blur(0)' }, { opacity: 0, transform: `translateX(${-dir * 14}px)`, filter: 'blur(3px)' }], { duration: 110, easing: 'ease-in' }).onfinish = () => {
     el.innerHTML = html;
+    riseLiquid(el);
     const sp = spring(0.9, 0.38);
     el.animate([{ opacity: 0, transform: `translateX(${dir * 22}px)`, filter: 'blur(3px)' }, { opacity: 1, transform: 'none', filter: 'blur(0)' }], { duration: sp.duration, easing: sp.easing });
   };
@@ -343,6 +411,9 @@ function placePill(animate) {
     pillAnim = pill.animate([{ transform: from, width: fromW }, { transform: to, width: w }], { duration: sp.duration, easing: sp.easing });
   }
 }
+
+/* Arrow keys / swipes step through All → each account. */
+export function stepFocus(d) { const o = order(); setFocus(o[Math.max(0, Math.min(o.length - 1, o.indexOf(focus) + d))]); }
 
 /* Before a full re-render: remember what is on screen so numbers and segments move from there. */
 export function snapshotHome() {
@@ -459,7 +530,7 @@ function runPlan(id) {
     ? addEntry({ type: 'Income', amount: p.remaining || p.amount, account: p.to, category: p.category || 'Other', merchant: p.name, source: `Plan:${p.id}` })
     : addEntry({ type: 'Transfer', amount: p.remaining || p.amount, account: p.from, toAccount: p.to, note: p.name, source: `Plan:${p.id}` });
   toast(p.kind === 'Income' ? `${esc(p.name)} landed · +${fmt(e.amount, { whole: true })}` : `Moved ${fmt(e.amount, { whole: true })} to ${esc(p.to)}`, {
-    icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => deleteEntry(e.id),
+    icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo(),
   });
 }
 

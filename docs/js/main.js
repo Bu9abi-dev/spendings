@@ -3,7 +3,7 @@ import {
   cycleName, cycleRange, daysLeft, cycleLength, cycleBounds, summarize, money, fmt, fmtCompact, dayKey, dayLabel, timeLabel, toAED, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, restoreEntry, saveSettings, setDemo, setPrefs,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, restoreEntry, saveSettings, setDemo, setPrefs, undo, canUndo, lastAction, resetAll,
 } from './store.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
@@ -12,7 +12,7 @@ import { donut, bindDonut, paceLine, bindPace, inOutBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, CARD_COLORS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick, openAccount } from './accounts.js';
-import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock } from './home.js';
+import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
 const TABS = ['home', 'activity', 'insights', 'settings'];
@@ -62,7 +62,16 @@ function syncBadge() {
 }
 
 function largeTitle(title, sub = '', right = '') {
-  return `<header class="large-title"><div><h1>${title}</h1>${sub ? `<p class="lt-sub">${sub}</p>` : ''}</div><div class="lt-right">${right}</div></header>`;
+  return `<header class="large-title"><div><h1>${title}</h1>${sub ? `<p class="lt-sub">${sub}</p>` : ''}</div><div class="lt-right"><span class="undo-slot">${undoButton()}</span>${right}</div></header>`;
+}
+function undoButton() {
+  return canUndo() ? `<button type="button" class="undo-btn" data-act="undo" aria-label="Undo: ${esc(lastAction())}" title="Undo: ${esc(lastAction())} (⌘Z)">${icon('undo', { size: 18 })}</button>` : '';
+}
+function doUndo() {
+  if (!canUndo()) return;
+  haptic();
+  const label = undo();
+  toast(`Undone · ${esc(label)}`, { icon: icon('undo', { size: 18 }) });
 }
 
 function demoBanner() {
@@ -290,6 +299,7 @@ function renderSettings() {
 
     <h3 class="group-title">Data</h3>
     <section class="group">
+      <button type="button" class="row link-row" data-act="reset"><span class="row-icon" style="--tint:var(--neg)">${icon('trash', { size: 20 })}</span><span class="row-main"><span class="row-title danger-text">Reset sheet</span><span class="row-sub">Erase every entry and start fresh</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <button type="button" class="row link-row" data-act="export"><span class="row-icon" style="--tint:var(--tint-text)">${icon('download', { size: 20 })}</span><span class="row-main"><span class="row-title">Export CSV</span><span class="row-sub">Every entry, for backup</span></span></button>
       <label class="row toggle-row"><span class="row-icon" style="--tint:var(--series-7)">${icon('sparkle', { size: 20 })}</span>
         <span class="row-main"><span class="row-title">Demo data</span><span class="row-sub">Look around with made-up numbers</span></span>
@@ -556,6 +566,8 @@ document.addEventListener('click', async (ev) => {
   if (act === 'demo') { setDemo(true); toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) }); }
   if (act === 'exit-demo') { setDemo(false); render(); }
   if (act === 'export') exportCSV();
+  if (act === 'undo') doUndo();
+  if (act === 'reset') openReset();
   if (act === 'connect') connect(t.closest('[data-act]'));
 });
 
@@ -575,6 +587,52 @@ async function connect(btn) {
   } catch (e) {
     toast(e.message, { icon: icon('warn', { size: 18 }), tone: 'warn' });
   } finally { btn.disabled = false; btn.classList.remove('busy'); }
+}
+
+/* Press and hold to confirm: a slip of the finger can't erase anything. */
+function openReset() {
+  const n = state.entries.length;
+  openSheet({
+    label: 'Reset sheet', tall: false,
+    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">Cancel</button><h2 class="sheet-title">Reset sheet</h2><span class="icon-btn-spacer"></span></header>
+      <div class="reset-body">
+        <div class="reset-icon">${icon('trash', { size: 28 })}</div>
+        <p class="reset-lede">This erases <b>${n} ${n === 1 ? 'entry' : 'entries'}</b>, the merchants the app learned, and the month tabs.</p>
+        <ul class="reset-keep">
+          <li>${icon('check', { size: 16 })}Your accounts, payday plan and settings stay.</li>
+          <li>${icon('check', { size: 16 })}${isConnected() && !isDemo() ? 'The sheet saves a hidden backup tab first, so nothing is truly lost.' : 'Export a CSV first if you want a copy.'}</li>
+        </ul>
+        <button type="button" class="hold-btn" data-hold><span class="hold-fill" aria-hidden="true"></span><span class="hold-label">Hold to erase everything</span></button>
+      </div>`,
+    onMount(sheet, close) {
+      sheet.querySelector('[data-act="cancel"]').onclick = () => close();
+      const btn = sheet.querySelector('[data-hold]'), fill = sheet.querySelector('.hold-fill'), label = sheet.querySelector('.hold-label');
+      let anim = null;
+      const start = (ev) => {
+        ev.preventDefault();
+        haptic();
+        anim = fill.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 1600, easing: 'linear', fill: 'forwards' });
+        label.textContent = 'Keep holding…';
+        anim.onfinish = () => {
+          haptic();
+          resetAll();
+          close();
+          toast('Sheet reset · starting fresh', { icon: icon('check', { size: 18 }), tone: 'good' });
+        };
+      };
+      const stop = () => {
+        if (!anim || anim.playState === 'finished') return;
+        const p = anim.currentTime / 1600;
+        anim.cancel();
+        fill.animate([{ transform: `scaleX(${p})` }, { transform: 'scaleX(0)' }], { duration: 260, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+        label.textContent = 'Hold to erase everything';
+      };
+      btn.addEventListener('pointerdown', start);
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => btn.addEventListener(t, stop));
+      btn.addEventListener('keydown', (ev) => { if ((ev.key === ' ' || ev.key === 'Enter') && !ev.repeat) start(ev); });
+      btn.addEventListener('keyup', (ev) => { if (ev.key === ' ' || ev.key === 'Enter') stop(); });
+    },
+  });
 }
 
 function exportCSV() {
@@ -611,6 +669,7 @@ let knownIds = new Set(state.entries.map((e) => e.id));
 let freshIds = new Set();
 subscribe((reason) => {
   if (reason === 'prefs') return;
+  if (reason === 'history') { const slot = view.querySelector('.undo-slot'); if (slot) slot.innerHTML = undoButton(); return; }
   const ids = new Set(state.entries.map((e) => e.id));
   freshIds = new Set([...ids].filter((id) => !knownIds.has(id)));
   knownIds = ids;
@@ -646,7 +705,7 @@ function swipeDelete(wrap) {
   const finish = () => {
     openSwipe = null;
     deleteEntry(removed.id);
-    toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => restoreEntry(removed), icon: icon('trash', { size: 18 }) });
+    toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
   };
   if (reduceMotion()) return finish();
   const row = wrap.querySelector('.entry');
@@ -710,6 +769,17 @@ function handleDeepLink() {
 
 applyAppearance(state.prefs.appearance);
 matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => applyAppearance(state.prefs.appearance));
+/* Keyboard: N new entry · 1–4 tabs · ←/→ accounts on Home · / search · ⌘Z undo */
+document.addEventListener('keydown', (ev) => {
+  const typing = ev.target.matches?.('input, textarea, select, [contenteditable]');
+  if ((ev.metaKey || ev.ctrlKey) && ev.key.toLowerCase() === 'z' && !ev.shiftKey && !typing) { ev.preventDefault(); doUndo(); return; }
+  if (typing || ev.metaKey || ev.ctrlKey || ev.altKey || document.documentElement.classList.contains('sheet-open') || document.documentElement.classList.contains('locked')) return;
+  if (ev.key === 'n' || ev.key === 'N' || ev.key === '+') { ev.preventDefault(); openEntry(); }
+  else if (/^[1-4]$/.test(ev.key)) go(TABS[+ev.key - 1]);
+  else if (ev.key === '/') { ev.preventDefault(); go('activity'); setTimeout(() => view.querySelector('.search input')?.focus(), 60); }
+  else if (tab === 'home' && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft')) { ev.preventDefault(); stepFocus(ev.key === 'ArrowRight' ? 1 : -1); }
+});
+
 bindHomeGestures(view);
 render();
 initLock();
