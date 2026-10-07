@@ -17,7 +17,7 @@ A personal money tracker for iPhone. Apple Pay payments are logged as they happe
 - **Design:** Apple's design language with Liquid Glass chrome, spring motion and dark mode. It respects Reduce Motion and Reduce Transparency.
 - **Reliability and privacy:** works offline (queued sync), optional Face ID lock, and CSV export.
 
-**Start here:** [SETUP.md](SETUP.md)
+**Start here:** [SETUP.md](SETUP.md) · **What changed in each version:** [CHANGELOG.md](CHANGELOG.md)
 
 ## Layout
 
