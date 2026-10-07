@@ -28,8 +28,8 @@ function entryRow(e) {
     const v = +e.amount || 0;
     return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry adj" type="button" data-id="${esc(e.id)}">
     <span class="row-icon" style="--tint:${accountMeta(e.account).color}">${icon('sync', { size: 20 })}</span>
-    <span class="row-main"><span class="row-title">Matched with bank</span><span class="row-sub">${esc(e.account)} · ${timeLabel(e.date)}</span></span>
-    <span class="row-amt num tr">${v === 0 ? 'exact' : `${v > 0 ? '+' : '−'}${fmt(Math.abs(v), { fixed: true })}`}</span>
+    <span class="row-main"><span class="row-title">Checked with bank</span><span class="row-sub">${esc(e.account)} · ${timeLabel(e.date)}</span></span>
+    <span class="row-amt num tr">${v === 0 ? '✓ matched' : `${v > 0 ? '+' : '−'}${fmt(Math.abs(v), { fixed: true })}`}</span>
   </button></div>`;
   }
   const isIn = e.type === 'Income', isTr = e.type === 'Transfer';
@@ -110,7 +110,7 @@ function renderActivity() {
   return `
     ${largeTitle('Activity', `${state.entries.length} ${state.entries.length === 1 ? 'entry' : 'entries'}`, syncBadge())}
     ${demoBanner()}
-    <div class="search">${icon('search', { size: 18 })}<input type="search" placeholder="Search merchant, note or category" value="${esc(activityFilter.q)}" aria-label="Search entries" enterkeyhint="search"></div>
+    <div class="search">${icon('search', { size: 18 })}<input type="search" placeholder="Search" value="${esc(activityFilter.q)}" aria-label="Search entries" enterkeyhint="search"></div>
     <div class="filter-chips" role="tablist" aria-label="Filter">
       ${[['all', 'All'], ['Spend', 'Spending'], ['Income', 'Income'], ['Transfer', 'Transfers'], ['review', 'Needs review']]
         .map(([k, l]) => `<button type="button" role="tab" class="fchip${activityFilter.kind === k ? ' on' : ''}" aria-selected="${activityFilter.kind === k}" data-kind="${k}">${l}</button>`).join('')}
@@ -205,7 +205,7 @@ function renderInsights() {
     <section class="panel">
       <h3 class="panel-title">Allowance pace</h3>
       <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(s.allowance, { whole: true })}.
-        ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'neg' : 'in'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} ahead of pace` : `AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>
+        ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'pace-bad' : 'pace-good'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} over pace` : `On track · AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>
       <div class="series-legend"><span><i class="sw spend"></i>Spent so far</span><span><i class="sw pace"></i>Even pace</span></div>
       ${paceLine({ days: len, cumulative, pace, todayIndex: today, labels })}
     </section>
@@ -249,12 +249,14 @@ function renderSettings() {
         <span class="row-main"><span class="row-title">${isConnected() ? 'Connected' : 'Not connected'}</span>
           <span class="row-sub">${isConnected() ? (state.sync.status === 'error' ? `<span class="warn-text">${esc(state.sync.error)}</span>` : `Last synced ${syncedAgo}${state.outbox.length ? ` · ${state.outbox.length} waiting` : ''}`) : 'Paste the Web app URL and app key from your sheet'}</span></span>
       </div>
+      ${isConnected() ? '<details class="conn-details"><summary class="row link-row"><span class="row-main"><span class="row-title">Connection details</span></span>' + icon('chevD', { size: 16, cls: 'chev' }) + '</summary>' : ''}
       <label class="row input-row"><span>Web app URL</span><input name="url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="row input-row"><span>App key</span><input name="token" type="text" placeholder="From Spendings → Show my app key" value="${esc(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <div class="row btn-row">
         <button type="button" class="btn-tinted" data-act="connect">${icon('link', { size: 18 })}Connect</button>
         <button type="button" class="btn-tinted" data-act="sync" ${isConnected() ? '' : 'disabled'}>${icon('sync', { size: 18 })}Sync now</button>
       </div>
+      ${isConnected() ? '</details>' : ''}
       ${state.sheetUrl ? `<a class="row link-row" href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${icon('sheet', { size: 20 })}<span>Open the sheet</span>${icon('chevR', { size: 16, cls: 'chev' })}</a>` : ''}
     </section>
     <p class="group-foot">The app key is like a password for your sheet. It stays on this phone and in your Shortcut, never in the app’s code.</p>
@@ -283,7 +285,7 @@ function renderSettings() {
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
-      <label class="row input-row"><span>Allowance per cycle</span><span class="suffix-input"><em>AED</em><input name="allowance" type="number" inputmode="decimal" min="0" step="50" value="${s.allowance}"></span></label>
+      <button type="button" class="row link-row" data-go="settings" data-anchor="plan"><span class="row-main"><span class="row-title">Allowance per cycle</span><span class="row-sub">Set by the allowance move in your payday plan</span></span><b class="num">${fmt(s.allowance, { whole: true })}</b>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <label class="row input-row"><span>Allowance card</span><select name="allowanceAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.allowanceAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
       <label class="row input-row"><span>Main account (pay lands)</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
       <label class="row input-row"><span>Cycle starts on the</span><select name="cycleStart">${Array.from({ length: 28 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${d === s.cycleStart ? 'selected' : ''}>${ordinal(d)}</option>`).join('')}</select></label>
@@ -458,7 +460,8 @@ function render(reason) {
     const target = +v.dataset.value;
     if (prevVal != null) {
       v.dataset.value = prevVal;
-      rollNumber(v, target, (n) => `AED ${fmt(n, { whole: true })}`);
+      const unit = v.dataset.unit;
+      rollNumber(v, target, (n) => (unit === 'pct' ? `${Math.round(n)}%` : `AED ${fmt(n, { whole: true })}`));
     }
   }
   document.querySelectorAll('.tabbar [data-tab]').forEach((b) => {
@@ -471,6 +474,8 @@ function render(reason) {
 
 function go(next) {
   if (!TABS.includes(next)) return;
+  const t = document.getElementById('toast');
+  if (!t.hidden) { t.classList.remove('show'); setTimeout(() => { t.hidden = true; }, 250); }
   if (next === tab) { window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
   tab = next;
   history.replaceState(null, '', `#${tab}`);

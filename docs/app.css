@@ -676,7 +676,7 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
   transition: transform 0.16s var(--ease-out), background-color 0.25s, color 0.25s;
 }
 .save-btn:active:not(:disabled) { transform: scale(0.98); }
-.save-btn:disabled { background: var(--fill-3); color: var(--label-2); }
+.save-btn:disabled, .save-btn.off { background: var(--fill-3); color: var(--label-2); }
 
 /* review sheet */
 .review-list { padding: 0 var(--gutter) 20px; display: grid; gap: 10px; align-content: start; }
@@ -883,7 +883,8 @@ html.sheet-open { overflow: hidden; }
 .lens-amount {
   display: flex; align-items: center;
   margin: 2px 0 6px;
-  font: 700 clamp(44px, 15.5vw, 68px)/1.04 var(--font-display);
+  font: 700 clamp(30px, min(15.5vw, calc((100vw - 2 * var(--gutter) - 40px) / (var(--chars, 7) * 0.6))), 68px)/1.04 var(--font-display);
+  max-width: 100%; overflow: hidden;
   letter-spacing: -0.045em;
   color: var(--label);
   touch-action: pan-y;
@@ -1089,3 +1090,37 @@ html.sheet-open { overflow: hidden; }
 .hold-btn { position: relative; overflow: hidden; width: 100%; height: 54px; border-radius: 999px; background: var(--neg); color: #fff; font-size: 17px; font-weight: 650; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; touch-action: none; }
 .hold-fill { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.3); transform: scaleX(0); transform-origin: left; }
 .hold-label { position: relative; }
+
+/* pace + inline actions in the hero line */
+.pace-good { color: var(--good); font-weight: 600; }
+.pace-bad { color: var(--warn); font-weight: 600; }
+.soon-btn { font: inherit; color: var(--good); font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; padding: 2px 0; }
+.soon-btn:active { opacity: 0.6; }
+
+/* where your money is: parts that add up to the total */
+.where { margin: 0 var(--gutter) 14px; padding: 16px; border-radius: var(--r-group); background: var(--bg-2); }
+.where h3 { font-size: 17px; font-weight: 650; margin-bottom: 12px; font-variant-numeric: tabular-nums; }
+.where-bar { display: flex; gap: 3px; height: 10px; margin-bottom: 8px; }
+.where-bar span { flex-basis: 4px; border-radius: 5px; background: var(--c); transition: flex-grow var(--spring-d) var(--spring); }
+.where-row { display: flex; align-items: center; gap: 10px; min-height: 46px; border-bottom: 0.5px solid var(--sep); }
+.where-row i { width: 9px; height: 9px; border-radius: 50%; background: var(--c); flex: none; }
+.wr-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.wr-main b { font-size: 15px; font-weight: 600; }
+.wr-main span { font-size: 12.5px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.where-row > b { font-size: 16px; font-weight: 650; }
+.where-row.total { border-bottom: 0; padding-left: 19px; }
+.where-row.total b { font-weight: 750; }
+
+/* iOS 26 scroll edge: content fades out under the floating tab bar instead of colliding with it */
+body::after {
+  content: ""; position: fixed; left: 0; right: 0; bottom: 0; z-index: 25; pointer-events: none;
+  height: calc(var(--tabbar-h) + var(--safe-b) + 34px);
+  background: linear-gradient(to bottom, transparent, color-mix(in srgb, var(--bg) 82%, transparent) 55%, var(--bg));
+}
+html.sheet-open body::after { opacity: 0; }
+
+.acct-chip.long { font-size: 10.5px; letter-spacing: -0.02em; }
+.conn-details > summary { list-style: none; cursor: pointer; }
+.conn-details > summary::-webkit-details-marker { display: none; }
+.conn-details[open] > summary .chev { transform: rotate(180deg); }
+.conn-details .chev { transition: transform 0.25s var(--ease-out); margin-left: auto; }

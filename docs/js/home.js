@@ -47,11 +47,22 @@ function model() {
     if (e.type === 'Transfer' && e.toAccount) inflow.set(e.toAccount, (inflow.get(e.toAccount) || 0) + v);
     if (e.type === 'Adjustment' && v > 0) inflow.set(e.account, (inflow.get(e.account) || 0) + v);
   }
-  return { s, cyc, bals, matched, total, status, hub, hubB, sum, startBals, inflow };
+  // Safe to spend: what's left of this cycle's ADCB allowance, never more than ADCB actually holds.
+  const allowAcc = s.allowanceAccount;
+  const allowBal = bals.get(allowAcc)?.balance || 0;
+  const allowLeft = sum.allowanceLeft;
+  const safe = Math.min(allowLeft, Math.max(allowBal, 0));
+  const { start, end } = cycleBounds(cyc, s.cycleStart);
+  const len = (end - start) / 864e5;
+  const elapsed = Math.min(len, Math.max(0, (Date.now() - start) / 864e5));
+  const expected = (s.allowance * elapsed) / len;
+  const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart) };
+  const allowanceUnmoved = allowLeft > allowBal + 0.5;
+  return { s, cyc, bals, matched, total, status, hub, hubB, sum, startBals, inflow, allowAcc, allowBal, allowLeft, safe, pace, allowanceUnmoved };
 }
 
 const lensColor = (f) => (f === 'all' ? 'var(--label-2)' : accountMeta(f).color);
-function valueFor(m, f) { return f === 'all' ? m.total : m.bals.get(f)?.balance || 0; }
+function valueFor(m, f) { return f === 'all' ? m.safe : m.bals.get(f)?.balance || 0; }
 
 function amountParts(v) {
   const neg = v < 0, a = Math.abs(Math.round(v * 100) / 100);
@@ -89,6 +100,7 @@ function setAmount(lv, v, instant = false) {
   const p = amountParts(v);
   setOdo(lv.querySelector('.lv-int'), p.int, instant);
   setOdo(lv.querySelector('.lv-dec'), p.dec, instant);
+  lv.closest('.lens-amount')?.style.setProperty('--chars', p.int.length + 3);
   lv.setAttribute('aria-label', `AED ${p.int}${p.dec}`);
   lv.dataset.v = v;
 }
@@ -99,23 +111,35 @@ function amountHTML(v) {
 }
 
 function label(m, f) {
-  if (f === 'all') return 'All your money';
+  if (f === 'all') return `Safe to spend <span class="lens-role">· ${esc(m.allowAcc)} allowance left this cycle</span>`;
   const a = accountMeta(f);
   return `${a.name} <span class="lens-role">· ${f === m.hub ? 'pay lands here' : f === m.s.allowanceAccount ? 'allowance' : a.role.toLowerCase()}</span>`;
 }
 
+/* Pace: how this cycle's allowance spending compares with an even spread over the cycle. */
+function paceLine(m) {
+  const { delta, daysLeft: dl } = m.pace, tol = Math.max(15, m.s.allowance * 0.03);
+  const perDay = dl > 0 && m.safe > 0 ? ` · ${fmt(m.safe / dl, { whole: true })} a day for ${dl} ${dl === 1 ? 'day' : 'days'}` : '';
+  if (m.allowLeft < 0) return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
+  if (delta > tol) return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
+  if (delta < -tol) return `<span class="pace-good">On track · ${fmt(-delta, { whole: true })} under pace</span>${perDay}`;
+  return `<span class="pace-good">On track</span>${perDay}`;
+}
+
 function meta(m, f) {
   const nextIncome = m.status.find((p) => p.kind === 'Income' && !p.complete);
-  const expect = nextIncome ? ` · <span class="soon">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} ${nextIncome.state === 'due' ? 'due now' : `on ${shortDate(nextIncome.due)}`}</span>` : '';
-  if (!m.matched) return 'Match each account with your bank once, and this becomes your real total.';
+  const expect = nextIncome ? ` · ${nextIncome.state === 'due'
+    ? `<button type="button" class="soon soon-btn" data-plan-act="land" data-plan-id="${esc(nextIncome.id)}">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} due · tap when it lands</button>`
+    : `<span class="soon">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} on ${shortDate(nextIncome.due)}</span>`}` : '';
+  if (!m.matched) return 'Match each account with your bank once, and these become your real numbers.';
   if (f === 'all') {
-    return `<b>${fmt(m.hubB.free, { whole: true })}</b> free in ${esc(m.hub)} · <b>${fmt(Math.max(0, m.sum.allowanceLeft), { whole: true })}</b> left to spend${expect}`;
+    const unmoved = m.allowanceUnmoved ? ` · <button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.status.find((p) => p.kind === 'Move' && p.to === m.allowAcc && !p.complete)?.id || '')}">Allowance not moved yet</button>` : '';
+    return `${paceLine(m)}${unmoved}${expect}`;
   }
   if (f === m.hub) return `<b>${fmt(m.hubB.free, { whole: true })}</b> is yours after responsibilities${expect}`;
   if (f === m.s.allowanceAccount) {
-    const dl = daysLeft(m.cyc, m.s.cycleStart), left = m.sum.allowanceLeft;
-    return left < 0 ? `<b class="neg">${fmt(-left, { whole: true })}</b> over this cycle’s allowance`
-      : `<b>${fmt(left, { whole: true })}</b> of ${fmt(m.s.allowance, { whole: true })} allowance left${dl ? ` · about ${fmt(left / dl, { whole: true })} a day` : ''}`;
+    const extra = m.allowBal - Math.max(0, m.safe);
+    return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend${extra > 0.5 ? ` · <b>${fmt(extra, { whole: true })}</b> carried over from earlier cycles` : ''}`;
   }
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
   return `<b>${fmt(acc.spent, { whole: true })}</b> spent this cycle`;
@@ -140,7 +164,7 @@ export function renderHome(h) {
       </section>` : ''}
     <section class="lens" data-focus="${focus}" style="--lens-c:${lensColor(focus)}" aria-label="Balances">
       <div class="lens-label">${label(m, focus)}</div>
-      <div class="lens-amount" aria-live="polite">${amountHTML(valueFor(m, focus))}</div>
+      <div class="lens-amount" aria-live="polite" style="--chars:${amountParts(valueFor(m, focus)).int.length + 3}">${amountHTML(valueFor(m, focus))}</div>
       <p class="lens-meta">${meta(m, focus)}</p>
       <div class="strip${pTotal ? '' : ' empty'}" aria-hidden="true">
         ${ACCOUNTS.map((a, i) => `<span class="seg${focus === a.id ? ' on' : ''}" data-seg="${a.id}" style="--c:${a.color}; flex-grow:${pTotal ? positive[i] : 1}"></span>`).join('')}
@@ -168,16 +192,16 @@ function detailAll(m) {
   const h = helpers;
   const review = state.entries.filter((e) => e.status === 'Review');
   return `
-    ${allCard(m)}
     ${paydayCard(m)}
-    ${flowCard(m)}
+    ${allowanceCard(m, true)}
+    ${whereCard(m)}
     ${review.length ? `<button class="review-row" type="button" data-act="review">
         <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>
         <span class="row-main"><span class="row-title">${review.length} ${review.length === 1 ? 'payment' : 'payments'} to sort</span><span class="row-sub">Pick a category for each</span></span>
         ${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
     ${h.quickAdd()}
     <div class="group-head"><h3 class="group-title">Recent</h3>${state.entries.length ? '<button class="text-btn" type="button" data-go="activity">See all</button>' : ''}</div>
-    <section class="group">${state.entries.slice(0, 6).map(h.entryRow).join('') || `<div class="empty">${icon('card', { size: 28 })}<p>No entries yet.</p><p class="muted">Pay with Apple Pay or tap <b>+</b>.</p></div>`}</section>`;
+    <section class="group">${state.entries.filter((e) => !(e.type === 'Adjustment' && !+e.amount)).slice(0, 6).map(h.entryRow).join('') || `<div class="empty">${icon('card', { size: 28 })}<p>No entries yet.</p><p class="muted">Pay with Apple Pay or tap <b>+</b>.</p></div>`}</section>`;
 }
 
 function detailAccount(m, f) {
@@ -185,7 +209,7 @@ function detailAccount(m, f) {
   const recent = state.entries.filter((e) => e.account === f || e.toAccount === f).slice(0, 8);
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
   let body = '';
-  if (f === m.hub) body = leftCard(m, f) + hubCard(m);
+  if (f === m.hub) body = leftCard(m, f) + hubCard(m) + flowCard(m);
   else if (f === m.s.allowanceAccount) body = allowanceCard(m);
   else body = leftCard(m, f) + `<section class="figures"><div><span>In this cycle</span><b class="num in">+${fmt(m.inflow.get(f) || 0, { whole: true })}</b></div><div><span>Spent this cycle</span><b class="num">${fmt(acc.spent, { whole: true })}</b></div></section>`;
   return `
@@ -234,7 +258,7 @@ function capsule({ label, value, meta, level, tone = '' }) {
       <div class="cap-rim" aria-hidden="true"></div>
       <div class="cap-content">
         <span class="cap-label">${label}</span>
-        <span class="cap-value num" data-value="${value.n}" style="--chars:${value.text.length}">${value.text}</span>
+        <span class="cap-value num" data-value="${value.n}" data-unit="${value.unit || 'aed'}" style="--chars:${value.text.length}">${value.text}</span>
         <span class="cap-meta">${meta}</span>
       </div>
     </section>`;
@@ -255,37 +279,47 @@ function leftCard(m, f) {
   });
 }
 
-/** All accounts together, as percentages. Transfers between your own accounts cancel out. */
-function allCard(m) {
-  const had = [...ACCOUNTS].reduce((a, x) => a + (m.startBals.get(x.id)?.balance || 0), 0) + m.sum.income;
-  const now = m.total;
-  if (had <= 0) return '';
-  const left = Math.max(0, now / had), spentPct = Math.round(Math.max(0, 1 - left) * 100);
+
+/* Allowance liquid. On All it speaks in percent (left / spent), on the allowance account in AED. */
+function allowanceCard(m, percent = false) {
+  const s = m.s, left = m.allowLeft;
+  const level = s.allowance > 0 ? Math.max(0, Math.min(1, left / s.allowance)) : 0;
+  const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
+  const spentPct = s.allowance > 0 ? Math.round((m.sum.allowanceUsed / s.allowance) * 100) : 0;
+  if (percent) {
+    return capsule({
+      label: left < 0 ? 'Allowance used up' : 'Allowance left',
+      value: { n: Math.round(level * 100), text: `${Math.round(level * 100)}%`, unit: 'pct' },
+      meta: `<b>${spentPct}% spent</b> · ${fmt(m.sum.allowanceUsed, { whole: true })} of ${fmt(s.allowance, { whole: true })} on ${esc(m.allowAcc)}`,
+      level, tone,
+    });
+  }
   return capsule({
-    label: 'Left this cycle',
-    value: { n: Math.round(left * 100), text: `${Math.round(Math.min(left, 9.99) * 100)}%` },
-    meta: `<b>${spentPct}% spent</b> · ${fmt(now, { whole: true })} left of ${fmt(had, { whole: true })}`,
-    level: left, tone: left < 0.2 ? 'low' : '',
+    label: left < 0 ? 'Over the allowance' : 'Allowance left',
+    value: { n: Math.abs(left), text: `AED ${fmt(Math.abs(left), { whole: true })}`, unit: 'aed' },
+    meta: `${spentPct}% spent · ${fmt(m.sum.allowanceUsed, { whole: true })} of ${fmt(s.allowance, { whole: true })} this cycle`,
+    level, tone,
   });
 }
 
-function allowanceCard(m) {
-  const s = m.s, left = m.sum.allowanceLeft;
-  const level = s.allowance > 0 ? Math.max(0, Math.min(1, left / s.allowance)) : 0;
-  const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
-  return `<section class="capsule ${tone}" style="--level:${level}" aria-label="Allowance">
-      <div class="liquid" aria-hidden="true">
-        <svg class="wave w1" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 0 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
-        <svg class="wave w2" viewBox="0 0 400 20" preserveAspectRatio="none"><path d="M0 10 Q 50 18 100 10 T 200 10 T 300 10 T 400 10 V20 H0z"/></svg>
-        <div class="liquid-body"></div>
-      </div>
-      <div class="cap-rim" aria-hidden="true"></div>
-      <div class="cap-content">
-        <span class="cap-label">${left < 0 ? 'Over the allowance' : 'Allowance left'}</span>
-        <span class="cap-value num" data-value="${Math.abs(left)}" style="--chars:${`AED ${fmt(Math.abs(left), { whole: true })}`.length}">AED ${fmt(Math.abs(left), { whole: true })}</span>
-        <span class="cap-meta">spent ${fmt(m.sum.allowanceUsed, { whole: true })} of ${fmt(s.allowance, { whole: true })} this cycle</span>
-      </div>
-    </section>`;
+/* Where your money is: every part of the total, so the numbers visibly add up. */
+function whereCard(m) {
+  if (!m.matched) return '';
+  const rows = [];
+  const add = (label, v, c, sub = '') => { if (Math.abs(v) >= 0.5) rows.push({ label, v, c, sub }); };
+  const allowColor = accountMeta(m.allowAcc).color, hubColor = accountMeta(m.hub).color;
+  add('Safe to spend', m.safe, allowColor, `${m.allowAcc} allowance left`);
+  if (m.allowAcc !== m.hub) add(`${m.allowAcc} carried over`, m.allowBal - m.safe, allowColor, 'unspent from earlier cycles');
+  add('Emergency money', m.hubB.free, hubColor, `${m.hub} after responsibilities`);
+  add('Responsibilities', m.hubB.reserved, 'var(--warn)', `held in ${m.hub} until paid`);
+  add('Still to move', m.hubB.toMove, 'var(--label-3)', `waiting in ${m.hub}`);
+  for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);
+  return `<section class="where">
+    <h3>Where your ${fmt(m.total, { whole: true })} is</h3>
+    <div class="where-bar">${rows.filter((r) => r.v > 0).map((r) => `<span style="flex-grow:${r.v}; --c:${r.c}"></span>`).join('')}</div>
+    ${rows.map((r) => `<div class="where-row"><i style="--c:${r.c}"></i><span class="wr-main"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></span><b class="num${r.v < 0 ? ' neg' : ''}">${r.v < 0 ? '−' : ''}${fmt(Math.abs(r.v), { whole: true })}</b></div>`).join('')}
+    <div class="where-row total"><span class="wr-main"><b>All your money</b></span><b class="num">${fmt(m.total, { whole: true })}</b></div>
+  </section>`;
 }
 
 function paydayCard(m) {

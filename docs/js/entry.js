@@ -1,5 +1,5 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
-import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money, fmt, dubaiParts } from './model.js';
+import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
 import { state, addEntry, updateEntry, deleteEntry, suggestCategory, setPrefs, undo } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
@@ -105,7 +105,7 @@ export function openEntry(existing = null, preset = {}) {
         sheet.classList.toggle('native', on);
         $('.kb-toggle').setAttribute('aria-label', on ? 'Use the app keypad' : 'Use the iPhone keyboard');
         $('.kb-toggle').classList.toggle('on', on);
-        if (on) { amountInput.value = amountStr; setTimeout(() => amountInput.focus({ preventScroll: true }), 60); }
+        if (on) { amountInput.value = amountStr; setTimeout(() => { const f = document.activeElement; if (!f || f === document.body || f === sheet || f.closest('.kb-toggle')) amountInput.focus({ preventScroll: true }); }, 60); }
       };
       // the iPhone keyboard: keep only digits and one point, two decimals at most
       amountInput.addEventListener('input', () => {
@@ -116,7 +116,7 @@ export function openEntry(existing = null, preset = {}) {
         amountStr = v;
         renderAmount();
       });
-      amountInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); merchantInput.focus(); } });
+      amountInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); merchantInput.focus({ preventScroll: true }); } });
 
       function renderAmount() {
         const shown = amountStr || '0';
@@ -163,17 +163,36 @@ export function openEntry(existing = null, preset = {}) {
         }).join('');
       }
 
+      let saveOk = false, bigOk = false, touchedAccount = !!existing;
+      const BIG = 20000;
       function validate() {
         let label = 'Save', ok = true;
         if (!(e.amount > 0)) { label = 'Enter an amount'; ok = false; }
         else if (e.type === 'Transfer' && (!e.toAccount || e.toAccount === e.account)) { label = 'Choose where it went'; ok = false; }
         else if (e.type !== 'Transfer' && !e.category) { label = 'Choose a category'; ok = false; }
-        save.disabled = !ok;
+        saveOk = ok;
+        // not `disabled`: a tap on it should point at what's missing
+        save.classList.toggle('off', !ok);
+        save.setAttribute('aria-disabled', String(!ok));
+        if (e.amount < BIG) bigOk = false;
         save.textContent = ok ? (existing ? 'Save changes' : `Save ${money(e.amount, e.currency)}`) : label;
+      }
+      function nudge() {
+        haptic();
+        const target = !(e.amount > 0) ? $('.amount-box') : e.type === 'Transfer' ? sheet.querySelector('[data-role="toAccount"]') : $('.cat-grid');
+        target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        target?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'none' }], { duration: 380, easing: 'ease-out' });
+        if (sheet.classList.contains('native') && !(e.amount > 0)) amountInput.focus();
       }
 
       function suggest() {
         if (e.type !== 'Spend') return;
+        // a merchant you've used before also brings back the card you paid with
+        const key = merchantInput.value.trim().toLowerCase();
+        if (key && !touchedAccount) {
+          const last = state.entries.find((x) => x.type === 'Spend' && x.merchant && x.merchant.toLowerCase() === key && ACCOUNTS.some((a) => a.id === x.account));
+          if (last && last.account !== e.account) { e.account = last.account; renderAccounts(); }
+        }
         const s = suggestCategory(merchantInput.value);
         const tag = $('.suggest');
         if (s && !e.category) {
@@ -204,11 +223,11 @@ export function openEntry(existing = null, preset = {}) {
       ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => del.addEventListener(t, () => clearTimeout(holdTimer)));
 
       sheet.addEventListener('keydown', (ev) => {
-        if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter' && !save.disabled) { ev.preventDefault(); save.click(); return; }
+        if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter' && saveOk) { ev.preventDefault(); save.click(); return; }
         if (ev.target.matches('input')) return;
         if (/^[0-9.]$/.test(ev.key)) sheet.querySelector(`[data-key="${ev.key}"]`)?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
         if (ev.key === 'Backspace') del.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })), clearTimeout(holdTimer);
-        if (ev.key === 'Enter' && !save.disabled) save.click();
+        if (ev.key === 'Enter' && saveOk) save.click();
       });
 
       seg.addEventListener('click', (ev) => {
@@ -216,6 +235,11 @@ export function openEntry(existing = null, preset = {}) {
         if (!t || t === e.type) return;
         haptic();
         e.type = t;
+        // sensible defaults for this owner: pay lands in the main account, transfers go main → allowance
+        const hub = state.settings.emergencyAccount, allow = state.settings.allowanceAccount;
+        if (!touchedAccount && t === 'Income' && ACCOUNTS.some((a) => a.id === hub)) e.account = hub;
+        if (!touchedAccount && t === 'Transfer' && hub !== allow && ACCOUNTS.some((a) => a.id === hub) && ACCOUNTS.some((a) => a.id === allow)) { e.account = hub; e.toAccount = allow; }
+        if (!touchedAccount && t === 'Spend') e.account = allow;
         if (t === 'Transfer' && (!e.toAccount || e.toAccount === e.account)) e.toAccount = ACCOUNTS.find((a) => a.id !== e.account).id;
         renderType();
       });
@@ -225,6 +249,7 @@ export function openEntry(existing = null, preset = {}) {
         if (chip) {
           const role = chip.parentElement.dataset.role;
           e[role] = chip.dataset.acc;
+          touchedAccount = true;
           if (role === 'account' && e.toAccount === e.account) e.toAccount = ACCOUNTS.find((a) => a.id !== e.account).id;
           haptic(); renderAccounts(); validate();
           return;
@@ -250,7 +275,14 @@ export function openEntry(existing = null, preset = {}) {
           close();
           toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => undo(), icon: icon('trash', { size: 18 }) });
         }
-        if (act === 'save' && !save.disabled) {
+        if (act === 'save' && !saveOk) { nudge(); return; }
+        if (act === 'save' && e.amount >= BIG && !bigOk && !existing) {
+          bigOk = true; haptic();
+          save.textContent = `Tap again to save ${money(e.amount, e.currency)}`;
+          save.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 260 });
+          return;
+        }
+        if (act === 'save' && saveOk) {
           const fields = {
             type: e.type, amount: e.amount, currency: e.currency, account: e.account,
             toAccount: e.type === 'Transfer' ? e.toAccount : '', category: e.type === 'Transfer' ? '' : e.category,
@@ -260,6 +292,11 @@ export function openEntry(existing = null, preset = {}) {
           haptic();
           if (existing) updateEntry(existing.id, fields);
           else addEntry(fields);
+          // say so when this takes a checked account below zero
+          if (fields.type !== 'Income') {
+            const b = balances(state.entries, state.settings).get(fields.account);
+            if (b?.matchedAt && b.balance < 0) setTimeout(() => toast(`${esc(fields.account)} is now ${money(b.balance, 'AED')}, below zero`, { tone: 'warn', icon: icon('warn', { size: 18 }) }), 1400);
+          }
           close();
           toast(`${existing ? 'Updated' : 'Saved'} · ${money(fields.amount, fields.currency)}${fields.category ? ' · ' + fields.category : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
         }
@@ -271,8 +308,9 @@ export function openEntry(existing = null, preset = {}) {
       sheet.addEventListener('focusin', (ev) => { if (ev.target.matches('input[type="text"]')) sheet.classList.add('typing'); });
       sheet.addEventListener('focusout', (ev) => { if (ev.target.matches('input[type="text"]')) setTimeout(() => { if (!sheet.contains(document.activeElement) || !document.activeElement.matches('input[type="text"]')) sheet.classList.remove('typing'); }, 50); });
       // Return moves on: amount → where → note → save
-      merchantInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); noteInput.focus(); } });
-      noteInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); if (!save.disabled) save.click(); else noteInput.blur(); } });
+      const focusNext = (el) => { el.focus({ preventScroll: true }); requestAnimationFrame(() => { if (document.activeElement !== el) el.focus({ preventScroll: true }); }); setTimeout(() => { if (sheet.isConnected && document.activeElement !== el && !document.activeElement?.matches('input')) el.focus({ preventScroll: true }); }, 120); };
+      merchantInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); focusNext(noteInput); } });
+      noteInput.addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); if (saveOk) save.click(); else noteInput.blur(); } });
 
       renderType();
       renderAmount();

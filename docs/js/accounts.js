@@ -11,7 +11,7 @@ export function accountsSettingsBlock() {
   return `${ACCOUNTS.map((a) => {
     const tag = a.id === s.emergencyAccount ? 'Main' : a.id === s.allowanceAccount ? 'Allowance' : '';
     return `<button type="button" class="row link-row acct-row" data-acct-edit="${esc(a.id)}">
-      <span class="acct-chip" style="--c:${a.color}">${esc(a.name.slice(0, 2))}</span>
+      <span class="acct-chip${a.name.length > 3 ? ' long' : ''}" style="--c:${a.color}">${esc(a.name.length <= 5 ? a.name : a.name.slice(0, 4))}</span>
       <span class="row-main"><span class="row-title">${esc(a.name)}${tag ? ` <em class="acct-tag">${tag}</em>` : ''}</span><span class="row-sub">${esc(a.role || 'No note')}</span></span>
       <span class="num acct-bal">${fmt(bals.get(a.id)?.balance || 0, { whole: true })}</span>
       ${icon('chevR', { size: 16, cls: 'chev' })}</button>`;

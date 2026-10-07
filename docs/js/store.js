@@ -243,6 +243,9 @@ export function savePlan(plan) {
     enqueue({ op: 'plan', id: '', plan });
   }
   persist(); emit('plan');
+  // the allowance has one definition: the plan's move into the allowance account
+  const allowance = plan.filter((p) => p.kind === 'Move' && p.to === state.settings.allowanceAccount).reduce((a, p) => a + (+p.amount || 0), 0);
+  if (allowance > 0 && allowance !== state.settings.allowance) { muted++; saveSettings({ allowance }); muted--; }
   sync();
 }
 
@@ -288,9 +291,12 @@ export function updateAccount(oldName, patch) {
 /** Retire an account. Any money left in it is moved to `moveTo` first so the total stays right. */
 export function removeAccount(name, moveTo) {
   const bal = balances(state.entries, state.settings).get(name)?.balance || 0;
-  const before = state.accounts;
+  const before = state.accounts, planBefore = state.plan;
   let closing = null;
   muted++;
+  // payday rules that pointed at this account would now move money nowhere — drop them
+  const plan = state.plan.filter((p) => p.from !== name && p.to !== name);
+  if (plan.length !== state.plan.length) savePlan(plan);
   if (Math.abs(bal) >= 0.01 && moveTo) {
     closing = addEntry(bal > 0
       ? { type: 'Transfer', amount: bal, account: name, toAccount: moveTo, note: `Closing ${name}` }
@@ -298,7 +304,7 @@ export function removeAccount(name, moveTo) {
   }
   commitAccounts(state.accounts.map((a) => (a.name === name ? { ...a, archived: true } : a)));
   muted--;
-  record(`Removed ${name}`, () => { if (closing) deleteEntry(closing.id); commitAccounts(before); });
+  record(`Removed ${name}`, () => { if (closing) deleteEntry(closing.id); if (state.plan !== planBefore) savePlan(planBefore); commitAccounts(before); });
 }
 
 /* ───── Reset ───── */
