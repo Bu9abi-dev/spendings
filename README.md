@@ -26,6 +26,7 @@ A personal money tracker for iPhone. Apple Pay payments are logged as they happe
 | `docs/` | The web app: static HTML, CSS and JS modules, no build step. Hosted on Vercel (Root Directory `docs`). |
 | `apps-script/Code.gs` | The Google Sheet backend. Paste it into the sheet's Apps Script. |
 | `tests/apps-script.test.mjs` | Runs the backend against a fake sheet: `node tests/apps-script.test.mjs` |
+| `tests/verify-sync.mjs` | Checks quiet retries, the delayed spinner and skipped re-reads in the real app: `(cd docs && python3 -m http.server 8765 &) ; node tests/verify-sync.mjs` |
 | `PRODUCT.md` | Product context. |
 
 To try it locally, run `cd docs && python3 -m http.server` and open `http://localhost:8000/?demo=1`.

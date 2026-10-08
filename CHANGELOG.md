@@ -21,7 +21,19 @@ timeline
         v8 : Allowance rules : Undo fixes : Live the same day
         v9 : Online payments : Bank notifications : Logged once per tap
         v10 : Dismiss payday prompts : Back next cycle
+    section 8 October 2026
+        v11 : Calmer syncing : No red error on a slow connection : Fewer sheet reads
 ```
+
+---
+
+## v11: Calmer syncing
+**8 October 2026** · no sheet update needed
+
+- The app now waits up to 45 seconds for the sheet instead of 20, so a slow Apps Script reply no longer counts as a failure.
+- A timeout or a dropped connection no longer shows a red error. The badge quietly says how many changes are waiting, and the app tries again when you come back to it, when the phone reconnects, and every 15 seconds until it goes through. Real problems, like a wrong app key, still show as an error.
+- The "Syncing" spinner only appears if a sync takes more than 3 seconds, so quick saves don't make the badge flicker.
+- After sending your changes, the app skips re-reading the whole sheet if it read it less than 30 seconds ago, and just marks those changes as synced. Saves go through faster and use fewer Apps Script calls.
 
 ---
 

@@ -48,7 +48,7 @@ export function setConnection(url, token) {
 
 /* ───── Apps Script client ───── */
 
-async function call(body, { timeout = 20000 } = {}) {
+async function call(body, { timeout = 45000 } = {}) {
   if (!isConnected()) throw new Error('Not connected to your Google Sheet yet.');
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeout);
@@ -62,8 +62,9 @@ async function call(body, { timeout = 20000 } = {}) {
     if (!data.ok) throw new Error(data.error || 'The sheet said no.');
     return data;
   } catch (e) {
-    if (e.name === 'AbortError') throw new Error('The sheet took too long to answer.');
-    if (e instanceof TypeError) throw new Error(navigator.onLine ? 'Couldn’t reach the sheet. Check the Web app URL.' : 'You’re offline. Changes will sync later.');
+    // a timeout or a dropped connection is worth retrying quietly; anything else is a real error
+    if (e.name === 'AbortError') throw Object.assign(new Error('The sheet took too long to answer.'), { transient: true });
+    if (e instanceof TypeError) throw Object.assign(new Error(navigator.onLine ? 'Couldn’t reach the sheet. Check the Web app URL.' : 'You’re offline. Changes will sync later.'), { transient: true });
     throw e;
   } finally { clearTimeout(t); }
 }
@@ -78,16 +79,28 @@ export async function ping(url, token) {
 
 let syncing = null;
 let again = false;
+let lastList = 0;
+let retryTimer = null;
+const SPINNER_AFTER = 3000, RETRY_EVERY = 15000, LIST_FRESH = 30000;
 export function sync() {
   if (state.prefs.demo || !isConnected()) return Promise.resolve();
   // a change made mid-sync gets its own pass straight after
   if (syncing) { again = true; return syncing; }
+  clearTimeout(retryTimer); retryTimer = null;
+  let retry = false;
   syncing = (async () => {
-    state.sync = { ...state.sync, status: 'syncing', error: '' };
-    emit('sync');
+    // quick syncs never flash the spinner: it only shows once a sync has run for a few seconds
+    const spinner = setTimeout(() => { state.sync = { ...state.sync, status: 'syncing' }; emit('sync'); }, SPINNER_AFTER);
     try {
-      await flushOutbox();
+      const flushed = await flushOutbox();
+      // the sheet was read moments ago, so what was just sent is all that changed
+      if (flushed && Date.now() - lastList < LIST_FRESH) {
+        state.sync = { status: state.outbox.length ? 'pending' : 'ok', error: '', at: Date.now() };
+        persist();
+        return;
+      }
       const data = await call({ action: 'list' });
+      lastList = Date.now();
       state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
       state.merchants = data.merchants || {};
       if (Array.isArray(data.plan) && !state.outbox.some((o) => o.op === 'plan')) state.plan = data.plan;
@@ -104,11 +117,16 @@ export function sync() {
       state.sync = { status: state.outbox.length ? 'pending' : 'ok', error: '', at: Date.now() };
       persist();
     } catch (e) {
-      state.sync = { status: 'error', error: e.message, at: state.sync.at };
+      // no red error for a slow or missing connection: stay "waiting" and try again on the next
+      // return to the app, reconnect (both in main.js) or every 15 seconds until it goes through
+      retry = !!e.transient;
+      state.sync = { status: retry ? 'pending' : 'error', error: e.message, at: state.sync.at };
+      if (retry) { retryTimer = setTimeout(() => sync(), RETRY_EVERY); retryTimer.unref?.(); }
     } finally {
+      clearTimeout(spinner);
       syncing = null;
       emit('sync');
-      if (again) { again = false; if (state.sync.status !== 'error') sync(); }
+      if (again) { again = false; if (state.sync.status !== 'error' && !retry) sync(); }
     }
   })();
   return syncing;
@@ -117,7 +135,9 @@ export function sync() {
 const overlay = (e, op) => (op && op.op === 'update' ? { ...e, ...op.fields } : e);
 const sortEntries = (list) => list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
+/** Sends every queued change in order. Returns how many went through. */
 async function flushOutbox() {
+  let sent = 0;
   while (state.outbox.length) {
     const op = state.outbox[0];
     if (op.op === 'add') await call({ action: 'add', entry: op.entry });
@@ -129,8 +149,10 @@ async function flushOutbox() {
     else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
     else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
     state.outbox.shift();
+    sent++;
     persist();
   }
+  return sent;
 }
 
 function enqueue(op) {
