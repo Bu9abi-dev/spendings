@@ -497,10 +497,6 @@ export function moveAccount(name, delta) {
   commitAccounts(list);
 }
 
-export function suggestCategory(merchant) {
-  const k = merchantKey(merchant);
-  return k ? state.merchants[k] || '' : '';
-}
 
 /* ───── Demo ───── */
 

@@ -2,8 +2,9 @@ import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
 } from './store.js';
+import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
 import { icon } from './icons.js';
@@ -169,33 +170,89 @@ function relTime(t) {
 
 function openReview() {
   const items = () => state.entries.filter((e) => e.status === 'Review');
+  // the best guess for each waiting payment, from what you've filed before (categorize.js)
+  const guesses = () => {
+    const index = learn(state.entries, state.merchants);
+    return new Map(items().map((e) => [e.id, e.type === 'Spend' ? suggestFor(e.merchant, index) : null]));
+  };
+  // other waiting payments from the same shop as e
+  const twins = (e, list) => list.filter((x) => x.id !== e.id && x.type === e.type && sameMerchant(x.merchant, e.merchant));
+  // only a high-confidence guess is ever filed without you tapping it
+  const confident = (g) => !!g && g.confidence === 'high';
+
   const body = () => {
     const list = items();
     if (!list.length) return `<div class="empty">${icon('check', { size: 30 })}<p>All sorted.</p></div>`;
-    return list.map((e) => `<article class="review-card" data-id="${esc(e.id)}">
+    const guess = guesses();
+    const sure = list.filter((e) => confident(guess.get(e.id)));
+    const all = sure.length >= 2
+      ? `<button type="button" class="rc-accept-all" data-act="accept-all">${icon('sparkle', { size: 18 })}File ${sure.length} with their suggestions</button>` : '';
+    return all + list.map((e) => {
+      const g = guess.get(e.id);
+      const n = twins(e, list).length + 1;
+      const group = g && g.confidence === 'high' && n > 1; // "file all" only when sure
+      const why = !g ? '' : g.confidence === 'low' ? 'Guess from the shop name' : `${g.confidence === 'medium' ? 'Maybe like' : 'Like'} ${esc(g.like)}${g.times > 1 ? ` · ${g.times} times` : ''}`;
+      const meta = g && categoryMeta(g.category);
+      const sug = g ? `<button type="button" class="rc-suggest" data-cat="${esc(g.category)}"${group ? ' data-all="1"' : ''} style="--cat:${seriesColor(meta.slot)}">
+          <span class="rs-icon">${icon(meta.icon, { size: 18 })}</span>
+          <span class="rs-text"><b>${group ? `File all ${n} as ${esc(meta.short)}` : `File as ${esc(g.category)}`}</b><span>${why}</span></span>
+        </button>` : n > 1 ? `<p class="rc-hint">${n} payments from this shop. Pick a category and you can file them all.</p>` : '';
+      return `<article class="review-card" data-id="${esc(e.id)}">
       <div class="rc-head"><div><b>${esc(e.merchant || 'Unknown merchant')}</b><span>${esc(accountMeta(e.account).name)} · ${dayLabel(dayKey(e.date))}, ${timeLabel(e.date)}</span></div>
       <span class="num rc-amt">${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount, { fixed: true })}</span></div>
-      <div class="rc-cats">${(e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES).map((c) => `<button type="button" class="rc-cat" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${c.short}</button>`).join('')}</div>
-    </article>`).join('');
+      ${sug}
+      <div class="rc-cats">${(e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES).map((c) => `<button type="button" class="rc-cat${g && g.category === c.id ? ' sug' : ''}" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${c.short}</button>`).join('')}</div>
+    </article>`;
+    }).join('');
   };
+
   openSheet({
     label: 'Needs review',
     html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">Needs review</h2><button class="text-btn strong" data-act="done" type="button">Done</button></header>
-      <p class="sheet-lede">Tap a category to file each payment. Next time the same merchant is filed automatically.</p>
+      <p class="sheet-lede">Tap a category to file each payment. The app learns from what you file, even when the bank spells the shop differently.</p>
       <div class="sheet-scroll review-list">${body()}</div>`,
     onMount(sheet, close) {
+      const redraw = () => { const l = sheet.querySelector('.review-list'); if (l) l.innerHTML = body(); };
+      // file several at once, undone together in one step
+      const fileMany = (pairs, label) => {
+        batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })));
+        toast(`${esc(label)}. Undo puts ${pairs.length > 1 ? `these ${pairs.length}` : 'it'} back.`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { doUndo(); redraw(); } });
+      };
       sheet.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-act="done"]')) return close();
-        const b = ev.target.closest('.rc-cat');
+        if (ev.target.closest('[data-act="accept-all"]')) {
+          haptic();
+          const guess = guesses();
+          const pairs = items().filter((e) => confident(guess.get(e.id))).map((e) => [e.id, guess.get(e.id).category]);
+          fileMany(pairs, `Filed ${pairs.length} payments`);
+          return redraw();
+        }
+        const b = ev.target.closest('.rc-cat, .rc-suggest');
         if (!b) return;
         const card = b.closest('.review-card');
+        const e = state.entries.find((x) => x.id === card.dataset.id);
+        if (!e) return redraw();
+        const cat = b.dataset.cat;
+        const others = twins(e, items());
         haptic();
-        updateEntry(card.dataset.id, { category: b.dataset.cat });
+        // "File all N" on the suggestion: this one and its twins together
+        if (b.dataset.all && others.length) {
+          fileMany([e, ...others].map((x) => [x.id, cat]), `Filed ${others.length + 1} from ${e.merchant} as ${categoryMeta(cat).short}`);
+          return redraw();
+        }
+        updateEntry(e.id, { category: cat });
         b.classList.add('on');
+        // picked by hand and the same shop has more waiting: offer to file those too
+        if (others.length) {
+          // this toast's button files the others (its own undo step); the header Undo still undoes the one you just picked
+          toast(`Filed as ${esc(categoryMeta(cat, e.type).short)}`, {
+            icon: icon('check', { size: 18 }), tone: 'good', action: `File ${others.length} more`,
+            onAction: () => { fileMany(others.map((x) => [x.id, cat]), `Filed ${others.length} more from ${e.merchant}`); redraw(); },
+          });
+        }
         const h = card.offsetHeight;
-        const done = () => { sheet.querySelector('.review-list').innerHTML = body(); };
-        if (reduceMotion()) return done();
-        card.animate([{ opacity: 1, height: `${h}px`, transform: 'none' }, { opacity: 0, height: '0px', marginBlock: '0', paddingBlock: '0', transform: 'translateX(40px)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = done;
+        if (reduceMotion()) return redraw();
+        card.animate([{ opacity: 1, height: `${h}px`, transform: 'none' }, { opacity: 0, height: '0px', marginBlock: '0', paddingBlock: '0', transform: 'translateX(40px)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = redraw;
       });
     },
   });
