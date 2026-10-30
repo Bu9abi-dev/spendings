@@ -201,11 +201,23 @@ Choices made while running the app on my own, newest first, with the reason for 
   checked against `summarize` in the test. The "usual week" is the median of the six weeks before it that have any spending,
   and needs at least three of them, otherwise it is null and the line just says what was spent. Within 5% reads as "about the
   usual". "Coming up this week" runs from today to the next Monday plus anything overdue, and only reuses `detectRecurring`,
-  `dueBetween`/`bnplSummary` and `budgetRows` (budgets at 80% or more). The pace alert uses Home's own pot and used numbers
-  (`allowancePot`, `allowanceUsed`, so lending and refunds count as everywhere else): used divided by days gone is the daily
-  rate, and it fires only from 3 days into the cycle, only when the allowance is not already spent, and only when it runs out
-  on a day before the cycle's last day (the 26th). Home ranks it just after "budget over" (`pace:out`); the week summary is the
+  `dueBetween`/`bnplSummary` and `budgetRows` (budgets at 80% or more). (The pace alert's first rules are replaced by the next bullet.) The week summary is the
   lowest rank (`week:summary`, after `owed`), shows on Mondays and Tuesdays only and only if last week had spending.
   Opening the summary saves `{ v: 1, seen: <week key> }` in the `weekly` extra with `undoable: false`: the Undo button would
   otherwise offer to "undo" having read a summary, and it would sit on top of the real last change. It still syncs like any
   extra, so it does not reappear on another device. Tapping the pace line opens Insights on the Allowance pace card.
+- **One pace definition, and a pace alert that waits for a real trend** (council fixes on the weekly branch). Home's pace line,
+  the Insights "Allowance pace" text and the "runs out" alert all read `allowancePace` in model.js, from the same summary
+  (homeNumbers' `m.sum`, which counts spending before tracking began; Insights now uses it for the cycle we're in, and the
+  "Your week" sheet too). Same tolerance everywhere: within max(15, 3% of the pot) of an even spread is on track. The
+  "runs out" projection is only worked out when that says over pace, so the alert can never sit beside "On track". It also
+  waits for the 7th day of the cycle and spending on at least 3 different days, and only speaks when the allowance runs out
+  3 or more days before the cycle's last day. **Lumpy purchases**: we leave any single payment over 25% of the pot out of
+  the daily rate (it still uses the pot up), rather than projecting with the median day. The median day reads as zero for
+  someone who shops every other day, and it would need refunds and lending worked out per day; leaving lumps out keeps the
+  rate on the same "used" number Home shows. Wording: "At this pace (~AED X a day) your allowance runs out around 12 Nov,
+  N days early". Tapping it saves `pace: { cycle, outDay }` in the `weekly` extra (`undoable: false`) and it stays quiet
+  that cycle until the day moves 3 or more days earlier. Rank: `pace:out` sits just above "budget near", below new
+  subscriptions and pay-later and subscription payments due (a payment due is more concrete than a projection). Tests
+  set it aside by marking it seen, never by changing the allowance. The week sheet lists budgets under "Budgets this cycle",
+  apart from what's due this week, and says "before refunds" when refunds landed that week.

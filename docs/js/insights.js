@@ -1,6 +1,7 @@
 // Insights tab: where the money went, allowance pace, accounts, income and the last six cycles.
 import {
   ACCOUNTS, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
+  homeNumbers, isPerson,
 } from './model.js';
 import { state, getExtra, saveExtra } from './store.js';
 import { esc } from './ui.js';
@@ -81,7 +82,10 @@ export function renderInsights() {
   const s = state.settings;
   const cyc = insightsCycle || currentCycle();
   const isCurrent = cyc === currentCycle();
-  const sum = summarize(state.entries, cyc, s, state.plan);
+  // the cycle we're in uses Home's own numbers (the same summary, adjusted for spending before tracking began, and the
+  // same pace from allowancePace), so the pace card can never disagree with Home or its "runs out" alert
+  const home = isCurrent ? homeNumbers(state.entries, state.plan, s, new Date(), state.dismissed) : null;
+  const sum = home ? home.sum : summarize(state.entries, cyc, s, state.plan);
 
   const main = allCategories('Spend').filter((c) => c.slot); // hidden built-ins keep their colour, so the donut matches the legend
   // everything without its own colour: Family, Other, your own and hidden categories, and Needs category
@@ -98,10 +102,12 @@ export function renderInsights() {
   const { start } = cycleBounds(cyc, s.cycleStart);
   const today = isCurrent ? Math.min(len - 1, Math.floor((Date.now() - start) / 864e5)) : len - 1;
   const perDay = new Array(len).fill(0);
+  if (sum.spentBefore) perDay[0] += sum.spentBefore; // spent before tracking began counts from day one, as on Home
   for (const e of sum.entries) {
-    // a refund into the allowance account gives that money back on the day it lands
+    // a refund into the allowance account gives that money back on the day it lands; lending from it uses allowance
     const refund = e.type === 'Income' && e.category === 'Refund';
-    if ((e.type !== 'Spend' && !refund) || e.account !== s.allowanceAccount) continue;
+    const lent = e.type === 'Transfer' && isPerson(e.toAccount);
+    if ((e.type !== 'Spend' && !refund && !lent) || e.account !== s.allowanceAccount) continue;
     const i = Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / 864e5)));
     perDay[i] += refund ? -toAED(e, s) : toAED(e, s);
   }
@@ -110,7 +116,7 @@ export function renderInsights() {
   const pace = perDay.map((_, i) => (sum.allowancePot * (i + 1)) / len);
   const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const labels = perDay.map((_, i) => { const [y, m, d] = dayKey(new Date(start.getTime() + i * 864e5 + 6 * 3600e3)).split('-').map(Number); return `${d} ${MON[m - 1]}`; });
-  const paceDelta = cumulative[today] - pace[today];
+  const pc = home?.pace; // on track / over pace: the shared definition (model.js allowancePace)
 
   // six cycles
   const six = Array.from({ length: 6 }, (_, i) => shiftCycle(cyc, i - 5)).map((c) => {
@@ -199,7 +205,8 @@ export function renderInsights() {
     <section class="panel" id="pace">
       <h3 class="panel-title">Allowance pace</h3>
       <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(sum.allowancePot, { whole: true })}.
-        ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'pace-bad' : 'pace-good'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} over pace` : `On track · AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>
+        ${pc ? `<b class="${pc.state === 'spent' || pc.state === 'over' ? 'pace-bad' : 'pace-good'}">${pc.state === 'spent' ? `AED ${fmt(-sum.allowanceLeft, { whole: true })} over the allowance`
+          : pc.state === 'over' ? `AED ${fmt(pc.delta, { whole: true })} over pace` : pc.state === 'under' ? `On track · AED ${fmt(-pc.delta, { whole: true })} under pace` : 'On track'}</b>` : ''}</p>
       <div class="series-legend"><span><i class="sw spend"></i>Spent so far</span><span><i class="sw pace"></i>Even pace</span></div>
       ${paceLine({ days: len, cumulative, pace, todayIndex: today, labels })}
     </section>

@@ -3,9 +3,9 @@
 // Usage: (cd docs && python3 -m http.server 8765 &) ; node tests/verify-weekly.mjs
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { DEFAULT_SETTINGS, cycleOf, cycleBounds, summarize } from '../docs/js/model.js';
+import { DEFAULT_SETTINGS, cycleOf, cycleBounds, summarize, homeNumbers, allowancePace } from '../docs/js/model.js';
 import {
-  lastFullWeek, mondayOf, weekdayOf, weekTotals, usualWeek, median, compareToUsual, topCategories, weeklySummary, paceAlert, summaryDue, summaryLine,
+  lastFullWeek, mondayOf, weekdayOf, weekTotals, usualWeek, median, compareToUsual, topCategories, weeklySummary, paceAlert, paceSeen, summaryDue, summaryLine,
 } from '../docs/js/weekly.js';
 
 let n = 0;
@@ -104,19 +104,60 @@ const entries = [
   ok(cs.subs.length === 1 && cs.subs[0].name === 'Netflix' && cs.subs[0].day === '2026-11-04', 'a subscription due this week is listed');
 }
 
-// ── pace date maths (cycle 27 Oct → 26 Nov, 31 days)
+// ── allowance pace: one definition (model.js allowancePace) for Home's line, the Insights card and the alert
+// cycle 27 Oct → 26 Nov (31 days), pot 3000 (the default allowance), tolerance max(15, 3% of 3000) = 90
 {
-  const { start, end } = cycleBounds('2026-11', 27);
+  const { start } = cycleBounds('2026-11', 27);
   const dayAt = (d) => new Date(start.getTime() + d * 864e5);
-  const a = paceAlert({ pot: 3000, used: 2000, start, end, now: dayAt(10) });
-  ok(a && a.outDay === '2026-11-11' && a.text === 'At this pace your allowance runs out around 11 Nov' && a.early === 15, '2000 of 3000 used in 10 days runs out on day 15, 11 Nov');
-  ok(paceAlert({ pot: 3000, used: 900, start, end, now: dayAt(10) }) === null, 'on pace to last the cycle: no alert');
-  ok(paceAlert({ pot: 3000, used: 1000, start, end, now: dayAt(10) }) === null, 'runs out on the last day (26 Nov): not before it, so no alert');
-  ok(paceAlert({ pot: 3000, used: 1050, start, end, now: dayAt(10) }) !== null, 'a little faster than that is an alert');
-  ok(paceAlert({ pot: 3000, used: 2500, start, end, now: dayAt(2.9) }) === null && paceAlert({ pot: 3000, used: 2500, start, end, now: dayAt(3) }) !== null, 'only from three days into the cycle');
-  ok(paceAlert({ pot: 3000, used: 3000, start, end, now: dayAt(10) }) === null && paceAlert({ pot: 3000, used: 0, start, end, now: dayAt(10) }) === null && paceAlert({ pot: 0, used: 5, start, end, now: dayAt(10) }) === null, 'nothing to say when all used, nothing used, or no allowance');
-  const t = paceAlert({ pot: 1000, used: 990, start, end, now: dayAt(3.2) });
-  ok(t && t.text === 'At this pace your allowance runs out around today', 'running out the same day says "today"');
+  const spend = (d, amount, extra = {}) => E('Spend', amount, dayAt(d + 0.5).toISOString(), extra);
+  // the three readers, exactly as the screens read them: Home's line and the alert from homeNumbers' m.pace,
+  // the Insights card from allowancePace over the same adjusted summary (m.sum)
+  const read = (list, now) => {
+    const m = homeNumbers(list, [], S, now);
+    const insights = allowancePace(m.sum, m.cyc, S, now).state;
+    return { home: m.pace.state, insights, alert: paceAlert(m.pace, now), m };
+  };
+  const steady = (perDay, days) => Array.from({ length: days }, (_, d) => spend(d, perDay));
+  const scenarios = {
+    'day-1 spike, day 2': { list: [spend(0, 1500)], now: dayAt(1.5) },
+    'day-1 spike, then small spends, day 10': { list: [spend(0, 1500), spend(2, 50), spend(4, 50)], now: dayAt(9.5) },
+    'steady 150 a day for 10 days': { list: steady(150, 10), now: dayAt(10) },
+    'on track, 90 a day': { list: steady(90, 10), now: dayAt(10) },
+    'just inside the band, 105 a day': { list: steady(105, 10), now: dayAt(10) },
+    'under pace, 40 a day': { list: steady(40, 10), now: dayAt(10) },
+    'two big days only': { list: [spend(0, 700), spend(5, 700)], now: dayAt(10) },
+    'three big days': { list: [spend(0, 700), spend(3, 700), spend(5, 700)], now: dayAt(10) },
+    'runs out a day before the end': { list: steady(101.5, 20), now: dayAt(20) },
+    'runs out 6 days before the end': { list: steady(125, 10), now: dayAt(10) },
+    'fast, but only day 6': { list: steady(200, 6), now: dayAt(5.5) },
+    'fast, day 7': { list: steady(200, 6), now: dayAt(6.2) },
+    'allowance already gone': { list: steady(400, 9), now: dayAt(10) },
+    'refunds count, as on Home': { list: [...steady(150, 10), E('Income', 600, dayAt(9.6).toISOString(), { category: 'Refund' })], now: dayAt(10) },
+  };
+  for (const [name, { list, now }] of Object.entries(scenarios)) {
+    const r = read(list, now);
+    ok(r.home === r.insights && (!r.alert || r.home === 'over'), `${name}: Home and Insights both say "${r.home}"${r.alert ? ', and the alert only shows when that is over pace' : ', no alert'}`);
+  }
+  const at10 = read(steady(150, 10), dayAt(10));
+  ok(at10.alert && at10.alert.outDay === '2026-11-16' && at10.alert.early === 10
+    && at10.alert.text === 'At this pace (~AED 150 a day) your allowance runs out around 16 Nov, 10 days early', `steady overspend: "${at10.alert?.text}"`);
+  ok(read([spend(0, 1500)], dayAt(1.5)).home === 'over' && !read([spend(0, 1500)], dayAt(1.5)).alert, 'a day-1 spike is over pace, but no alert before day 7');
+  ok(!read([spend(0, 1500), spend(2, 50), spend(4, 50)], dayAt(9.5)).alert, 'nor later: one payment over a quarter of the pot does not set the daily rate');
+  ok(read(steady(90, 10), dayAt(10)).home === 'on' && read(steady(105, 10), dayAt(10)).home === 'on' && read(steady(40, 10), dayAt(10)).home === 'under', 'within the tolerance is on track; well under is under pace');
+  ok(!read([spend(0, 700), spend(5, 700)], dayAt(10)).alert && read([spend(0, 700), spend(3, 700), spend(5, 700)], dayAt(10)).alert, 'needs spending on three different days');
+  const late = read(steady(101.5, 20), dayAt(20));
+  ok(late.home === 'over' && !late.alert && read(steady(125, 10), dayAt(10)).alert?.early === 6, 'over pace but running out under 3 days early: no alert; 6 days early: alert');
+  ok(!read(steady(200, 6), dayAt(5.5)).alert && read(steady(200, 6), dayAt(6.2)).alert, 'the alert starts on the 7th day of the cycle');
+  ok(read(steady(400, 9), dayAt(10)).home === 'spent' && !read(steady(400, 9), dayAt(10)).alert, 'allowance already gone: Home says over the allowance, no "runs out" alert');
+  const ref = read([...steady(150, 10), E('Income', 600, dayAt(9.6).toISOString(), { category: 'Refund' })], dayAt(10));
+  ok(ref.m.pace.spent === 900 && ref.home === 'on' && !ref.alert, 'a refund into the allowance account counts the same everywhere (900 used: on track, no alert)');
+  // the same rule from summarize directly: Home's pace object is allowancePace
+  const sum = summarize(steady(150, 10), '2026-11', S, []);
+  ok(allowancePace(sum, '2026-11', S, dayAt(10)).runsOut.outDay === '2026-11-16', 'allowancePace works on a plain summary too');
+  // dismissal: seen for the cycle until the day moves 3 or more days earlier
+  const a = { outDay: '2026-11-16' }, seenAt = { cycle: '2026-11', outDay: '2026-11-16' };
+  ok(paceSeen(a, '2026-11', seenAt) && paceSeen({ outDay: '2026-11-14' }, '2026-11', seenAt) && paceSeen({ outDay: '2026-11-20' }, '2026-11', seenAt), 'seen: the same day, 2 days earlier, or later stays quiet');
+  ok(!paceSeen({ outDay: '2026-11-13' }, '2026-11', seenAt) && !paceSeen(a, '2026-12', seenAt) && !paceSeen(a, '2026-11', null), '3 days earlier, another cycle, or never seen: shows again');
 }
 
 // ── when the Home line is due
@@ -147,12 +188,25 @@ const setAside = (p) => p.evaluate(async () => {
   st.saveExtra('recurring', { v: 1, ignored: [...new Set(st.state.entries.map((e) => r.recurringKey(e.merchant)).filter(Boolean))] }, 'x', { undoable: false });
   st.saveExtra('bnpl', null, 'x', { undoable: false });
 });
-// (the pace alert is set aside by giving the allowance setting room: the pot is that setting plus top-ups)
+// what Home, Insights and the alert say about pace right now (from the app's own modules)
+const paceNow = (p) => p.evaluate(async () => {
+  const [st, m, w] = await Promise.all([import('/js/store.js'), import('/js/model.js'), import('/js/weekly.js')]);
+  const h = m.homeNumbers(st.state.entries, st.state.plan, st.state.settings, new Date(), st.state.dismissed);
+  return { cyc: h.cyc, state: h.pace.state, alert: w.paceAlert(h.pace) };
+});
+// the pace alert is set aside the way a person would: by marking it seen
+const paceAside = (p) => p.evaluate(async () => {
+  const [st, m, w] = await Promise.all([import('/js/store.js'), import('/js/model.js'), import('/js/weekly.js')]);
+  const h = m.homeNumbers(st.state.entries, st.state.plan, st.state.settings, new Date(), st.state.dismissed);
+  const a = w.paceAlert(h.pace);
+  if (a) st.saveExtra('weekly', { ...st.getExtra('weekly', {}), v: 1, pace: { cycle: h.cyc, outDay: a.outDay } }, 'x', { undoable: false });
+});
+// (to see the alert itself the test lowers the allowance setting for a moment: the pot is that setting plus top-ups)
 const allowance = (p, v) => p.evaluate(async (v) => { const st = await import('/js/store.js'); st.state.settings = { ...st.state.settings, allowance: v }; }, v);
 
 const p = await open('2026-11-02T10:00:00+04:00');
 await setAside(p);
-await allowance(p, 1e6);
+await paceAside(p);
 await p.click('.tabbar [data-tab="insights"]');
 await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.lens');
@@ -197,15 +251,57 @@ await p.evaluate(async () => {
   const st = await import('/js/store.js');
   st.saveExtra('weekly', null, 'x', { undoable: false });
 });
-await allowance(p, 1000); // the demo has spent about 755 of it in 6 days: gone well before the 26th
+await allowance(p, 1500); // the demo has spent about 755 in 6 days: at that rate it is gone well before the 26th
 await p.click('.tabbar [data-tab="insights"]');
 await p.click('.tabbar [data-tab="home"]');
-await p.waitForSelector('.wk-line');
-ok(await p.$$eval('.sub-line, .budget-nudge', (x) => x.length) === 1 && /^At this pace your allowance runs out around \d+ \w{3}$/.test((await p.textContent('.wk-line')).trim()), 'allowance running out outranks the week line, still one line');
+await p.waitForSelector('.wk-line.warn');
+const fast = await paceNow(p);
+ok(fast.state === 'over' && fast.alert, 'the demo at a 1,500 allowance is over pace with a "runs out" day');
+ok(await p.$$eval('.sub-line, .budget-nudge', (x) => x.length) === 1 && /^At this pace \(~AED [\d,]+ a day\) your allowance runs out around \d+ \w{3}, \d+ days early$/.test((await p.textContent('.wk-line')).trim()), `allowance running out outranks the week line, still one line: "${(await p.textContent('.wk-line')).trim()}"`);
 ok(!(await p.$('[data-weekly="open"]')), 'and the week line waits');
-await p.click('.wk-line');
+ok(/over pace|over the allowance/.test(await p.textContent('.lens-meta')) && await p.$('.lens-meta .pace-bad'), 'Home\'s own pace line agrees: over pace');
+// it ranks below a pay-later payment due soon
+await p.evaluate(async () => {
+  const st = await import('/js/store.js');
+  const soon = { id: 'soon', provider: 'Cashew', merchant: 'Ikea', item: '', category: 'Shopping', total: 400, count: 2, cadence: '2w', first: '2026-11-05', account: 'ADCB', paid: [null, null], skip: [] };
+  st.saveExtra('bnpl', { v: 1, plans: [soon] }, 'x', { undoable: false });
+});
+await p.waitForSelector('.bnpl-row');
+ok(await p.$$eval('.sub-line, .budget-nudge', (x) => x.length) === 1 && !(await p.$('.wk-line')), 'a pay-later payment due this week outranks the pace alert');
+await p.evaluate(async () => { (await import('/js/store.js')).saveExtra('bnpl', null, 'x', { undoable: false }); });
+await p.waitForSelector('.wk-line.warn');
+// tapping it opens Insights at the pace card, which agrees, and marks it seen without an Undo step
+const undoPace = await p.evaluate(async () => (await import('/js/store.js')).lastAction());
+await p.click('.wk-line.warn');
 await p.waitForSelector('#pace');
 ok(await p.isVisible('#pace'), 'tapping the pace line opens Insights at the Allowance pace card');
+ok(await p.$('#pace .pace-bad') && /over pace|over the allowance/.test(await p.textContent('#pace .panel-sub')), 'the Insights card agrees: over pace');
+const seenPace = await p.evaluate(async () => (await import('/js/store.js')).getExtra('weekly', null));
+ok(seenPace?.v === 1 && seenPace.pace?.cycle === fast.cyc && seenPace.pace.outDay === fast.alert.outDay, `tapping saves { pace: { cycle, outDay } } in the weekly extra (${JSON.stringify(seenPace)})`);
+ok(await p.evaluate(async () => (await import('/js/store.js')).lastAction()) === undoPace, 'marking it seen adds no Undo step');
+await p.click('.tabbar [data-tab="home"]');
+await p.waitForSelector('.lens');
+ok(!(await p.$('.wk-line.warn')), 'once seen, the pace alert is gone from Home');
+ok(await p.$('.lens-meta .pace-bad'), 'while Home\'s pace line still says over pace');
+// it gets worse: spending today moves the day it runs out 3 or more days earlier, and the alert is back
+await p.evaluate(async () => {
+  const st = await import('/js/store.js');
+  for (const amount of [150, 150, 150]) st.addEntry({ type: 'Spend', amount, account: st.state.settings.allowanceAccount, category: 'Shopping', merchant: 'Test', date: new Date().toISOString() });
+});
+const worse = await paceNow(p);
+await p.click('.tabbar [data-tab="insights"]');
+await p.click('.tabbar [data-tab="home"]');
+await p.waitForSelector('.lens');
+const moved = worse.alert ? Math.round((Date.parse(fast.alert.outDay) - Date.parse(worse.alert.outDay)) / 864e5) : null;
+ok(worse.alert && moved >= 3 && await p.$('.wk-line.warn'), `when the day moves ${moved} days earlier (${fast.alert.outDay} → ${worse.alert?.outDay}) the alert shows again`);
+// set it right: back to the usual allowance, everything agrees on track and there is no alert
+await allowance(p, 1e6);
+await p.click('.tabbar [data-tab="insights"]');
+await p.waitForSelector('#pace');
+ok(/On track/.test(await p.textContent('#pace .panel-sub')), 'with room in the allowance Insights says On track');
+await p.click('.tabbar [data-tab="home"]');
+await p.waitForSelector('.lens');
+ok(/On track/.test(await p.textContent('.lens-meta')) && !(await p.$('.wk-line.warn')), 'and so does Home, with no alert');
 await allowance(p, 3000);
 await p.close();
 
@@ -213,7 +309,7 @@ await p.close();
 {
   const w = await open('2026-11-04T10:00:00+04:00');
   await setAside(w);
-  await allowance(w, 1e6);
+  await paceAside(w);
   await w.click('.tabbar [data-tab="insights"]');
   await w.click('.tabbar [data-tab="home"]');
   await w.waitForSelector('.lens');
@@ -224,7 +320,7 @@ await p.close();
   await w.click('[data-weekly="open"]');
   await w.waitForSelector('.wk-sheet');
   ok(/Coming up this week/.test(await w.textContent('.wk-sheet')), 'the card opens the same sheet');
-  ok(!(await w.evaluate(async () => (await import('/js/store.js')).getExtra('weekly', null))), 'opening it outside Monday and Tuesday saves nothing');
+  ok(!(await w.evaluate(async () => (await import('/js/store.js')).getExtra('weekly', null)?.seen)), 'opening it outside Monday and Tuesday marks no week seen');
   await w.close();
 }
 ok(!errors.length, 'no page errors');

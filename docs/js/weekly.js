@@ -4,14 +4,13 @@
 // A week is Monday to Sunday by Dubai days (dayKey from model.js). "Last week" is the last FULL week,
 // so on a Monday it is the one that ended yesterday. Spent counts Spend entries only and is gross, exactly like
 // Insights: transfers are never spending, and a refund is income, so it is not netted off.
-import { dayKey, toAED, categoryMeta, cycleOf, cycleBounds, summarize } from './model.js';
+import { dayKey, toAED, categoryMeta, cycleOf, summarize, fmt, daysBetween } from './model.js';
 import { detectRecurring } from './recurring.js';
 import { dueBetween, bnplSummary, addDays, shortDay } from './bnpl.js';
 import { budgetRows } from './budgets.js';
 
 export const USUAL_WEEKS = 6;   // how many earlier full weeks make up "the usual week"
 export const MIN_WEEKS = 3;     // fewer weeks with spending than this and there is no usual yet
-export const PACE_FROM_DAY = 3; // the pace alert waits until the cycle is this many days old
 
 const dayNum = (key) => { const [y, m, d] = key.split('-').map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
 
@@ -28,20 +27,22 @@ export function lastFullWeek(now = new Date()) {
   return { key: from, from, to: addDays(from, 6), next: thisMonday };
 }
 
-/** Spend per week, as a Map of Monday → { spent, count, byCategory, biggest }, for the `weeks` full weeks ending at
-    `lastMonday` (inclusive). One pass over the entries; weeks with nothing in them are simply absent. */
+/** Spend per week, as a Map of Monday → { spent, count, byCategory, biggest, refunds }, for the `weeks` full weeks ending at
+    `lastMonday` (inclusive). `refunds` is the refunds that landed that week (not taken off `spent`; the screens say
+    "before refunds" when there are any). One pass over the entries; weeks with nothing in them are simply absent. */
 export function weekTotals(entries, settings, lastMonday, weeks = USUAL_WEEKS + 1) {
   const oldest = addDays(lastMonday, -7 * (weeks - 1)), end = addDays(lastMonday, 7);
   const out = new Map();
+  const weekOf = (mon) => out.get(mon) || out.set(mon, { spent: 0, count: 0, byCategory: new Map(), biggest: null, refunds: 0 }).get(mon);
   for (const e of entries) {
-    if (e.type !== 'Spend') continue;
+    const refund = e.type === 'Income' && e.category === 'Refund';
+    if (e.type !== 'Spend' && !refund) continue;
     const dk = dayKey(e.date);
     if (dk < oldest || dk >= end) continue;
     const v = toAED(e, settings);
     if (!(v > 0)) continue;
-    const mon = mondayOf(dk);
-    let w = out.get(mon);
-    if (!w) out.set(mon, (w = { spent: 0, count: 0, byCategory: new Map(), biggest: null }));
+    const w = weekOf(mondayOf(dk));
+    if (refund) { w.refunds += v; continue; }
     w.spent += v; w.count++;
     const cat = e.category || 'Uncategorised';
     w.byCategory.set(cat, (w.byCategory.get(cat) || 0) + v);
@@ -110,33 +111,31 @@ export function weeklySummary(ctx) {
   const now = ctx.now || new Date();
   const week = lastFullWeek(now);
   const totals = weekTotals(ctx.entries, ctx.settings, week.from);
-  const w = totals.get(week.from) || { spent: 0, count: 0, byCategory: new Map(), biggest: null };
+  const w = totals.get(week.from) || { spent: 0, count: 0, byCategory: new Map(), biggest: null, refunds: 0 };
   return {
-    week, spent: w.spent, count: w.count, hasData: w.count > 0,
+    week, spent: w.spent, count: w.count, hasData: w.count > 0, refunds: w.refunds,
     vs: compareToUsual(w.spent, usualWeek(totals, week.from)),
     top: topCategories(w.byCategory), biggest: w.biggest,
     coming: comingUp({ ...ctx, now }),
   };
 }
 
-/** The allowance pace alert, or null. At the pace so far (used ÷ days gone) when does the allowance run out?
-    `pot` is this cycle's allowance, `used` what's gone (both as in model.js summarize: allowancePot, allowanceUsed),
-    `start`/`end` the cycle's instants (end exclusive). Only from PACE_FROM_DAY days in, and only when it runs out
-    before the cycle's last day. { outDay, early, text } where early = days before the last day. */
-export function paceAlert({ pot, used, start, end, now = new Date() }) {
-  const elapsed = (now - start) / 864e5;
-  if (!(pot > 0) || !(used > 0) || used >= pot || elapsed < PACE_FROM_DAY || now >= end) return null;
-  const outAt = new Date(start.getTime() + (pot / (used / elapsed)) * 864e5);
-  const outDay = dayKey(outAt), lastDay = dayKey(new Date(end.getTime() - 1));
-  if (outDay >= lastDay) return null;
-  const when = outDay === dayKey(now) ? 'today' : shortDay(outDay);
-  return { outDay, early: Math.round(dayNum(lastDay) - dayNum(outDay)), text: `At this pace your allowance runs out around ${when}` };
+/** The allowance pace alert, or null. It only puts model.js allowancePace's `runsOut` into words; runsOut exists only
+    when Home and Insights say "over pace", from the 7th day, after spending on 3 different days, at the steady rate
+    (without any one payment over a quarter of the pot), and when that is 3 or more days before the cycle's last day.
+    `pace` is homeNumbers' m.pace. Returns { outDay, early, perDay, text }. */
+export function paceAlert(pace, now = new Date()) {
+  const r = pace?.runsOut;
+  if (!r) return null;
+  const when = r.outDay === dayKey(now) ? 'today' : shortDay(r.outDay);
+  return { ...r, text: `At this pace (~AED ${fmt(r.perDay, { whole: true })} a day) your allowance runs out around ${when}, ${r.early} ${r.early === 1 ? 'day' : 'days'} early` };
 }
 
-/** Convenience for the screens: the alert from a cycle's summary (model.js summarize) and settings. */
-export function paceAlertFor(sum, settings, now = new Date()) {
-  const { start, end } = cycleBounds(cycleOf(now, settings.cycleStart), settings.cycleStart);
-  return paceAlert({ pot: sum.allowancePot, used: sum.allowanceUsed, start, end, now });
+/** Has this alert been seen? `seenPace` is the `weekly` extra's `pace`: { cycle, outDay }, saved when the alert was tapped.
+    It stays quiet for that cycle until the projected day moves 3 or more days earlier than the one seen. */
+export function paceSeen(alert, cycle, seenPace) {
+  if (!alert || !seenPace || seenPace.cycle !== cycle || typeof seenPace.outDay !== 'string') return false;
+  return daysBetween(alert.outDay, seenPace.outDay) < 3;
 }
 
 /** Mondays and Tuesdays only (Dubai days), until the week's summary has been opened. `seen` is the week key saved last. */
@@ -145,9 +144,10 @@ export function summaryDue(now, seen, week = lastFullWeek(now)) {
   return (wd === 0 || wd === 1) && seen !== week.key;
 }
 
-/** "Last week you spent AED 1,240, 12% more than usual" (plain text; escape it where it goes into HTML). */
-export function summaryLine(spent, vs, money) {
-  const base = `Last week you spent ${money(spent)}`;
+/** "Last week you spent AED 1,240, 12% more than usual" (plain text; escape it where it goes into HTML).
+    With refunds that week it says "AED 1,240 before refunds", since spent is gross. */
+export function summaryLine(spent, vs, money, refunds = 0) {
+  const base = `Last week you spent ${money(spent)}${refunds > 0 ? ' before refunds' : ''}`;
   if (!vs) return base;
   if (vs.tone === 'same') return `${base}, about the usual`;
   return `${base}, ${Math.round(Math.abs(vs.pct) * 100)}% ${vs.tone === 'more' ? 'more' : 'less'} than usual`;

@@ -83,8 +83,6 @@ const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 await p.goto(`${URL}?demo=1#insights`);
 await p.waitForSelector('.panel');
-// the allowance pace alert (weekly.js) is a Home line too; give the allowance room so it doesn't outrank what this test checks
-await p.evaluate(async () => { const st = await import('/js/store.js'); st.state.settings = { ...st.state.settings, allowance: 1e6 }; });
 ok(await p.isVisible('.budgets-card.empty-budgets'), 'Insights shows a prompt while no budget is set');
 await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.lens');
@@ -126,10 +124,14 @@ ok(await p.$$eval('.bg-row', (x) => x.length) === 1, 'Insights shows one bar for
 ok(await p.$eval('.bg-row', (el) => el.classList.contains('near')), 'about 90% reads as near');
 ok(/^\d+%$/.test(await p.textContent('.bg-pct')) && /left/.test(await p.textContent('.bg-left')), 'the bar shows a percent and what is left');
 
-// Home shows one notice at a time; the demo's subscriptions would outrank a "near" budget, so set them aside
+// Home shows one notice at a time; the demo's subscriptions (and, on a day the demo is running fast, the allowance
+// pace alert) would outrank a "near" budget, so set them aside: the subscriptions hidden, the pace alert marked seen
 await p.evaluate(async () => {
-  const [st, r] = await Promise.all([import('/js/store.js'), import('/js/recurring.js')]);
+  const [st, r, m, w] = await Promise.all([import('/js/store.js'), import('/js/recurring.js'), import('/js/model.js'), import('/js/weekly.js')]);
   st.saveExtra('recurring', { v: 1, ignored: [...new Set(st.state.entries.map((e) => r.recurringKey(e.merchant)).filter(Boolean))] });
+  const h = m.homeNumbers(st.state.entries, st.state.plan, st.state.settings, new Date(), st.state.dismissed);
+  const alert = w.paceAlert(h.pace);
+  if (alert) st.saveExtra('weekly', { v: 1, pace: { cycle: h.cyc, outDay: alert.outDay } }, 'x', { undoable: false });
 });
 await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.budget-nudge');

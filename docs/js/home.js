@@ -106,13 +106,14 @@ function label(m, f) {
   return `${a.name} <span class="lens-role">· ${f === m.hub ? 'pay lands here' : f === m.s.allowanceAccount ? 'allowance' : a.role.toLowerCase()}</span>`;
 }
 
-/* Pace: how this cycle's allowance spending compares with an even spread over the cycle. */
+/* Pace: how this cycle's allowance spending compares with an even spread over the cycle.
+   The state (and its tolerance) comes from allowancePace in model.js, shared with Insights and the "runs out" alert. */
 function paceLine(m) {
-  const { delta, daysLeft: dl } = m.pace, tol = Math.max(15, m.sum.allowancePot * 0.03);
+  const { delta, daysLeft: dl, state: st } = m.pace;
   const perDay = dl > 0 && m.safe > 0 ? ` · ${fmt(m.safe / dl, { whole: true })} a day for ${dl} ${dl === 1 ? 'day' : 'days'}` : '';
-  if (m.allowLeft < 0) return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
-  if (delta > tol) return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
-  if (delta < -tol) return `<span class="pace-good">On track · ${fmt(-delta, { whole: true })} under pace</span>${perDay}`;
+  if (st === 'spent') return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
+  if (st === 'over') return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
+  if (st === 'under') return `<span class="pace-good">On track · ${fmt(-delta, { whole: true })} under pace</span>${perDay}`;
   return `<span class="pace-good">On track</span>${perDay}`;
 }
 
@@ -181,9 +182,9 @@ export function renderHome(h) {
 }
 
 /** At most one quiet line on Home, the most urgent of: an overdue buy-now-pay-later payment, a category over its limit, a subscription that just
-    started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit, what people owe you, and (Mondays and Tuesdays) last week's summary. Allowance running out early sits just after a budget over its limit. Each feature decides whether it has
+    started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit, what people owe you, and (Mondays and Tuesdays) last week's summary. Allowance running out early (pace:out) sits just above a category close to its limit. Each feature decides whether it has
     something to say (…Notice); Home only picks one, so notices never stack up. */
-const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'pace:out', 'sub:new', 'bnpl:due', 'sub:due', 'budget:near', 'owed', 'week:summary'];
+const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'pace:out', 'budget:near', 'owed', 'week:summary'];
 function homeNotice(m, whereShown) {
   const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
   const found = [];
@@ -193,7 +194,7 @@ function homeNotice(m, whereShown) {
   if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
   const bn = bnplHomeNotice(); // a buy-now-pay-later payment overdue, or due within 7 days
   if (bn) found.push(bn);
-  found.push(...weeklyHomeNotices(m.sum, isCurrent)); // allowance running out early; last week's summary on Mondays and Tuesdays
+  found.push(...weeklyHomeNotices(m, isCurrent)); // allowance running out early; last week's summary on Mondays and Tuesdays
   // what people owe sits in "Where your money is" when that card is on screen; otherwise it's the last of the notices
   const owed = whereShown ? '' : owedLineHTML();
   if (owed) found.push({ rank: 'owed', html: owed });

@@ -114,11 +114,6 @@ const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, red
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 await p.goto(`${BASE}/?demo=1#home`);
-await p.waitForSelector('.lens');
-// the allowance pace alert (weekly.js) is a Home line too; give the allowance room so it doesn't outrank what this test checks
-await p.evaluate(async () => { const st = await import('/js/store.js'); st.state.settings = { ...st.state.settings, allowance: 1e6 }; });
-await p.click('.tabbar [data-tab="insights"]');
-await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.sub-line');
 ok(/Disney\+ is a new subscription/.test(await p.textContent('.sub-line')), 'Home shows one line about the new subscription');
 await p.click('.sub-line');
