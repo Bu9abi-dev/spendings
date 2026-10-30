@@ -25,3 +25,27 @@ Extras, C a split field on entries.
   the account pickers for paying, Wallet matching, "Where your money is", Safe to spend and Emergency.
 - A friend paying for you: a Spend of your share with the person as the account (their balance goes negative = you
   owe them). No cash moves, which is true.
+
+---
+
+# Council review of the build (branch claude/owed), 30 Oct 2026
+
+Contrarian, Outsider, Executor (Sonnet). All: merge after fixes; the core maths holds (Spend + `-split` Transfer
+add up to the original; people are out of "All your money"; lending from the allowance card counts as used).
+
+## Must fix
+1. **Bank alert after a split logs the bill twice.** `twinOf_` in Code.gs matches on the full amount; a split Spend
+   only holds your share. Match an auto-logged Spend whose `id + '-split'` partner makes up the alert's amount. Test it.
+2. **USD splits drift**: each half is repriced on its own. Your AED = original AED − theirs; send `amountAED` with both.
+3. **Settle up repays the main account** even when you lent from the allowance card, so Safe to spend never recovers.
+   Default the repayment to the account the money was lent from (the allowance account when that's where it came from).
+4. Merge with v22 (store.js outbox/saveExtra/demo extras, main.js click chain, sw.js SHELL, DECISIONS.md).
+## Should fix
+- Home stacks the owed line under the one notice. Keep it as part of the "Where your money is"/total area, not a second
+  notice line (or fold it into the notice order at the lowest rank).
+- "Change both" with a changed amount: rescale the other half so the bill still adds up, or say it only syncs date
+  and account. Bulk delete includes the other half.
+- Shorter split toast ("Split · your share 76.26"); "Split with someone" visible above the keypad; Settle up sheet
+  titled "Ahmed pays you back" / "You pay Ahmed".
+- While extras are phone-only and people exist, Settings says the script update makes card matching ignore people.
+- BNPL's plan account picker never offers a person.

@@ -397,7 +397,7 @@ function addEntries_(list) {
     rows.push(toRow_(e, now, now));
     out.push(e);
     touched[e.cycle] = true;
-    if (e.merchant && e.category && e.type === 'Spend') rememberMerchant_(e.merchant, e.category);
+    if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') rememberMerchant_(e.merchant, e.category);
   });
   if (rows.length) {
     sh.getRange(sh.getLastRow() + 1, 1, rows.length, COLS.length).setValues(rows);
@@ -426,7 +426,7 @@ function updateEntry_(id, fields) {
   }
   var created = sh.getRange(row, C['Created'] + 1).getValue() || new Date();
   sh.getRange(row, 1, 1, COLS.length).setValues([toRow_(e, created, new Date())]);
-  if (e.merchant && e.category && e.type === 'Spend') rememberMerchant_(e.merchant, e.category);
+  if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') rememberMerchant_(e.merchant, e.category); // BNPL: the plan's category, not learned
   ensureCycleTab_(e.cycle);
   return { ok: true, entry: e };
 }

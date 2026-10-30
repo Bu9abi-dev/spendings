@@ -33,7 +33,27 @@ timeline
         v18 : Your own categories : Rename and hide : Sheet keeps the names
         v19 : Category limits : Progress bars : One quiet nudge
         v20 : Subscriptions : New ones flagged : One Home line at a time
+        v21 : Changes never lost on a slow connection
+        v22 : Buy now, pay later : Payments linked by themselves : Due before payday
 ```
+
+---
+
+## v22: Buy now, pay later
+**30 October 2026** · sheet update optional
+
+- **Buy now, pay later** (Tabby, Tamara, Postpay, card instalment plans): add a plan once and the app shows what's still to pay, the next payment and its date, and what's due before payday. What you still owe never changes your account balances; only payments that actually leave count as spending.
+- When the Apple Pay Shortcut logs a Tabby or Tamara payment, the app links it to the right plan by itself and tells you. "Not this payment" undoes a wrong match.
+- **Mark paid** checks first whether the payment is already in Activity, so nothing is counted twice.
+- Home shows an overdue payment first, and one due within a week, in the same single Home line as budgets and subscriptions.
+- The sheet part (optional): payments logged this way don't teach the sheet's merchant memory a wrong category.
+
+---
+
+## v21: Safer syncing
+**30 October 2026** · no sheet update needed
+
+- Fixed a rare way a change could get lost on its way to your sheet: if you saved the same setting twice in quick succession on a slow connection, the change queued after it could be dropped. Edits made while a new entry was still uploading could also be lost. Both now always reach the sheet.
 
 ---
 

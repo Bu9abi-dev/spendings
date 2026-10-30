@@ -8,6 +8,7 @@ import { icon } from './icons.js';
 import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
 import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
+import { bnplInsightsPanel } from './bnpl-ui.js';
 import { detectRecurring, monthlyTotal, daysUntil } from './recurring.js';
 import { budgetRows, budgetsCard } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
@@ -195,6 +196,8 @@ export function renderInsights() {
       <div class="series-legend"><span><i class="sw spend"></i>Spent so far</span><span><i class="sw pace"></i>Even pace</span></div>
       ${paceLine({ days: len, cumulative, pace, todayIndex: today, labels })}
     </section>
+
+    ${bnplInsightsPanel(cyc, isCurrent)}
 
     <section class="panel">
       <h3 class="panel-title">By account</h3>

@@ -8,13 +8,13 @@ project thread; the loop thread merges it. Move an item to Done with its version
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
 
-| 3 | BNPL tracking (council fixes) | `claude/bnpl` | Tabby/Tamara, auto-link with visible trail |
-| 4 | Savings goals and net worth | `claude/goals` | manual investments, read-only |
-| 5 | Flaky verify-extras | `claude/extras-flake` | find the race |
+| 4 | Savings goals and net worth (council fixes) | `claude/goals` | real BNPL owed, no double counting |
+| 6 | Money owed and split bills | `claude/owed` | people as accounts, Split on an entry |
+| 7 | First-time setup + Sign in with Google | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
+
 
 ## Next
 
-- **BNPL in the one-notice order** (home.js `homeNotice`): overdue BNPL first, BNPL due soon after a new subscription.
 - **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning, what's due).
 - **Money owed (split expenses).** "Person" accounts so lending is a transfer, never spending. Council design pass first.
 - **Arabic / English toggle.** Touches every string.
@@ -31,6 +31,8 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v22 · Buy now, pay later: plans, auto-linked payments, due before payday, Home notice
+- v21 · Safer syncing: a change saved while another is sending is never dropped
 - v20 · Subscriptions: detector, monthly total, new-charge flag; Home shows one notice at a time
 - v19 · Category budgets: monthly limits per category, Insights bars, one Home nudge
 - v18 · Your own categories: add, rename (label only), hide; Shortcut accepts them after the script update

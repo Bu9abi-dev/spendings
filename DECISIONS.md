@@ -21,6 +21,52 @@ Choices made while running the app on my own, newest first, with the reason for 
   also matches a card by account name as a substring (a person called "Visa" or "Al" could have caught a card);
   with no Extras tab nothing changes. Bulk delete in Activity only warns that the other half stays.
 
+- **The flaky extras test was a test bug, but it led to a real app race, now fixed.** The test's `settle()`
+  used `waitForFunction` with an `async` check. Playwright treats the Promise the check returns as "true", so
+  settle never waited and the test sometimes looked at the sheet before the last change got there. It now
+  waits until the outbox is really empty. Looking at the outbox also turned up a real way to lose data: the
+  app took a sent change off the queue with `shift()`. If you saved the same extra (or the plan, or accounts)
+  again while the first copy was still on its way, the old copy was already gone from the queue, so `shift()`
+  threw away the *next* change instead, for example a different phone-only extra, which then never reached
+  the sheet. An edit to an entry whose add was still sending was folded into the add after it had already
+  left, so the edit was lost too. Now a sent change is removed by identity, and nothing is folded into the
+  change that's sending. `verify-extras` holds a request mid-flight to check both cases.
+- **BNPL (branch `claude/bnpl`):** a plan (Tabby, Tamara, Postpay, card instalments) lives in Extras under `bnpl`
+  and never changes a balance. Money only counts as spent when an instalment is paid: "Mark paid" logs a normal
+  Spend ("Tabby · Noon", the plan's category and account) through `addEntry`, so balances, sync and undo work as
+  for any payment. Choices made along the way:
+  - **Paid is derived, not stored as a flag.** An instalment points at the ledger entry that paid it and counts as
+    paid only while that entry exists. Deleting or undoing the payment makes it unpaid again without a second
+    write, and nothing can be "paid" twice.
+  - **One Undo for Mark paid.** It's two changes (an entry and the plan), folded into one step with main's
+    `batch(label, fn)` (an earlier `together()` was removed: one grouping system).
+  - **Council fixes (30 Oct):** Mark paid first looks for a payment already in Activity that's probably this one
+    and asks "Link this payment" or "Log a new payment", so nothing is counted twice. Every new auto-link shows a
+    toast with Unlink, and paid rows show the payment they're matched to. Auto-link takes entries oldest first and
+    gives each to the earliest unpaid payment it fits (a late payment pays the overdue one, up to 5 days after the
+    next one is due), and when two plans fit equally it links neither. Plan changes save with their own undo
+    (`saveExtra(…, { reverse })`) that touches only that change, read fresh at undo time, so undoing an edit never
+    wipes links found since; the editor merges with the plan as it is at Save, and once a payment is paid the total
+    and count are locked. Toast Undo uses `topUndoId()`. Plan payments are `source: 'BNPL'` and are never learned
+    as merchants (categorize.js, the store and `Code.gs`; the script part needs the redeploy, harmless until then).
+    On screen it's "Buy now, pay later" and "payment". Home gets one notice through `homeNotice` (`bnpl:overdue`
+    first of all, `bnpl:due` within 7 days after `sub:new`); "AED X due before payday" is information in the
+    sheet and Insights, never taken off a balance or Safe to spend.
+  - **"Sync" matches every unpaid instalment, not just the next one** (merchant contains the provider name, within
+    AED 1 and ±5 days of that instalment's own due day; closest day wins; one entry pays one instalment). A plan
+    added halfway through picks up all its past payments at once. It runs after each change to entries or extras,
+    saves only when it found something new, and isn't an Undo step (`saveExtra(…, { undoable: false })`): the app
+    did it, not Abdullah. "Unlink" remembers the entry so it's never auto-linked to that plan again.
+  - **The editor is a form, not the keypad sheet.** A plan has nine fields; the payday-plan form pattern fits them
+    on one screen, with a live preview ("2 × AED 333.33, then AED 333.34 … last on 27 Nov").
+  - **"Already paid" for a new plan** marks the first instalments paid with no entry (the first one is usually
+    taken at the till, before tracking), so no fake spending is logged.
+  - **Deleting a plan keeps its payments** in Activity: they were real spending.
+  - Demo mode gets two plans whose instalments are already in the demo ledger as Apple Pay payments, so the
+    linking is visible straight away.
+  - Fixed a date-dependent check in `verify-iphone.mjs`: it compared the Where rows on screen with unrounded
+    numbers instead of the largest-remainder whole numbers the card actually shows, so it failed whenever the
+    demo numbers needed a nudge.
 - **Subscriptions (`recurring.js`, Insights card + one Home notice):** a place counts when its charges repeat weekly
   (6-8 days, needs 4 charges), monthly (26-35) or yearly (350-380), amounts within 15% of the previous charge, so a
   small price rise stays one subscription ("was X"). Two monthly or yearly charges are enough only if they match

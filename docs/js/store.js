@@ -1,6 +1,6 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
-import { demoEntries, DEMO_PLAN } from './demo.js';
+import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
 
@@ -173,39 +173,47 @@ const overlay = (e, op) => (op && op.op === 'update' ? { ...e, ...op.fields } : 
 const sortEntries = (list) => list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
 /** Sends every queued change in order. Returns how many went through. */
+let sending = null; // the queued change that's on its way to the sheet right now
 async function flushOutbox() {
   let sent = 0;
-  while (state.outbox.length) {
-    const op = state.outbox[0];
-    if (op.op === 'add') await call({ action: 'add', entry: op.entry });
-    else if (op.op === 'update') await call({ action: 'update', id: op.id, fields: op.fields });
-    else if (op.op === 'delete') await call({ action: 'delete', id: op.id });
-    else if (op.op === 'settings') await call({ action: 'settings', settings: op.settings });
-    else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
-    else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
-    else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
-    else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
-    else if (op.op === 'extra') {
-      try {
-        await call({ action: 'extras', key: op.key, value: op.value });
-        state.extrasUnsent = state.extrasUnsent.filter((k) => k !== op.key);
-      } catch (e) {
-        // the sheet's script predates extras: keep the value on this phone and don't block the queue
-        if (!/Unknown action/i.test(e.message)) throw e;
-        if (!state.extrasUnsent.includes(op.key)) state.extrasUnsent = [...state.extrasUnsent, op.key];
+  try {
+    while (state.outbox.length) {
+      const op = sending = state.outbox[0];
+      if (op.op === 'add') await call({ action: 'add', entry: op.entry });
+      else if (op.op === 'update') await call({ action: 'update', id: op.id, fields: op.fields });
+      else if (op.op === 'delete') await call({ action: 'delete', id: op.id });
+      else if (op.op === 'settings') await call({ action: 'settings', settings: op.settings });
+      else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
+      else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
+      else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
+      else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
+      else if (op.op === 'extra') {
+        try {
+          await call({ action: 'extras', key: op.key, value: op.value });
+          state.extrasUnsent = state.extrasUnsent.filter((k) => k !== op.key);
+        } catch (e) {
+          // the sheet's script predates extras: keep the value on this phone and don't block the queue
+          if (!/Unknown action/i.test(e.message)) throw e;
+          if (!state.extrasUnsent.includes(op.key)) state.extrasUnsent = [...state.extrasUnsent, op.key];
+        }
       }
+      // remove this change by identity, not shift(): while it was sending, a newer save of the same
+      // key, plan or accounts may have dropped it from the queue, and shift() would then throw away
+      // the next change instead (a phone-only extra that never reached the sheet)
+      const i = state.outbox.indexOf(op);
+      if (i >= 0) state.outbox.splice(i, 1);
+      sent++;
+      persist();
     }
-    state.outbox.shift();
-    sent++;
-    persist();
-  }
+  } finally { sending = null; }
   return sent;
 }
 
 function enqueue(op) {
   // collapse edits to something that hasn't left the phone yet
   const i = state.outbox.findIndex((o) => o.id === op.id && op.id);
-  if (i >= 0) {
+  // never fold into the change that's already sending: it has left with its old contents
+  if (i >= 0 && state.outbox[i] !== sending) {
     const prev = state.outbox[i];
     if (op.op === 'delete' && prev.op === 'add') { state.outbox.splice(i, 1); persist(); return; }
     if (op.op === 'update' && prev.op === 'add') { prev.entry = { ...prev.entry, ...op.fields }; persist(); return; }
@@ -287,7 +295,8 @@ const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'cat
 export function addEntry(fields) {
   const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields });
   state.entries = sortEntries([e, ...state.entries]);
-  if (e.merchant && e.category && e.type === 'Spend') state.merchants[merchantKey(e.merchant)] = e.category;
+  // a BNPL payment ("Tabby · Noon") takes the plan's category; it isn't you teaching the app a merchant
+  if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') state.merchants[merchantKey(e.merchant)] = e.category;
   if (!state.prefs.demo) enqueue({ op: 'add', id: e.id, entry: e });
   record(e.type === 'Adjustment' ? `Matched ${e.account} with bank` : `Added ${describe(e)}`, () => deleteEntry(e.id));
   persist(); emit('entries');
@@ -412,11 +421,15 @@ export const getExtra = (key, fallback) => (Object.hasOwn(state.extras, key) ? s
 /** True while some extras are only on this phone (the sheet's script needs updating). */
 export const extrasOnPhoneOnly = () => state.extrasUnsent.length > 0;
 
-/** Save one feature's data. `null` clears it. Undo puts back the previous value. */
-export function saveExtra(key, value, label = 'Changed a setting') {
+/** Save one feature's data. `null` clears it. Undo puts back the previous value.
+    `{ undoable: false }` is for bookkeeping the app does by itself (e.g. linking a BNPL payment it
+    found), which isn't something you did, so it doesn't take a place in the Undo history.
+    `{ reverse }` replaces the default Undo (put the whole old value back) with your own: BNPL uses it so
+    undoing one plan change undoes only that change, read fresh at undo time, and keeps links found since. */
+export function saveExtra(key, value, label = 'Changed a setting', { undoable = true, reverse = null } = {}) {
   if (!EXTRA_KEY.test(key)) throw new Error(`Bad extras key: ${key}`);
   const before = Object.hasOwn(state.extras, key) ? state.extras[key] : null;
-  record(label, () => saveExtra(key, before));
+  if (undoable) record(label, reverse || (() => saveExtra(key, before)));
   const next = { ...state.extras, [key]: value };
   if (value == null) delete next[key];
   state.extras = next;
@@ -530,8 +543,9 @@ export function loadDemo() {
   state.merchants = {};
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
   state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
-  state.extras = {};
+  state.extras = demoExtras();
   setAccountList(state.accounts);
+  applyPeople();
 }
 
 export function setDemo(on) {

@@ -33,7 +33,7 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | File | What |
 | --- | --- |
 | `docs/js/model.js` | Pure maths: cycles, balances, allowance, Home numbers, "Where your money is" rows. |
-| `docs/js/store.js` | State, localStorage cache, offline outbox, Apps Script client, undo history, Extras (`getExtra`/`saveExtra`). |
+| `docs/js/store.js` | State, localStorage cache, offline outbox, Apps Script client, undo history (`batch(label, fn)` folds several changes into one step; `topUndoId()` for toast Undo), Extras (`getExtra`/`saveExtra`). |
 | `docs/js/main.js` | Router, Settings tab, review sheet, Shortcut guide, global click/keyboard/swipe handlers. |
 | `docs/js/home.js` | Home tab (balance bar, account lenses, payday plan, match with bank). |
 | `docs/js/activity.js` | Activity tab (search, chips, Filter sheet, filtered total, Select mode for bulk recategorise/delete). |
@@ -43,6 +43,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/views.js` | Shared bits: entry row, sync badge, large title + undo button, demo banner. |
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
 | `docs/js/charts.js` | SVG charts. |
+| `docs/js/bnpl.js` | Pure buy-now-pay-later maths: payment amounts (last absorbs rounding), due dates, still to pay/next/overdue, auto-linking ledger payments, `likelyPayment` (Mark paid asks before double-counting), `bnplNotice` (the Home line). |
+| `docs/js/bnpl-ui.js` | Buy now, pay later screens: Home line, plans sheet, plan editor, link a payment, Settings row, Insights panel; runs the auto-link and its "Linked …" toast. Plan changes save with a custom undo (`saveExtra(…, { reverse })`). |
 | `docs/js/budgets.js` | Category budgets: pure maths (spent vs limit, near/over) plus the Insights card, Home line and Settings rows HTML. |
 | `docs/js/budgets-settings.js` | Budgets store wiring: read/save limits in the `budgets` extra, and the Settings edit sheet. |
 | `docs/js/categorize.js` | Learns merchant → category from past entries; `cleanMerchant` is the one shop-name normaliser. |
