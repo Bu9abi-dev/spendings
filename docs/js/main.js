@@ -1,11 +1,12 @@
 import {
-  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV, entryIds, amtAED, amtOf,
+  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV, entryIds, amtAED, amtOf, cycleOf, cycleBounds,
 } from './model.js';
+import { EMPTY_FILTER } from './filters.js';
 import { t, locale, lang, setLang, langPref, onLangChange, isRTL, applyLang } from './i18n.js';
 import {
   state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
 } from './store.js';
-import { learn, suggestFor, sameMerchant } from './categorize.js';
+import { learn, suggestFor, sameMerchant, markAutoFiled } from './categorize.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
 import { icon } from './icons.js';
@@ -23,7 +24,7 @@ import {
   renderActivity, refreshActivity, hydrateActivity, resetActivityRows, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
-import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
+import { renderInsights, shiftInsights, insightsShown, subsClick, placeTap, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
 import { weeklyClick } from './weekly-ui.js';
@@ -254,7 +255,8 @@ function openReview() {
     onMount(sheet, close) {
       const redraw = () => { const l = sheet.querySelector('.review-list'); if (l) l.innerHTML = body(); };
       // file several at once, undone together in one step
-      const fileMany = (pairs, label) => {
+      const fileMany = (pairs, label, auto = false) => {
+        if (auto) markAutoFiled(pairs); // filed by a suggestion, not by you: not taught back to the guesser
         batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })));
         toast(t('rev.undoPuts', { what: esc(label), n: pairs.length }), { icon: icon('check', { size: 18 }), tone: 'good', action: t('common.undo'), onAction: () => { doUndo(); redraw(); } });
       };
@@ -264,7 +266,7 @@ function openReview() {
           haptic();
           const guess = guesses();
           const pairs = items().filter((e) => confident(guess.get(e.id))).map((e) => [e.id, guess.get(e.id).category]);
-          fileMany(pairs, t('rev.filedN', { n: pairs.length }));
+          fileMany(pairs, t('rev.filedN', { n: pairs.length }), true);
           return redraw();
         }
         const b = ev.target.closest('.rc-cat, .rc-suggest');
@@ -277,7 +279,7 @@ function openReview() {
         haptic();
         // "File all N" on the suggestion: this one and its twins together
         if (b.dataset.all && others.length) {
-          fileMany([e, ...others].map((x) => [x.id, cat]), t('rev.filedFrom', { n: others.length + 1, shop: e.merchant, what: categoryMeta(cat)?.short || cat }));
+          fileMany([e, ...others].map((x) => [x.id, cat]), t('rev.filedFrom', { n: others.length + 1, shop: e.merchant, what: categoryMeta(cat)?.short || cat }), true);
           return redraw();
         }
         updateEntry(e.id, { category: cat });
@@ -487,6 +489,15 @@ document.addEventListener('click', async (ev) => {
   }
   const kind = tg.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
+  const place = placeTap(tg);
+  if (place) {
+    haptic();
+    const { start, end } = cycleBounds(place.cycle, state.settings.cycleStart);
+    const cur = place.cycle === cycleOf(new Date(), state.settings.cycleStart);
+    Object.assign(activityFilter, { ...EMPTY_FILTER, shop: place.shop, shopName: place.name },
+      cur ? { period: 'this' } : { period: 'custom', from: dayKey(start), to: dayKey(new Date(end.getTime() - 1)) });
+    return go('activity');
+  }
   if (subsClick(tg)) { haptic(); return; }
   const cyc = tg.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }

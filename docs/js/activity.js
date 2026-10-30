@@ -191,6 +191,7 @@ export function selectAll() {
 
 export function clearFilter(key) {
   if (key === 'all') { Object.assign(activityFilter, { ...EMPTY_FILTER, q: activityFilter.q, kind: activityFilter.kind }); return; }
+  if (key === 'shop') Object.assign(activityFilter, { shop: '', shopName: '' });
   if (key === 'account') activityFilter.account = '';
   if (key === 'category') activityFilter.category = '';
   if (key === 'period') Object.assign(activityFilter, { period: 'all', from: '', to: '' });

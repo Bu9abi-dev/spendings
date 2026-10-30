@@ -1,10 +1,11 @@
 // Activity filters: which entries match, and what they add up to. Pure functions (no page, no state),
 // so tests can run them in Node.
+import { merchantKey } from './categorize.js';
 import { cycleOf, shiftCycle, dayKey, toAED, fmt, amtAED, shortDay, categoryMeta } from './model.js';
 import { t } from './i18n.js';
 
 // Everything the Activity tab can filter on. Empty string = "any".
-export const EMPTY_FILTER = { q: '', kind: 'all', account: '', category: '', period: 'all', from: '', to: '', min: '', max: '' };
+export const EMPTY_FILTER = { q: '', kind: 'all', account: '', category: '', period: 'all', from: '', to: '', min: '', max: '', shop: '', shopName: '' };
 
 export const PERIODS = [['all', 'All time'], ['this', 'This cycle'], ['last', 'Last cycle'], ['custom', 'Pick dates']];
 export const NO_CATEGORY = '__none'; // "Uncategorised" in the category picker
@@ -13,7 +14,7 @@ const num = (v) => (v === '' || v == null || Number.isNaN(+v) ? null : +v);
 
 /** True when anything beyond the plain list is switched on (search, a chip, or a sheet filter). */
 export function isFiltered(f) {
-  return !!(f.q.trim() || f.kind !== 'all' || extraCount(f));
+  return !!(f.q.trim() || f.kind !== 'all' || f.shop || extraCount(f));
 }
 
 /** How many of the Filter sheet's own filters are on (account, category, period, amount). */
@@ -33,6 +34,7 @@ export function matchEntries(entries, f, settings, now = new Date()) {
     if (['Spend', 'Income', 'Transfer'].includes(f.kind) && e.type !== f.kind) return false;
     // a transfer shows under both the account it left and the one it went to
     if (f.account && e.account !== f.account && e.toAccount !== f.account) return false;
+    if (f.shop && merchantKey(e.merchant) !== f.shop) return false; // tapped a place in Insights: same shop key as the card
     if (f.category === NO_CATEGORY && (e.category || e.type === 'Transfer' || e.type === 'Adjustment')) return false;
     if (f.category && f.category !== NO_CATEGORY && e.category !== f.category) return false;
     if (cycle && cycleOf(e.date, start) !== cycle) return false;
@@ -66,6 +68,7 @@ export function totals(list, settings) {
 /** Short labels for the filters that are on, for the removable pills under the chips. */
 export function activeLabels(f) {
   const out = [];
+  if (f.shop) out.push(['shop', f.shopName || f.shop]);
   if (f.account) out.push(['account', f.account]);
   if (f.category) out.push(['category', f.category === NO_CATEGORY ? t('act.uncat') : categoryMeta(f.category)?.label || categoryMeta(f.category, 'Income')?.label || f.category]);
   if (f.period === 'this') out.push(['period', t('period.this')]);
