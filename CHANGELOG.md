@@ -28,7 +28,18 @@ timeline
         v13 : Testing the Shortcut logs nothing : Arabic digits read right : Faster screens
         v14 : Day-by-day and weekly spending : Top places : Categories over six cycles
         v15 : Activity filters : Select and edit many : One undo
+        v16 : Category suggestions : File a whole shop at once : Only sure guesses act
 ```
+
+---
+
+## v16: Smarter categories
+**30 October 2026** · no sheet update needed
+
+- **Needs review suggests a category** for each payment, learned from how you filed the same shop before. Bank-style names like "CARREFOUR ABU DHABI AE" are matched to "Carrefour".
+- When the app is sure, one tap files every payment from that shop, and "File N with their suggestions" files all the sure ones at once. When it only has a guess ("Maybe like…"), you pick, so nothing gets filed wrongly behind your back.
+- Similar names that are different shops stay apart: Noon and Noon Food, Careem and Careem Food, Uber and Uber Eats.
+- The add sheet picks the category for a shop it knows well, and only suggests one when it's unsure.
 
 ---
 
