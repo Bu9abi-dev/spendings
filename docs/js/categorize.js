@@ -79,6 +79,26 @@ function likeness(a, b) {
   return 0;
 }
 
+/* Entries filed by "file all" / accept-all were put there by a guess, not by you, so they must not teach the next guess
+   (a wrong high-confidence guess would otherwise confirm itself every time). id → the category the guess set. The entry is
+   learnable again as soon as its category differs (you changed it by hand). Kept on this phone only (localStorage): the
+   sheet has no column for it and a lost list only means those entries teach again, which is harmless. */
+const AUTO_KEY = 'spendings.autofiled';
+const AUTO_MAX = 2000;
+let autoFiled = (() => { try { const v = JSON.parse(localStorage.getItem(AUTO_KEY) || '{}'); return v && typeof v === 'object' ? v : {}; } catch { return {}; } })();
+let autoVer = 0;
+/** pairs: [[id, category]…] just filed automatically. */
+export function markAutoFiled(pairs) {
+  const next = { ...autoFiled };
+  for (const [id, cat] of pairs) next[id] = cat;
+  const keys = Object.keys(next);
+  for (const k of keys.slice(0, Math.max(0, keys.length - AUTO_MAX))) delete next[k]; // oldest go first
+  autoFiled = next; autoVer++;
+  try { localStorage.setItem(AUTO_KEY, JSON.stringify(next)); } catch { /* private mode: lives until reload */ }
+}
+/** Was this entry's category set by an automatic bulk filing and left alone since? */
+export const isAutoFiled = (e) => autoFiled[e.id] != null && autoFiled[e.id] === e.category;
+
 /**
  * What you've filed before, grouped by cleaned merchant name.
  * entries: the ledger. remembered: the sheet's Merchants map ({ key: category }), used when the ledger has none.
@@ -87,7 +107,7 @@ function likeness(a, b) {
 export function learn(entries, remembered = {}) {
   // the add sheet asks on every keystroke of the shop name. Invalidated by: a new entries array, a different
   // remembered-merchants object or one with more/fewer names (the store only ever adds to it), or the category list changing.
-  const sig = `${Object.keys(remembered || {}).length}#${listsVer()}`;
+  const sig = `${Object.keys(remembered || {}).length}#${listsVer()}#${autoVer}`;
   if (learned && learned.entries === entries && learned.remembered === remembered && learned.sig === sig) return learned.index;
   const index = computeLearn(entries, remembered);
   learned = { entries, remembered, sig, index };
@@ -98,6 +118,7 @@ function computeLearn(entries, remembered) {
   const index = new Map();
   for (const e of entries) {
     if (e.type !== 'Spend' || !e.merchant || !e.category || e.status === 'Review' || !known(e.category)) continue;
+    if (isAutoFiled(e)) continue; // filed by a bulk suggestion and never touched by hand
     if (e.source === 'BNPL') continue; // a plan's payment carries the plan's category, not one you chose for that name
     const key = cleanMerchant(e.merchant);
     if (!key) continue;

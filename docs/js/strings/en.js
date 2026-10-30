@@ -523,6 +523,8 @@ export default {
   "ins.whereWent": "Where it went",
   "ins.dayByDay": "Day by day",
   "ins.dayByDaySub": "Spending from every account. Moving money between your accounts isn’t spending, so it’s left out.",
+  "ins.showPlace": "Show {name} in Activity",
+  "ins.onPace": "On pace for {amt} this cycle (an estimate)",
   "ins.topPlaces": "Top places",
   "ins.everythingElse": "Everything else",
   "ins.pace": "Allowance pace",

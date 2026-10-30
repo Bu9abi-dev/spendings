@@ -522,6 +522,8 @@ export default {
   "ins.whereWent": "أين ذهبت أموالك",
   "ins.dayByDay": "يومًا بيوم",
   "ins.dayByDaySub": "الصرف من كل الحسابات. نقل المال بين حساباتك ليس صرفًا، لذا لا يُحتسب.",
+  "ins.showPlace": "عرض «{name}» في النشاط",
+  "ins.onPace": "على وتيرة {amt} هذه الدورة (تقدير)",
   "ins.topPlaces": "أكثر الأماكن",
   "ins.everythingElse": "كل ما عدا ذلك",
   "ins.pace": "وتيرة المصروف",

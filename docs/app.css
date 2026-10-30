@@ -649,6 +649,9 @@ html.selecting .tabbar, html.selecting .fab { opacity: 0; pointer-events: none; 
 /* Top places */
 .tm-list { display: grid; gap: 12px; }
 .tm-row { display: grid; grid-template-columns: minmax(0, 1.3fr) 1fr 64px; align-items: center; gap: 10px; font-size: 0.882rem; }
+.tm-tap { width: 100%; min-height: 44px; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+.tm-tap:active { opacity: 0.6; }
+.on-pace { margin: 0 0 8px; font-size: 0.824rem; color: var(--label-2); }
 .tm-name { display: grid; min-width: 0; }
 .tm-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tm-name small, .tr-name small { font-size: 0.706rem; color: var(--label-2); }

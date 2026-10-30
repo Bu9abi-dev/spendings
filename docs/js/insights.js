@@ -15,6 +15,7 @@ import { bnplInsightsPanel } from './bnpl-ui.js';
 import { detectRecurring, monthlyTotal, daysUntil } from './recurring.js';
 import { budgetRows, budgetsCard } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
+import { merchantKey } from './categorize.js';
 import { weeklyCard } from './weekly-ui.js';
 
 let insightsCycle = null;
@@ -60,6 +61,11 @@ export function subsClick(tg) {
   if (hide) { saveExtra('recurring', { v: 1, ignored: [...new Set([...ignoredSubs(), hide.dataset.subIgnore])] }, t('ins.hid', { name: hide.closest('.sub-row').querySelector('b').textContent })); return true; }
   if (tg.closest('[data-sub-restore]')) { saveExtra('recurring', { v: 1, ignored: [] }, t('ins.showedHidden')); return true; }
   return false;
+}
+/** A tap on a Top places row: the shop key, its name and the cycle it was shown for. Null when it isn't one. */
+export function placeTap(tg) {
+  const r = tg.closest('[data-shop]');
+  return r ? { shop: r.dataset.shop, name: r.dataset.shopName, cycle: r.dataset.shopCycle } : null;
 }
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
 
@@ -127,6 +133,8 @@ export function renderInsights() {
   const daily = dailySpend(state.entries, cyc, s);
   const elapsed = today + 1;
   const avgDay = daily.slice(0, elapsed).reduce((a, v) => a + v, 0) / elapsed;
+  // a plain estimate: spending so far (every account, as the bars) at the average daily rate for the whole cycle. Hidden until day 3
+  const onPace = isCurrent && elapsed >= 3 && elapsed < len ? Math.round((avgDay * len) / 10) * 10 : 0;
   // a day still to come is drawn empty, unless something is already dated on it (then it's shown, so days add up to weeks)
   const barDays = daily.map((v, i) => ({ label: labels[i], value: v, future: i > today && !v, today: isCurrent && i === today }));
   const barWeeks = weeklySpend(daily).map((w) => ({
@@ -187,15 +195,16 @@ export function renderInsights() {
     <section class="panel">
       <h3 class="panel-title">${t('ins.dayByDay')}</h3>
       <p class="panel-sub">${t('ins.dayByDaySub')}</p>
+      ${sum.spent && onPace ? `<p class="on-pace" id="on-pace">${t('ins.onPace', { amt: amtAED(fmt(onPace, { whole: true })) })}</p>` : ''}
       ${sum.spent ? spendBars({ days: barDays, weeks: barWeeks, avg: avgDay, soFar: isCurrent }) : `<p class="muted center">${t('ins.noSpend')}</p>`}
     </section>
 
     <section class="panel">
       <h3 class="panel-title">${t('ins.topPlaces')}</h3>
-      ${merchants.length ? `<div class="tm-list">${merchants.map((m) => `<div class="tm-row">
+      ${merchants.length ? `<div class="tm-list">${merchants.map((m) => `<button type="button" class="tm-row tm-tap" data-shop="${esc(merchantKey(m.name))}" data-shop-name="${esc(m.name)}" data-shop-cycle="${cyc}" aria-label="${esc(t('ins.showPlace', { name: m.name }))}">
           <span class="tm-name"><b>${esc(m.name)}</b><small>${t('act.payments', { n: m.count })}</small></span>
           <span class="hb-track"><i style="--w:${(m.total / merchMax) * 100}%"></i></span>
-          <span class="hb-val num">${fmt(m.total, { whole: true })}</span></div>`).join('')}
+          <span class="hb-val num">${fmt(m.total, { whole: true })}</span></button>`).join('')}
           ${restOfSpend >= 0.5 ? `<div class="tm-row tm-rest"><span class="tm-name"><b>${t('ins.everythingElse')}</b></span><span></span><span class="hb-val num">${fmt(restOfSpend, { whole: true })}</span></div>` : ''}</div>` : `<p class="muted center">${t('ins.noPlaces')}</p>`}
     </section>
 

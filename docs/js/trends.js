@@ -5,6 +5,7 @@
 // Transfers between accounts are moving money, never spending, so they are left out.
 // Refunds stay as income (like the donut and "Last six cycles"), so they don't change these bars.
 import { cycleBounds, cycleLength, shiftCycle, toAED } from './model.js';
+import { merchantKey } from './categorize.js';
 
 const DAY = 864e5;
 const isSpend = (e) => e.type === 'Spend';
@@ -44,8 +45,9 @@ export function weeklySpend(daily) {
   return weeks;
 }
 
-/** One key per merchant so "Carrefour", "CARREFOUR" and "carrefour  " count together. */
-export const merchantKey = (name) => String(name || '').trim().replace(/\s+/g, ' ').toLowerCase();
+// One key per merchant: the shared shop key (categorize.js), so "Carrefour", "CARREFOUR" and the bank's
+// "CARREFOUR MCC 5411 ABU DHABI AE" count together, and match what Activity filters on when you tap the row.
+export { merchantKey };
 
 /**
  * The merchants that took the most money this cycle.
