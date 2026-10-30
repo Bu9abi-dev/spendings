@@ -1,6 +1,6 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, balances, cycleOf, toAED, uid, money } from './model.js';
-import { demoEntries, DEMO_PLAN } from './demo.js';
+import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
 
@@ -202,11 +202,23 @@ function finalize(e, { keepAED = false } = {}) {
    Every change records how to reverse itself. undo() replays the reversal without recording it. */
 const history = [];
 let muted = 0;
+let grouped = null; // inside together(): the steps collected so far
 function record(label, reverse) {
   if (muted) return;
+  if (grouped) { grouped.push(reverse); return; }
   history.push({ label, reverse });
   if (history.length > 30) history.shift();
   emit('history');
+}
+/** Run several changes as one step: a single Undo reverses all of them, last first.
+    (Paying a BNPL instalment logs an entry and updates the plan; one tap undoes both.) */
+export function together(label, fn) {
+  const outer = grouped, steps = [];
+  grouped = steps;
+  try { return fn(); } finally {
+    grouped = outer;
+    if (steps.length) record(label, () => { for (const r of [...steps].reverse()) r(); });
+  }
 }
 export const canUndo = () => history.length > 0;
 export const lastAction = () => history[history.length - 1]?.label || '';
@@ -349,11 +361,13 @@ export const getExtra = (key, fallback) => (Object.hasOwn(state.extras, key) ? s
 /** True while some extras are only on this phone (the sheet's script needs updating). */
 export const extrasOnPhoneOnly = () => state.extrasUnsent.length > 0;
 
-/** Save one feature's data. `null` clears it. Undo puts back the previous value. */
-export function saveExtra(key, value, label = 'Changed a setting') {
+/** Save one feature's data. `null` clears it. Undo puts back the previous value.
+    `{ undoable: false }` is for bookkeeping the app does by itself (e.g. linking a BNPL payment it
+    found), which isn't something you did, so it doesn't take a place in the Undo history. */
+export function saveExtra(key, value, label = 'Changed a setting', { undoable = true } = {}) {
   if (!EXTRA_KEY.test(key)) throw new Error(`Bad extras key: ${key}`);
   const before = Object.hasOwn(state.extras, key) ? state.extras[key] : null;
-  record(label, () => saveExtra(key, before));
+  if (undoable) record(label, () => saveExtra(key, before));
   const next = { ...state.extras, [key]: value };
   if (value == null) delete next[key];
   state.extras = next;
@@ -471,7 +485,7 @@ export function loadDemo() {
   state.merchants = {};
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
   state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
-  state.extras = {};
+  state.extras = demoExtras();
   setAccountList(state.accounts);
 }
 

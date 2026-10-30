@@ -1183,3 +1183,65 @@ html.sheet-open body::after { opacity: 0; }
 .conn-details > summary::-webkit-details-marker { display: none; }
 .conn-details[open] > summary .chev { transform: rotate(180deg); }
 .conn-details .chev { transition: transform 0.25s var(--ease-out); margin-left: auto; }
+
+/* ───── Buy now, pay later ───── */
+/* Home line: what's still owed, kept apart from the balances above (a plan never changes one) */
+.bnpl-row {
+  display: flex; align-items: center; gap: 12px;
+  width: calc(100% - 2 * var(--gutter));
+  margin: 0 var(--gutter) 14px;
+  padding: 12px 16px;
+  border-radius: 22px;
+  text-align: left;
+  background: var(--bg-2);
+  transition: transform 0.16s var(--ease-out);
+}
+.bnpl-row:active { transform: scale(0.98); }
+.bnpl-row.overdue { background: color-mix(in srgb, var(--warn) 10%, var(--bg-2)); }
+.bnpl-row .row-title b { font-weight: 650; }
+.bnpl-row .warn-text { display: inline; font-weight: 600; }
+
+/* the plans sheet */
+.bn-sheet { padding-bottom: 24px; }
+.bn-total { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 0 14px; }
+.bn-total span { font-size: 13px; color: var(--label-2); font-weight: 500; }
+.bn-total b { font: 700 34px/1.1 var(--font-display); letter-spacing: -0.03em; }
+.bn-total small { font-size: 14px; color: var(--label-2); }
+.bn-plan { margin: 0 var(--gutter) 12px; padding: 12px 16px 4px; border-radius: var(--r-group); background: var(--bg-2); }
+.bn-head { display: flex; align-items: flex-start; gap: 8px; }
+.bn-title { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bn-title b { font-size: 17px; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bn-title span { font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bn-head .text-btn { font-size: 15px; padding: 2px; }
+.bn-progress { display: flex; gap: 4px; margin: 12px 0 6px; }
+.bn-progress i { flex: 1; height: 6px; border-radius: 3px; background: var(--fill-2); transition: background-color 0.3s var(--ease-out); }
+.bn-progress i.paid { background: var(--good-fill); }
+.bn-progress i.late { background: var(--warn); }
+.bn-sum { font-size: 13px; color: var(--label-2); font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.bn-sum b { color: var(--label); font-weight: 600; }
+.bn-inst { display: flex; align-items: center; gap: 10px; min-height: 54px; border-top: 0.5px solid var(--sep); }
+.bn-n { width: 22px; height: 22px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 650; color: var(--label-2); background: var(--fill-3); }
+.bn-inst.paid .bn-n { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
+.bn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.bn-main b { font-size: 16px; font-weight: 600; }
+.bn-main span { font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bn-main .warn-text { display: inline; }
+.bn-inst.paid .bn-main b { color: var(--label-2); }
+.bn-done { color: var(--good); display: inline-flex; }
+.bn-small { font-size: 14px; flex: none; }
+.bn-link { width: 36px; height: 36px; flex: none; }
+.bn-inst .pd-btn { flex: none; }
+.bn-form .group + .group { margin-top: 14px; }
+.bn-cands .row b.num { font-size: 15px; font-weight: 600; }
+
+/* Insights: instalments due in the cycle on screen */
+.bn-due { border-top: 0.5px solid var(--sep); }
+.bn-due-row { display: grid; grid-template-columns: 52px minmax(0, 1fr) auto 64px; align-items: center; gap: 10px; min-height: 48px; border-bottom: 0.5px solid var(--sep); font-size: 15px; }
+.bn-when { font-size: 13px; color: var(--label-2); }
+.bn-what { display: flex; flex-direction: column; min-width: 0; }
+.bn-what b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bn-what small { font-size: 12px; color: var(--label-2); }
+.bn-amt { font-weight: 600; text-align: right; }
+.bn-state { font-size: 13px; color: var(--label-2); text-align: right; display: flex; justify-content: flex-end; }
+.bn-state.paid { color: var(--good); }
+.bn-state.late { color: var(--warn); font-weight: 600; }

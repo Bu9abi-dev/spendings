@@ -14,6 +14,7 @@ import { accountsSettingsBlock, accountsClick } from './accounts.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import { renderActivity, activityList, activityFilter } from './activity.js';
 import { renderInsights, shiftInsights } from './insights.js';
+import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -98,6 +99,10 @@ function renderSettings() {
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
     <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
+
+    <h3 class="group-title" id="bnpl">Buy now, pay later</h3>
+    <section class="group">${bnplSettingsBlock()}</section>
+    <p class="group-foot">What you still owe Tabby, Tamara and the like. It’s not spending until an instalment is paid.</p>
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
@@ -344,7 +349,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || bnplClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic(); go(goBtn.dataset.go);

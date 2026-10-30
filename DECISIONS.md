@@ -4,6 +4,31 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **BNPL (branch `claude/bnpl`):** a plan (Tabby, Tamara, Postpay, card instalments) lives in Extras under `bnpl`
+  and never changes a balance. Money only counts as spent when an instalment is paid: "Mark paid" logs a normal
+  Spend ("Tabby · Noon", the plan's category and account) through `addEntry`, so balances, sync and undo work as
+  for any payment. Choices made along the way:
+  - **Paid is derived, not stored as a flag.** An instalment points at the ledger entry that paid it and counts as
+    paid only while that entry exists. Deleting or undoing the payment makes it unpaid again without a second
+    write, and nothing can be "paid" twice.
+  - **One Undo for Mark paid.** It's two changes (an entry and the plan), so `store.js` got `together(label, fn)`,
+    which folds them into one history step.
+  - **"Sync" matches every unpaid instalment, not just the next one** (merchant contains the provider name, within
+    AED 1 and ±5 days of that instalment's own due day; closest day wins; one entry pays one instalment). A plan
+    added halfway through picks up all its past payments at once. It runs after each change to entries or extras,
+    saves only when it found something new, and isn't an Undo step (`saveExtra(…, { undoable: false })`): the app
+    did it, not Abdullah. "Unlink" remembers the entry so it's never auto-linked to that plan again.
+  - **The editor is a form, not the keypad sheet.** A plan has nine fields; the payday-plan form pattern fits them
+    on one screen, with a live preview ("2 × AED 333.33, then AED 333.34 … last on 27 Nov").
+  - **"Already paid" for a new plan** marks the first instalments paid with no entry (the first one is usually
+    taken at the till, before tracking), so no fake spending is logged.
+  - **Deleting a plan keeps its payments** in Activity: they were real spending.
+  - Demo mode gets two plans whose instalments are already in the demo ledger as Apple Pay payments, so the
+    linking is visible straight away.
+  - Fixed a date-dependent check in `verify-iphone.mjs`: it compared the Where rows on screen with unrounded
+    numbers instead of the largest-remainder whole numbers the card actually shows, so it failed whenever the
+    demo numbers needed a nudge.
+
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
   current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the
