@@ -35,6 +35,12 @@ const badHoles = enKeys.filter((k) => k in ar && (() => {
 })());
 ok(!badHoles.length, 'every Arabic {placeholder} is one the English text fills too', badHoles.slice(0, 8).join(', '));
 ok(Object.values(ar).every((v) => forms(v).every((s) => typeof s === 'string' && s.trim())), 'no empty Arabic text');
+// glossary (council 30 Oct): المصروف is only the allowance; spending is الصرف / صُرف / صرفت; an entry is معاملة
+const flat = (v) => forms(v).join(' ');
+const wrongAllowance = arKeys.filter((k) => /المصروف/.test(flat(ar[k])) && !/allowance/i.test(flat(en[k])));
+ok(!wrongAllowance.length, 'المصروف is used only where English says allowance', wrongAllowance.join(', '));
+const oldWords = arKeys.filter((k) => k !== 'su.inProgress' && /* قيد التنفيذ = in progress */ /أنفق|أُنفق|يُنفق|المصروفات|(^|[\s>])قيود?(\s|$|<)|قيدان|قيدًا/.test(flat(ar[k])));
+ok(!oldWords.length, 'no أنفق / المصروفات / قيد left (spending is الصرف, an entry is معاملة)', oldWords.join(', '));
 const arPlurals = arKeys.filter((k) => typeof ar[k] === 'object');
 ok(arPlurals.length >= 20 && arPlurals.every((k) => ['zero', 'one', 'two', 'few', 'many', 'other'].every((f) => typeof ar[k][f] === 'string')),
   `all ${arPlurals.length} Arabic plurals have the six forms`);
@@ -62,11 +68,11 @@ const want = { 0: 'zero', 1: 'one', 2: 'two', 3: 'few', 10: 'few', 11: 'many', 9
 ok(Object.entries(want).every(([k, f]) => pr.select(+k) === f), 'Intl.PluralRules(ar): 0 zero · 1 one · 2 two · 3–10 few · 11–99 many · 100 other');
 const strip = (s) => s.replace(/[⁦-⁩]/g, '');
 const ent = (k) => strip(i18n.t('act.entries', { n: k }));
-ok(ent(1) === 'قيد واحد' && ent(2) === 'قيدان' && ent(3) === '3 قيود' && ent(11) === '11 قيدًا' && ent(100) === '100 قيد' && ent(0) === '0 قيد',
-  'Arabic plural forms: قيد واحد · قيدان · 3 قيود · 11 قيدًا · 100 قيد', [0, 1, 2, 3, 11, 100].map(ent).join(' | '));
+ok(ent(1) === 'معاملة واحدة' && ent(2) === 'معاملتان' && ent(3) === '3 معاملات' && ent(11) === '11 معاملةً' && ent(100) === '100 معاملة' && ent(0) === '0 معاملة',
+  'Arabic plural forms: معاملة واحدة · معاملتان · 3 معاملات · 11 معاملةً · 100 معاملة', [0, 1, 2, 3, 11, 100].map(ent).join(' | '));
 ok(i18n.dir() === 'rtl' && i18n.locale().startsWith('ar-AE') && i18n.locale().includes('nu-latn'), 'Arabic: rtl, ar-AE dates with Western digits');
 const model = await import('../docs/js/model.js');
-ok(strip(model.money(-12.5)) === 'د.إ −12.50'.replace('−', '-') && model.money(1234).includes('⁦1,234⁩'), 'money() in Arabic: "د.إ" and the number isolated left to right', JSON.stringify(model.money(-12.5)));
+ok(strip(model.money(-12.5)) === '-12.50\u00A0د.إ' && model.money(1234) === '\u20661,234\u2069\u00A0د.إ', 'money() in Arabic: the number first (minus inside its left-to-right isolate), a no-break space, then د.إ', JSON.stringify(model.money(-12.5)));
 ok(model.cycleName('2026-11') === new Intl.DateTimeFormat('ar-AE-u-nu-latn', { month: 'long', timeZone: 'UTC' }).format(Date.UTC(2026, 10, 15)), 'cycle names are Arabic month names', model.cycleName('2026-11'));
 ok(model.categoryMeta('Groceries').label === 'بقالة' && model.categoryMeta('Groceries').id === 'Groceries', 'a built-in category shows its Arabic name; its id (what the sheet stores) stays English');
 model.setCategoryList({ v: 1, names: { Groceries: 'Supermarket' } });
@@ -150,6 +156,7 @@ for (const tab of TABS) {
   const wide = await p.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
   ok(wide <= 0, `${tab}: no sideways scroll at 390px in Arabic`, `${wide}px`);
 }
+ok(arabic.settings.includes('السيارة والهاتف') && !arabic.settings.includes('Car & phone'), 'plan items the app ships (default and demo) show in Arabic until renamed');
 ok(arabic.home.includes(await p.evaluate(async () => (await import('./js/model.js')).cycleName((await import('./js/model.js')).cycleOf(new Date(), 27)))), 'Home title is the Arabic month name');
 ok(/[؀-ۿ]/.test(arabic.home) && /أين أموالك|المتاح للصرف/.test(arabic.home), 'Home reads in Arabic (المتاح للصرف, أين أموالك)');
 
@@ -174,10 +181,18 @@ const ltr = await p.evaluate(() => {
 ok(ltr.signs > 0 && !ltr.signBad.length, `a + or − stays in front of its amount (${ltr.signs} checked)`, ltr.signBad.slice(0, 3).join(' | '));
 ok(ltr.digits > 10 && !ltr.digitBad.length, `amounts' digits run left to right (${ltr.digits} checked)`, ltr.digitBad.slice(0, 3).join(' | '));
 ok(await p.evaluate(() => { const a = document.querySelector('#view .row-amt[aria-label]'); return /د\.إ/.test(a?.getAttribute('aria-label') || ''); }), 'spoken amounts say د.إ in Arabic');
+const dayTotals = await p.$$eval('#view .day-total', (els) => els.map((e) => e.textContent.replace(/[\u2066-\u2069]/g, '')));
+ok(dayTotals.length > 2 && dayTotals.every((x) => /^[\d,.]+\u00A0د\.إ$/.test(x)), 'amounts in Arabic put the currency after the number («120 د.إ», no-break space)', dayTotals.slice(0, 2).join(' | '));
+ok(await p.evaluate(() => [...document.querySelectorAll('#view .row-sub')].slice(0, 5).every((e) => getComputedStyle(e).unicodeBidi === 'plaintext')
+  && document.querySelector('#view .row-sub bdi') != null), 'row second lines isolate names (<bdi>) and take their direction from the first word');
 
 // sheets in Arabic
 const sheetCheck = async (label, open) => {
   await open(); await p.waitForSelector('.sheet'); await settle(450);
+  if (label === 'Monthly report') {
+    const foot = await p.textContent('.sheet .rp-note');
+    ok(!/\.[^\s\d]/.test(foot.replace(/د\.إ/g, '')), 'the report footnote joins its sentences with a space', foot.slice(0, 120));
+  }
   const bad = await leftovers('.sheet:last-of-type');
   ok(!bad.length, `${label} sheet in Arabic: no English words left`, bad.slice(0, 15).join(' '));
   await p.keyboard.press('Escape'); await p.waitForSelector('.sheet', { state: 'detached' }).catch(() => {}); await settle(300);
@@ -188,7 +203,11 @@ await sheetCheck('Filters', () => p.click('[data-act="filters"]'));
 await p.click('.tabbar [data-tab="settings"]'); await settle();
 await sheetCheck('Apple Pay Shortcut', () => p.click('[data-act="shortcut"]'));
 await sheetCheck('Monthly report', () => p.click('[data-act="report"]'));
-await sheetCheck('Buy now, pay later', () => p.click('[data-bnpl="open"]'));
+await sheetCheck('Buy now, pay later', async () => {
+  await p.click('[data-bnpl="open"]'); await p.waitForSelector('.sheet .bn-main span'); await settle(450);
+  const cut = await p.$$eval('.sheet .bn-main span', (els) => els.filter((e) => e.scrollWidth > e.clientWidth + 1).map((e) => e.textContent));
+  ok(!cut.length, 'buy now, pay later: a matched payment line wraps instead of being cut', cut.slice(0, 2).join(' | '));
+});
 await sheetCheck('Setup guide', () => p.click('[data-act="setup-guide"]'));
 await p.click('.tabbar [data-tab="home"]'); await settle();
 if (await p.$('[data-act="review"]')) await sheetCheck('Needs review', () => p.click('[data-act="review"]'));

@@ -1309,7 +1309,7 @@ html.sheet-open body::after { opacity: 0; }
 .bn-inst.paid .bn-n { color: var(--good); background: color-mix(in srgb, var(--good) 14%, transparent); }
 .bn-main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
 .bn-main b { font-size: 0.941rem; font-weight: 600; }
-.bn-main span { font-size: 0.765rem; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bn-main span { font-size: 0.765rem; color: var(--label-2); overflow-wrap: anywhere; } /* wraps: the matched payment and its date stay whole */
 .bn-main .warn-text { display: inline; }
 .bn-inst.paid .bn-main b { color: var(--label-2); }
 .bn-done { color: var(--good); display: inline-flex; }
@@ -1622,3 +1622,11 @@ a.su-api { display: flex; margin: 4px var(--gutter) 0; width: calc(100% - 2 * va
 /* a Latin shop name in a right-to-left row keeps its own direction, so a long one is cut at its end */
 [dir="rtl"] .row-title { unicode-bidi: plaintext; text-align: right; }
 [dir="rtl"] :is(.tm-name b, .tr-name b, .lg-name, .hb-name, .rc-head b, .qc-text b, .pc-name b, .gl-main b, .bn-what b, .bn-title b, .wr-main b, .ka-name) { unicode-bidi: plaintext; text-align: right; }
+/* a row's second line (category · account · time · note) takes its direction from its first word, so a line that starts
+   with a Latin name reads and is cut like Latin; the names inside are <bdi> isolates (views.js) */
+[dir="rtl"] .row-sub { unicode-bidi: plaintext; text-align: right; }
+/* date pickers read their digits left to right and keep the system's own calendar icon only */
+[dir="rtl"] input[type="date"], [dir="rtl"] input[type="datetime-local"] { direction: ltr; text-align: right; }
+[dir="rtl"] .date-field > .i { display: none; }
+/* small text links still get a 44px tap area */
+[dir="rtl"] .act-bar .text-btn, .act-bar .text-btn, .gl-manage { min-height: 44px; display: inline-flex; align-items: center; }

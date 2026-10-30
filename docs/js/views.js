@@ -14,7 +14,7 @@ export function entryRow(e, pick) {
     const v = +e.amount || 0;
     return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>${t('row.del')}</span></button><button class="row entry adj${sel}" type="button" data-id="${esc(e.id)}"${aria}>
     ${tick}<span class="row-icon" style="--tint:${accountMeta(e.account).color}">${icon('sync', { size: 20 })}</span>
-    <span class="row-main"><span class="row-title">${t('row.checked')}</span><span class="row-sub">${esc(e.account)} · ${timeLabel(e.date)}</span></span>
+    <span class="row-main"><span class="row-title">${t('row.checked')}</span><span class="row-sub"><bdi>${esc(e.account)}</bdi> · ${timeLabel(e.date)}</span></span>
     <span class="row-amt num tr" role="text" aria-label="${v === 0 ? t('row.matchedSaid') : t(v > 0 ? 'row.adjPlus' : 'row.adjMinus', { amt: amtAED(fmt(Math.abs(v), { fixed: true })) })}">${v === 0 ? t('row.matched') : `${v > 0 ? '+' : '−'}${fmt(Math.abs(v), { fixed: true })}`}</span>
   </button></div>`;
   }
@@ -25,8 +25,9 @@ export function entryRow(e, pick) {
   const title = e.merchant || (isTr ? `${e.account} → ${e.toAccount}` : categoryMeta(e.category, e.type)?.label || e.category || t('row.uncat'));
   const bits = [];
   if (isTr) bits.push(t('type.Transfer')); else bits.push(meta ? esc(meta.label) : e.category ? esc(e.category) : `<span class="needs">${t('row.needsCat')}</span>`);
-  if (!isTr) bits.push(esc(accountMeta(e.account).name));
-  else if (e.merchant) bits.push(`${esc(e.account)} → ${esc(e.toAccount)}`);
+  // names and notes are user data in any script: each is its own bidi isolate (<bdi>) inside the line
+  if (!isTr) bits.push(`<bdi>${esc(accountMeta(e.account).name)}</bdi>`);
+  else if (e.merchant) bits.push(`<bdi>${esc(e.account)} → ${esc(e.toAccount)}</bdi>`);
   bits.push(timeLabel(e.date));
   const amt = ltr(`${isIn ? '+' : ''}${e.currency === 'USD' ? '$' : ''}${fmt(e.amount, { fixed: true })}`);
   // what a screen reader says for the amount: the verb, the currency and the number ("spent AED 37.50")
@@ -34,7 +35,7 @@ export function entryRow(e, pick) {
   const said = t(isIn ? 'row.received' : isTr ? 'row.moved' : 'row.spent', { amt: amtSaid });
   return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>${t('row.del')}</span></button><button class="row entry${e.status === 'Review' ? ' review' : ''}${sel}" type="button" data-id="${esc(e.id)}"${aria}>
     ${tick}<span class="row-icon" style="--tint:${tint}">${icon(ic, { size: 20 })}</span>
-    <span class="row-main"><span class="row-title">${esc(title)}</span><span class="row-sub">${bits.join(' · ')}${e.note ? ` · <span class="row-note">${esc(e.note)}</span>` : ''}</span></span>
+    <span class="row-main"><span class="row-title">${esc(title)}</span><span class="row-sub">${bits.join(' · ')}${e.note ? ` · <bdi class="row-note">${esc(e.note)}</bdi>` : ''}</span></span>
     <span class="row-amt num ${isIn ? 'in' : isTr ? 'tr' : ''}" role="text" aria-label="${said}">${amt}${e.currency === 'USD' ? `<small>≈ ${amtAED(fmt(toAED(e, state.settings), { fixed: true }))}</small>` : ''}</span>
   </button></div>`;
 }

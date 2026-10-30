@@ -164,9 +164,10 @@ export const DEFAULT_PLAN = [
 
 /** A plan item's name on screen: the starting items (Salary, Nafis, Allowance, Fuel) are shown in the current
     language while they keep their original name; a name you typed is yours. */
+// names the app ships (the default plan and the demo's): shown in the current language while unchanged
+const SHIPPED_PLAN_NAMES = { salary: 'Salary', nafis: 'Nafis', allowance: 'Allowance', fuel: 'Fuel', botim: 'BOTIM top-up', bills: 'Car & phone', home: 'Home' };
 export function planName(p) {
-  const d = p && DEFAULT_PLAN.find((x) => x.id === p.id);
-  return d && d.name === p.name ? t(`plan.${p.id}`) : p?.name || '';
+  return p && SHIPPED_PLAN_NAMES[p.id] && SHIPPED_PLAN_NAMES[p.id] === p.name ? t(`plan.${p.id}`) : p?.name || '';
 }
 
 export const DEFAULT_SETTINGS = {
@@ -272,11 +273,12 @@ export function fmt(n, { fixed = false, whole = false } = {}) {
   return nf2.format(v);
 }
 export const money = (n, cur = 'AED', opts) => amtCur(fmt(n, opts), cur);
-/** A formatted number with its currency: "AED 1,234" (English, unchanged) or "د.إ 1,234" in Arabic, where the
-    number is kept left to right (a minus sign stays in front of it). */
+/** A formatted number with its currency: "AED 1,234" (English, unchanged) or, in Arabic, the number first and then
+    the currency with a no-break space, like UAE bank apps: «1,234 د.إ». The number (and its minus sign) is kept
+    left to right inside an isolate, so "−12.50" never turns into "12.50−". */
 export function amtCur(s, cur = 'AED') {
   if (lang() !== 'ar') return `${cur} ${s}`;
-  return `${cur === 'USD' ? t('cur.usd') : cur === 'AED' ? t('cur.aed') : cur} ${ltr(s)}`;
+  return `${ltr(s)}\u00A0${cur === 'USD' ? t('cur.usd') : cur === 'AED' ? t('cur.aed') : cur}`;
 }
 /** "AED " + an already formatted number. */
 export const amtAED = (s) => amtCur(s, 'AED');

@@ -150,7 +150,7 @@ export function reportHTML(r, settings) {
       ${tile(r.isCurrent ? t('rp.totalNow') : t('rp.totalEnd'), r.totalMoney)}
     </div>
     <p class="rp-note">${t('act.entries', { n: r.count })}.
-      ${t('rp.spentIs')}${r.prevSpent > 0 ? t('rp.lastSpent', { amt: aed(r.prevSpent) }) : ''}
+      ${t('rp.spentIs')}${r.prevSpent > 0 ? ` ${t('rp.lastSpent', { amt: aed(r.prevSpent) })}` : ''}
       ${r.review ? `<b>${t('rp.needCat', { n: r.review })}</b>` : ''}</p>
 
     ${section(t('rp.allowance', { acc: esc(a.account) }), `

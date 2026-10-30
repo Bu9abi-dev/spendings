@@ -1106,4 +1106,8 @@ export default {
   "sub.new": "{name} is a new subscription: {amt}",
   "sub.due": "{name} {amt} is due {when}",
   "sub.inDays": "in {n} days",
+
+  "plan.botim": "BOTIM top-up",
+  "plan.bills": "Car & phone",
+  "plan.home": "Home",
 };

@@ -348,17 +348,27 @@ Choices made while running the app on my own, newest first, with the reason for 
   **Match iPhone** (Arabic when the phone's first language is Arabic) as a third choice, because it costs nothing and is what
   iOS apps do; it is saved on the phone (`sp.lang`), not in the sheet, since it is a per-device choice like Face ID. Words live
   in `docs/js/strings/en.js` and `ar.js` (about 1,050 keys, grouped by screen), read through `t()` in `docs/js/i18n.js`; English
-  text is unchanged, so every existing test still reads English. Arabic is short Modern Standard Arabic in the style of iOS
-  (أنفقت، المتبقي، هذه الدورة), plurals use all six Arabic forms from Intl.PluralRules. **Not translated**: user data, the ids saved
+  text is unchanged, so every existing test still reads English. Arabic is short Modern Standard Arabic in the style of iOS,
+  using the council glossary (council/council-transcript-2026-10-30-arabic.md): المصروف only for the allowance, spending is
+  الصرف / صُرف / صرفت, an entry is معاملة, owed is لك / عليك, gender-neutral wording for people, plurals use all six Arabic forms from Intl.PluralRules. **Not translated**: user data, the ids saved
   to the sheet (category ids like "Food & Drinks" stay; built-in categories, the starting account notes and plan items get
   Arabic labels until renamed), notes the app writes into the sheet ("Split: …", "Matched with bank"), **CSV headers** (kept
   English so the sheet and other tools keep reading them), the Apps Script's replies (Code.gs untouched, so "Connected ✓"
   and its errors stay English), and the names of buttons in Apple's Shortcuts app and Google's consent screens (they're
-  shown as `<b lang="en">`, since they must match what those apps show). **Currency**: "د.إ" in Arabic text, the dirham glyph
-  stays for the big Home balance. **Digits**: Western (as UAE bank apps), dates from Intl `ar-AE-u-nu-latn`. **Direction**:
+  shown as `<b lang="en">`, since they must match what those apps show). **Currency**: in Arabic the number comes first, then a no-break
+  space and "د.إ" («120 د.إ», like UAE bank apps), with the minus inside the number's left-to-right isolate; the dirham glyph
+  stays for the big Home balance. English keeps "AED 120" with a normal space: changing it would change the English text
+  that every test and the owner's habits read (council asked for a no-break space in both; done in Arabic only, on purpose). **Digits**: Western (as UAE bank apps), dates from Intl `ar-AE-u-nu-latn`. **Direction**:
   `<html dir="rtl">`, logical CSS throughout, the tab bar and + button mirror, swipe-to-delete goes right, chevrons/undo flip;
   amounts stay left to right (money() wraps the number in Unicode LRI/PDI marks, `.num` uses `unicode-bidi: plaintext`, filled-in
   values in a sentence are FSI isolates so "Disney+" stays "Disney+"); the number keypad stays 1-2-3 left to right like the iOS
   keypad. **Charts**: time runs right to left in Arabic, as Swift Charts does in RTL locales (flex bar charts mirror by
   themselves; the SVG pace chart mirrors its x axis in charts.js); the Home "money flow" diagram keeps sources on the left.
   Font: the system font (-apple-system has Arabic), with a little more line height in RTL.
+  Council fixes (same branch): row second lines isolate names and notes (`<bdi>`, `unicode-bidi: plaintext`) so Latin text
+  is cut at its own end; the buy-now-pay-later matched-payment line wraps; the report footnote has its missing space (in
+  English too); date pickers read left to right with one calendar icon; the pace chart's value labels stay on the right
+  (away from where the even-pace line starts in Arabic); the plan items the app ships (default and demo, e.g. "Car & phone")
+  show in Arabic until renamed; text links in the Activity bar and "Manage" have 44px tap areas. The legend swatch sits
+  before its label in reading order (on the right in Arabic), as on iOS. Native date pickers' own format (mm/dd/yyyy in a
+  desktop browser) follows the device, not the page, so it is left to iOS.

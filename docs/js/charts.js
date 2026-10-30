@@ -82,7 +82,7 @@ export function paceLine({ days, cumulative, pace, todayIndex, labels }) {
   const pts = cumulative.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
   const area = pts.length ? `M ${pts[0][0]} ${y(0)} L ${pts.map((p) => p.join(' ')).join(' L ')} L ${pts[pts.length - 1][0]} ${y(0)} Z` : '';
   const grid = [0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(max / 1.08 * f)}" y2="${y(max / 1.08 * f)}" class="grid"/>
-    <text x="${rtl ? L : W - R}" y="${y(max / 1.08 * f) - 4}" class="axis" text-anchor="${rtl ? 'start' : 'end'}">${fmt(max / 1.08 * f, { whole: true })}</text>`).join('');
+    <text x="${W - R}" y="${y(max / 1.08 * f) - 5}" class="axis" text-anchor="end">${fmt(max / 1.08 * f, { whole: true })}</text>`).join('');
   const ticks = [0, Math.floor((days - 1) / 2), days - 1].map((i) => `<text x="${x(i)}" y="${H - 6}" class="axis" text-anchor="${i === 0 ? (rtl ? 'end' : 'start') : i === days - 1 ? (rtl ? 'start' : 'end') : 'middle'}">${labels[i]}</text>`).join('');
   const last = pts[pts.length - 1];
   return `<div class="pace-chart" data-days="${days}">
