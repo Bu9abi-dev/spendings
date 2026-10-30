@@ -182,10 +182,11 @@ const foot = await p.evaluate(() => !!document.querySelector('.activity-list .gr
 // a redraw (an entry changing, Select mode) keeps the rows drawn and your place in the list
 await p.evaluate(() => window.scrollTo(0, 0));
 await p.fill('.search input', 'a'); // a different search starts the list over, then clearing it starts again at 40 rows
+await p.waitForTimeout(400);
 await p.fill('.search input', '');
 await p.waitForTimeout(300);
-for (let i = 0; i < 20 && (await p.evaluate(() => document.querySelectorAll('#view .entry').length)) < 220; i++) {
-  await p.evaluate(() => window.scrollBy(0, 900));
+for (let i = 0; i < 80 && (await p.evaluate(() => document.querySelectorAll('#view .entry').length)) < 220; i++) {
+  await p.evaluate(() => window.scrollBy(0, 300)); // small steps, so the list stops part-way (rows grow with the reader's text size)
   await p.waitForTimeout(150);
 }
 const mark = await p.evaluate(() => {
