@@ -35,7 +35,31 @@ timeline
         v20 : Subscriptions : New ones flagged : One Home line at a time
         v21 : Changes never lost on a slow connection
         v22 : Buy now, pay later : Payments linked by themselves : Due before payday
+        v23 : Savings goals : Net worth : Investments by hand
+        v24 : Split a bill : People : Owed to you
 ```
+
+---
+
+## v24: Money owed and split bills
+**30 October 2026** · sheet update optional
+
+- **Split a bill**: open any payment (including Apple Pay ones) and tap "Split with someone". Pick the friend, then Half, Third or your own amount. The payment becomes your share, and their share is noted as money they owe you. Only your share counts as spending, in Insights, budgets and the report.
+- **People** (Settings → People): friends you split with or lend to. Lending is a transfer to them; a friend paying for you is a payment "paid by" them.
+- Home shows **"Owed to you / You owe"** under "Where your money is". What friends owe isn't counted as your money, and lending from your allowance card comes out of Safe to spend until they pay you back.
+- **Settle up** fills in the repayment, back to the account you lent from.
+- Editing or deleting one half of a split asks about the other half, so the bill always adds up. Net worth adds what friends owe you.
+- The sheet part (optional, with the next script update): a bank alert for a bill you've already split isn't logged twice, and Apple Pay card matching ignores people's names.
+
+---
+
+## v23: Savings goals and net worth
+**30 October 2026** · no sheet update needed
+
+- **Savings goals** in Insights: a target, an optional date, and the accounts that hold the money (or an amount you set aside by hand). Each goal shows a ring, what's left to go, and how much to save per pay cycle to make the date.
+- Two goals on the same account never count the same dirham twice; the money goes to goals in order and the card says which goals share it.
+- **Net worth**: all your money, plus investments you type in (read-only, no broker connection), minus what you still owe on buy now, pay later.
+- Renaming an account keeps your goals pointed at it. Manage goals and investments in Settings, or from the cards' "Manage" links.
 
 ---
 

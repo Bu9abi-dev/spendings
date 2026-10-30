@@ -362,10 +362,13 @@ function logCardSpend_(s, p) {
   if (twin) {
     // mark the pair so a later payment of the same amount isn't mistaken for this one
     var fix = { source: PAIRED };
+    var half = twin.splitHalf;
     // the other source logged it as a purchase; the bank alert shows it was a top-up of your own account
-    if (isMove && twin.type === 'Spend') { fix.type = 'Transfer'; fix.toAccount = to.name; fix.category = ''; fix.status = 'OK'; }
+    // (never for a split payment: sharing it with someone says it was a purchase)
+    if (isMove && twin.type === 'Spend' && !half) { fix.type = 'Transfer'; fix.toAccount = to.name; fix.category = ''; fix.status = 'OK'; }
     twin = updateEntry_(twin.id, fix).entry;
     var tmsg = 'Already logged · ' + fmtMoney_(twin.amount, twin.currency) + (twin.merchant ? ' · ' + twin.merchant : '') + ' · ' + twin.account;
+    if (half) tmsg = 'Already logged · ' + fmtMoney_(entry.amount, entry.currency) + (twin.merchant ? ' · ' + twin.merchant : '') + ' · split with ' + half.toAccount + ' · ' + twin.account;
     if (twin.toAccount) tmsg = 'Already logged · moved ' + fmtMoney_(twin.amount, twin.currency) + ' from ' + twin.account + ' to ' + twin.toAccount;
     return { ok: true, message: tmsg, entry: twin, duplicate: true };
   }
@@ -392,7 +395,8 @@ function logCardSpend_(s, p) {
 /** Which of your accounts a merchant name is, by its Wallet-name word ("BOTIM MONEY" → BOTIM). Whole words only. */
 function ownAccountIn_(merchant) {
   var m = ' ' + String(merchant || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' ';
-  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  var people = peopleSet_();
+  var accs = readAccounts_().filter(function (a) { return !a.archived && !people[a.name]; });
   for (var i = 0; i < accs.length; i++) {
     var key = String(accs[i].wallet || '').toLowerCase().trim();
     if (key && m.indexOf(' ' + key + ' ') >= 0) return { name: accs[i].name, known: true };
@@ -406,7 +410,9 @@ var PAIRED = 'Apple Pay + Bank alert';
 /**
  * The same payment reported by the other automatic source (Apple Pay vs bank alert): same account,
  * amount and currency within TWIN_MINUTES. Each entry pairs at most once (its source becomes PAIRED), so two
- * genuine payments of the same amount both stay logged.
+ * genuine payments of the same amount both stay logged. A payment split in the app (money owed) holds only
+ * your share; its other half is the Transfer with the id <spend id>-split, and the two together make up the
+ * alert's amount, so that pair counts as the same payment too.
  */
 function twinOf_(entry, date) {
   var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
@@ -416,13 +422,27 @@ function twinOf_(entry, date) {
   var rows = sh.getRange(from, 1, sh.getLastRow() - from + 1, COLS.length).getValues().map(fromRow_);
   var since = date.getTime() - TWIN_MINUTES * 60000;
   var auto = { 'Apple Pay': 1, 'Bank alert': 1 };
+  var byId = {};
+  rows.forEach(function (e) { byId[e.id] = e; });
+  var near = function (a, b) { return Math.abs(a - b) < 0.005; };
+  // the other half of a split Spend, when it is one: looked up by id (its source is Split, not an automatic one)
+  var splitHalf = function (e) {
+    var t = byId[e.id + '-split'];
+    return t && t.type === 'Transfer' && t.account === e.account && t.currency === e.currency ? t : null;
+  };
   var same = function (e) {
-    return (e.type === 'Spend' || e.type === 'Transfer') && auto[e.source] && e.account === entry.account && e.currency === entry.currency &&
-      Math.abs(e.amount - entry.amount) < 0.005 && new Date(e.date).getTime() >= since;
+    if (!((e.type === 'Spend' || e.type === 'Transfer') && auto[e.source] && e.account === entry.account && e.currency === entry.currency &&
+      new Date(e.date).getTime() >= since)) return false;
+    if (near(e.amount, entry.amount)) return true;
+    var t = e.type === 'Spend' ? splitHalf(e) : null;
+    return !!t && near(e.amount + t.amount, entry.amount);
   };
   // unpaired entries from the other source, oldest first; an entry already paired never matches again
   var others = rows.filter(function (e) { return same(e) && e.source !== entry.source && e.id !== entry.id; });
-  return others.length ? others[0] : null;
+  if (!others.length) return null;
+  var twin = others[0];
+  twin.splitHalf = near(twin.amount, entry.amount) ? null : splitHalf(twin);
+  return twin;
 }
 
 function addEntries_(list) {
@@ -433,6 +453,9 @@ function addEntries_(list) {
   var rows = [], out = [], dupes = 0, touched = {};
   list.forEach(function (raw) {
     var e = normalise_(raw, s);
+    // a foreign-currency entry the app has already priced (each half of a USD split, an undone delete)
+    // keeps that price, so the halves add up to the whole; without one the sheet's rate prices it
+    if (e.currency !== 'AED' && raw.amountAED != null && raw.amountAED !== '' && !isNaN(Number(raw.amountAED))) e.amountAED = Math.round(Number(raw.amountAED) * 100) / 100;
     if (existing[e.id] || touched['id:' + e.id]) { dupes++; out.push(e); return; }
     touched['id:' + e.id] = true;
     rows.push(toRow_(e, now, now));
@@ -828,7 +851,9 @@ function getSettings_() {
 
 function mapCard_(card, cardMap) {
   var c = String(card || '').toLowerCase();
-  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  // a person (money owed, see peopleSet_) is never one of your cards, even if their name is in the card's
+  var people = peopleSet_();
+  var accs = readAccounts_().filter(function (a) { return !a.archived && !people[a.name]; });
   for (var j = 0; j < accs.length; j++) {
     var key = String(accs[j].wallet || '').toLowerCase().trim();
     if (key && c.indexOf(key) >= 0) return { name: accs[j].name, known: true };
@@ -962,22 +987,27 @@ function cycleSummary_(cycle) {
 function allowanceOf_(rows, cycle, s, plan) {
   var moves = (plan || []).filter(function (p) { return p.kind === 'Move' && p.to === s.allowanceAccount; });
   if (!moves.length) moves = [{ id: 'allowance', amount: s.allowance, day: null }];
-  var now = allowanceCycle_(rows, cycle, s, moves);
-  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves);
+  var people = peopleSet_();
+  var now = allowanceCycle_(rows, cycle, s, moves, people);
+  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves, people);
   var carryIn = Math.round(Math.min(prev.topUps, Math.max(0, s.allowance + prev.topUps - prev.used)) * 100) / 100;
   var pot = s.allowance + now.topUps + carryIn;
   return { used: now.used, topUps: now.topUps, carryIn: carryIn, pot: pot, left: pot - now.used };
 }
 
-function allowanceCycle_(rows, cycle, s, moves) {
+function allowanceCycle_(rows, cycle, s, moves, people) {
   var acc = s.allowanceAccount, hub = s.emergencyAccount;
-  var spent = 0, refunds = 0, topUps = 0;
+  var spent = 0, refunds = 0, topUps = 0, lent = 0;
+  people = people || {};
   rows.forEach(function (r) {
     if (String(r[C['Cycle']]) !== cycle) return;
     var aed = Number(r[C['Amount (AED)']]) || 0, type = r[C['Type']], from = r[C['Account']], to = r[C['To account']];
     var source = String(r[C['Source']] || '');
     if (type === 'Spend' && from === acc) spent += aed;
     else if (type === 'Income' && from === acc && r[C['Category']] === 'Refund') refunds += aed;
+    // lending to a person (or their share of a split) from the allowance card uses allowance; being paid back is a top-up
+    else if (type === 'Transfer' && from === acc && people[to]) lent += aed;
+    else if (type === 'Transfer' && to === acc && people[from]) topUps += aed;
     else if (type === 'Transfer' && acc !== hub) {
       if (from === hub && to === acc) {
         var planned = moves.some(function (p) {
@@ -992,7 +1022,18 @@ function allowanceCycle_(rows, cycle, s, moves) {
     }
   });
   topUps = Math.max(0, topUps);
-  return { spent: spent, refunds: refunds, topUps: topUps, used: Math.max(0, spent - refunds) };
+  return { spent: spent, refunds: refunds, topUps: topUps, lent: lent, used: Math.max(0, spent + lent - refunds) };
+}
+
+/** People (money owed): account names listed in the app's `people` extra, as { name: true }.
+    Empty when there's no Extras tab or no people, so older sheets behave exactly as before. */
+function peopleSet_() {
+  var set = {};
+  try {
+    var p = readExtras_().people;
+    (p && Array.isArray(p.names) ? p.names : []).forEach(function (n) { if (typeof n === 'string' && n) set[n] = true; });
+  } catch (err) { /* unreadable extras: no people */ }
+  return set;
 }
 
 function shiftCycle_(cycle, delta) {

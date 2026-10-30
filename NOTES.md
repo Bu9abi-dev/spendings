@@ -1,6 +1,6 @@
 # Notes for the next session
 
-Read this first. It says where the app stands, how to work on it, and what's in flight.
+Read this first (and [AI-SYNC-LOG.md](AI-SYNC-LOG.md), the hand-off file for any new AI session; keep both current). It says where the app stands, how to work on it, and what's in flight.
 Kept current by whoever is working on the app (Claude, running the improvement loop).
 
 ## Where things stand (30 Oct 2026)
@@ -55,6 +55,10 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/provision.js` | Pure: makes the sheet with Google's REST APIs (Sheets + Apps Script) from a sign-in token; resumable, injectable `fetch`. |
 | `docs/js/config.js` | `GOOGLE_CLIENT_ID` for Sign in with Google (public; empty = by-hand setup only). |
 | `docs/setup/Code.gs.txt` | **A copy of `apps-script/Code.gs`** that the guide installs. Change both: `cp apps-script/Code.gs docs/setup/Code.gs.txt` (`tests/verify-setup.mjs` checks). |
+| `docs/js/people.js` | Pure money-owed maths: split shares and USD prices (`splitPrices`), linked halves (`${id}-split`), "Change both" amounts (`rescaledPartner`), settle-up preset and account (`lentFrom`), recent people, Home line text. People flags and `peopleBalances`/`moneyTotal` live in model.js (`setPeopleList`, `isPerson`, `PEOPLE_ACCOUNTS`). |
+| `docs/js/people-ui.js` | Settings → People, add/rename/remove a person (`people` extra + account, one undo step), Home "Owed to you" line (in "Where your money is", or the lowest-rank notice), People sheet with Settle up, split sheet, "half of a split" question. |
+| `docs/js/goals.js` | Pure maths for savings goals, investments, net worth and BNPL owed (per-cycle saving needed). Tested by `tests/verify-goals.mjs`. |
+| `docs/js/goals-ui.js` | Insights Goals and Net worth cards, the Settings block, and the goal and investment sheets. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature
@@ -83,6 +87,12 @@ The thread running the loop does both when it merges, one version per merge.
   Never copy `SPEND_CATEGORIES` at import time; it changes when Abdullah edits categories.
 - Names on screen: `categoryMeta(id, type)?.label || id`, escaped with `esc`. The id is what the sheet stores and
   never changes.
+
+## People (money owed): rules for new code
+
+- `ACCOUNTS` is your own accounts only; people are in `PEOPLE_ACCOUNTS`. `balances()` has everyone, so add up
+  your money with `moneyTotal(bals)`, never by summing every balance.
+- Offer people in a picker only where it makes sense (either side of a Transfer, who paid a Spend), in their own group.
 
 ## Tests on a shared machine
 

@@ -4,7 +4,7 @@
 // Money rule: a plan never changes a balance. "Mark paid" logs a normal Spend entry through addEntry()
 // (so balances, undo and the sheet sync work as for any payment); what's still to pay is shown on its own.
 // On screen it's "Buy now, pay later" and "payment", never "BNPL" or "instalment".
-import { ACCOUNTS, accountMeta, categoryMeta, pickerCategories, money, fmt, dayKey, dayLabel, timeLabel, toAED, cycleBounds, cycleOf } from './model.js';
+import { ACCOUNTS, isPerson, accountMeta, categoryMeta, pickerCategories, money, fmt, dayKey, dayLabel, timeLabel, toAED, cycleBounds, cycleOf } from './model.js';
 import { state, subscribe, getExtra, saveExtra, addEntry, batch, topUndoId } from './store.js';
 import { openSheet, haptic, toast, esc } from './ui.js';
 import { icon } from './icons.js';
@@ -353,6 +353,9 @@ export function openPlanEditor(existing) {
     total: 0, count: 4, cadence: '2w', first: today(), account: state.settings.allowanceAccount, paid: [], skip: [],
   };
   const lock = locked(existing);
+  // a plan is paid from one of your own accounts, never a person (money owed): a plan saved with one
+  // (its account later added as a person) is offered the allowance card instead
+  if (isPerson(p.account)) p.account = ACCOUNTS.some((a) => a.id === state.settings.allowanceAccount) ? state.settings.allowanceAccount : ACCOUNTS[0]?.id || '';
   const accOpts = ACCOUNTS.map((a) => `<option ${a.id === p.account ? 'selected' : ''}>${esc(a.id)}</option>`).join('')
     + (p.account && !ACCOUNTS.some((a) => a.id === p.account) ? `<option selected>${esc(p.account)}</option>` : '');
   openSheet({

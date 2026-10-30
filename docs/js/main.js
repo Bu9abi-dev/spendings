@@ -1,5 +1,5 @@
 import {
-  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
+  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
   state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
@@ -12,6 +12,9 @@ import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
+import { peopleSettingsBlock, peopleClick, askLinked } from './people-ui.js';
+import { splitPartner } from './people.js';
+import { goalsSettingsBlock, goalsClick } from './goals-ui.js';
 import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
@@ -109,6 +112,11 @@ function renderSettings() {
     <section class="group">${accountsSettingsBlock()}</section>
     <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
 
+    <h3 class="group-title" id="people">People</h3>
+    <section class="group">${peopleSettingsBlock()}</section>
+    <p class="group-foot">Friends you split bills with or lend to. What they owe isn’t counted as your money; Home shows it under “Where your money is”.${extrasOnPhoneOnly() && PEOPLE_ACCOUNTS.length ? ' <span class="people-script-hint">Updating your sheet’s script also makes Apple Pay card matching ignore people.</span>' : ''}</p>
+
+    ${goalsSettingsBlock()}
     <h3 class="group-title" id="categories">Categories</h3>
     <section class="group">${categoriesSettingsBlock()}</section>
     <p class="group-foot">Add your own, rename any, or hide ones you don’t use. Old entries always keep their category.</p>
@@ -428,7 +436,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();
@@ -643,6 +651,17 @@ function swipeDelete(wrap) {
   const removed = state.entries.find((x) => x.id === wrap.dataset.id);
   if (!removed) return;
   haptic();
+  // half of a split: ask whether the other half goes too (one undo step), before anything moves
+  const other = splitPartner(removed, state.entries);
+  if (other) {
+    const reset = () => { setX(wrap.querySelector('.entry'), 0, true); wrap.classList.remove('open'); if (openSwipe === wrap) openSwipe = null; };
+    askLinked(removed, 'delete', (how) => {
+      reset();
+      batch(`Deleted ${money(removed.amount, removed.currency)}${how === 'both' ? ' and its other half' : ''}`, () => { deleteEntry(removed.id); if (how === 'both') deleteEntry(other.id); });
+      toast(`Deleted ${money(removed.amount, removed.currency)}${how === 'both' ? ' and its other half' : ''}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
+    }, reset);
+    return;
+  }
   const finish = () => {
     openSwipe = null;
     deleteEntry(removed.id);

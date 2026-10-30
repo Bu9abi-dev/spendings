@@ -52,6 +52,48 @@ Choices made while running the app on my own, newest first, with the reason for 
   - **Done step shows the URL and key with copy buttons.** On iPhone, Safari and the Home Screen app keep
     separate storage; if setup ran in Safari, these get pasted into the Home Screen app (and the Shortcut).
 
+- **Money owed (`people.js`, `people-ui.js`), as the council decided:** a person is an account (so the sheet's
+  Accounts tab, rename-follow-through and unique names come for free) flagged in the `people` extra
+  (`{ v: 1, names: [...] }`). `balances()` still counts them; `ACCOUNTS` leaves them out (balance bar, pay pickers,
+  Settings → Accounts, Match with bank, Insights), and `moneyTotal()` keeps them out of All your money, Where your
+  money is and the report's total. Allowance: a Transfer from the allowance card to a person adds to `used` (as
+  `lent`); one from a person into it is a top-up. Mirrored in Code.gs so the Shortcut's "left of your allowance"
+  agrees. A split is the Spend cut to your share plus a Transfer of theirs with id `${spendId}-split` and source
+  `Split` (ids survive the sheet round trip and no column changes); their share is rounded down to the fil, so the
+  leftover fil is yours, in the entry's own currency (each half is then priced in AED separately, so a USD split can
+  differ from the whole by a fil in AED). One person per split; a split payment can't be split again (edit their
+  half instead). "Change both" copies date, currency and card to the other half (amounts: see the council fixes below). A removed person
+  stays in `people` (so last cycle's loans still count as allowance used) and re-adding the name brings them back.
+  People take Accounts-tab rows, and the script keeps 20, so adding stops at 20 accounts and people together.
+  Code.gs: `mapCard_` and `ownAccountIn_` skip people, because `mapCard_`
+  also matches a card by account name as a substring (a person called "Visa" or "Al" could have caught a card);
+  with no Extras tab nothing changes.
+- **Money owed, council fixes (30 Oct, after the build review):**
+  - **Bank alert after a split.** `twinOf_` also matches an auto-logged Spend (Apple Pay / Bank alert) whose
+    `<id>-split` Transfer (looked up by id: its source is `Split`, not an automatic one; same card and currency) makes
+    the amounts add up to the alert. Still one-to-one (the Spend becomes `Apple Pay + Bank alert`), and a split Spend is
+    never turned into a top-up. Old payloads and unsplit payments match exactly as before. Needs the script redeploy.
+  - **USD splits add up in AED.** Their share is priced at the rate; yours is the bill's AED price minus theirs (the
+    bill keeps the price it already had). Both prices go to the sheet: `updateEntry` sends `amountAED` only when the
+    caller sets it on purpose (a split, "Change both"), so normal edits and new amounts are still repriced by the sheet;
+    `addEntry` and the script's add keep a USD entry's given `amountAED` (an add without one is priced as before).
+  - **Settle up pays back where the money came from:** the account of the latest Transfer from your own accounts to
+    that person (a loan or their share of a split), else the main account. From the allowance card that's a top-up,
+    so Safe to spend recovers. "You owe" still pays from the main account. The sheet is titled "Ahmed pays you back" /
+    "You pay Ahmed".
+  - **Home has one notice line.** The owed line sits in "Where your money is", under "All your money" (which it isn't
+    part of). When that card isn't on screen (an account lens, balances not set) it joins the notices at the lowest
+    rank (`owed`), so it never stacks under another.
+  - **"Change both" keeps the bill adding up.** A new amount on one half: the card was charged the whole bill, so the
+    bill stays and the other half takes the difference; if the new amount is the whole bill or more, the other half
+    grows in proportion instead. The question sheet says which, with the new amount. Bulk delete in Activity now takes
+    the other half of any ticked half too (one undo) and says so.
+  - Split toast "Split · your share AED 43.68"; "Split with someone" sits above the keypad; Settings → People says,
+    while extras are phone-only, that the script update makes Apple Pay card matching ignore people; the BNPL plan's
+    "Paid from" never offers a person (a plan saved with one shows the allowance card).
+  - `verify-owed` adds a BNPL plan and a split in one cycle: Home total, Safe to spend and `cycleReport` agree.
+
+- **Savings goals and net worth (after the council):** goals and investments live in Extras (`goals` = `{ v: 1, goals }`, `investments` = `{ v: 1, items }`); anything without `v: 1` reads as empty. A goal follows the accounts it names, or a typed amount "set aside by hand". Money on an account is handed to goals in goal order and a goal takes only what it still needs, so no dirham counts twice; an account feeding two goals shows "Shared with <goal>". Each account counts as `max(0, balance)`. Account ids are account names, so renaming an account remaps the goals directly in `state.extras` inside `updateAccount` (queued for the sheet, no undo step of its own; undoing the rename renames back and remaps again). Archived accounts stay in a goal, labelled "(archived)"; a deleted one says "account missing". "Save AED Y per cycle" counts the cycle holding the date plus every one between, but the current cycle only if 7 or more days of it remain (at least 1 while the date is ahead). Net worth = total money + typed-in investments − the real BNPL owed (`bnplSummary(readBnpl(getExtra('bnpl')).plans, state.entries).owed`), so a deleted payment makes an instalment owed again; goals never add to it. No broker connection and no keys, by design. Both cards sit on Insights with a Manage link to Settings.
 - **The flaky extras test was a test bug, but it led to a real app race, now fixed.** The test's `settle()`
   used `waitForFunction` with an `async` check. Playwright treats the Promise the check returns as "true", so
   settle never waited and the test sometimes looked at the sheet before the last change got there. It now

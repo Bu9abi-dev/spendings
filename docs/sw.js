@@ -1,8 +1,8 @@
 // App-shell cache. Bump VERSION whenever app files change so phones pick up the update.
-const VERSION = 'spendings-v22';
+const VERSION = 'spendings-v24';
 const SHELL = ['./', 'index.html', 'app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png',
   'js/main.js', 'js/model.js', 'js/store.js', 'js/ui.js', 'js/entry.js', 'js/charts.js', 'js/icons.js', 'js/lock.js', 'js/demo.js', 'js/theme.js', 'js/home.js', 'js/accounts.js',
-  'js/views.js', 'js/activity.js', 'js/insights.js', 'js/trends.js', 'js/filters.js', 'js/categorize.js', 'js/report.js', 'js/categories.js', 'js/budgets.js', 'js/budgets-settings.js', 'js/recurring.js', 'js/bnpl.js', 'js/bnpl-ui.js',
+  'js/views.js', 'js/activity.js', 'js/insights.js', 'js/trends.js', 'js/filters.js', 'js/categorize.js', 'js/report.js', 'js/categories.js', 'js/budgets.js', 'js/budgets-settings.js', 'js/recurring.js', 'js/bnpl.js', 'js/bnpl-ui.js', 'js/people.js', 'js/people-ui.js', 'js/goals.js', 'js/goals-ui.js',
   'js/setup.js', 'js/provision.js', 'js/config.js'];
 
 self.addEventListener('install', (e) => {
