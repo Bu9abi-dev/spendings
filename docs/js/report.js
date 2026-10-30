@@ -201,7 +201,7 @@ export const REPORT_CSS = `
   padding:22px 20px; border-radius:20px; max-width:720px; margin:0 auto; -webkit-print-color-adjust:exact; print-color-adjust:exact; }
 .rp-page h1 { font-size:28px; font-weight:700; letter-spacing:-0.02em; margin:2px 0; }
 .rp-page h2 { font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.04em; color:var(--ink-2); margin:0 0 8px; }
-.rp-kicker { font-size:13px; font-weight:600; color:#2a78d6; margin:0; }
+.rp-kicker { font-size:13px; font-weight:600; color:#1f66bd; margin:0; }
 .rp-muted, .rp-note { color:var(--ink-2); font-size:13px; margin:4px 0 0; }
 .rp-note b { color:#b5530f; }
 .rp-tiles { display:grid; grid-template-columns:1fr 1fr; gap:8px; margin:16px 0 6px; }

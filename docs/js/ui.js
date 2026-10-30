@@ -45,8 +45,17 @@ export function haptic() {
   } catch { /* no haptics here */ }
 }
 
+/* ───── Screen-reader announcements ───── */
+// A live region that is always in the page: text put into a region that appears at the same moment is often not read.
+export function announce(text) {
+  const el = document.getElementById('announce');
+  if (!el || !text) return;
+  el.textContent = '';
+  setTimeout(() => { el.textContent = text; }, 60);
+}
+
 /* ───── Toast ───── */
-let toastTimer;
+let toastTimer, toastHide, toastMs;
 export function toast(text, { action, onAction, icon = '', tone = '', duration } = {}) {
   const host = document.getElementById('toast');
   clearTimeout(toastTimer);
@@ -54,13 +63,35 @@ export function toast(text, { action, onAction, icon = '', tone = '', duration }
   host.innerHTML = `${icon}<span class="toast-text">${text}</span>${action ? `<button class="toast-action" type="button">${action}</button>` : ''}`;
   host.hidden = false;
   requestAnimationFrame(() => host.classList.add('show'));
-  if (action) host.querySelector('.toast-action').onclick = () => { onAction?.(); hide(); };
   const hide = () => { host.classList.remove('show'); setTimeout(() => { host.hidden = true; }, 300); };
-  toastTimer = setTimeout(hide, duration || (action ? 5000 : 2600));
+  if (action) host.querySelector('.toast-action').onclick = () => { onAction?.(); hide(); };
+  announce(`${host.querySelector('.toast-text').textContent}${action ? `. ${action} is the next button.` : ''}`);
+  toastHide = hide; toastMs = duration || (action ? 7000 : 2600);
+  if (!host.dataset.watched) { // once: someone who has moved onto the toast (VoiceOver, keyboard) gets to finish before it leaves
+    host.dataset.watched = '1';
+    host.addEventListener('focusin', () => clearTimeout(toastTimer));
+    host.addEventListener('focusout', () => { clearTimeout(toastTimer); toastTimer = setTimeout(toastHide, toastMs); });
+  }
+  toastTimer = setTimeout(hide, toastMs);
 }
 
 /* ───── Bottom sheet ───── */
 const stack = [];
+
+// While a sheet is open the page behind it is switched off for assistive tech and the keyboard, not just covered.
+function setBehindInert(on) {
+  for (const el of document.querySelectorAll('#app, .tabbar, .fab, #navbar')) el.toggleAttribute('inert', on);
+}
+
+// A scrolling area with nothing to tab to can't be scrolled from a keyboard or switch; make the area itself focusable then.
+function focusableScrollers(sheet) {
+  const fix = () => sheet.querySelectorAll('.sheet-scroll').forEach((sc) => {
+    const has = sc.querySelector('a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    if (has) sc.removeAttribute('tabindex'); else if (!sc.hasAttribute('tabindex')) sc.tabIndex = 0;
+  });
+  fix();
+  new MutationObserver(fix).observe(sheet, { childList: true, subtree: true });
+}
 
 export function openSheet({ html, label = 'Sheet', onMount, onClose, tall = true }) {
   const layer = document.getElementById('sheets');
@@ -76,9 +107,11 @@ export function openSheet({ html, label = 'Sheet', onMount, onClose, tall = true
   sheet.setAttribute('aria-label', label);
   sheet.innerHTML = `<div class="grabber" aria-hidden="true"></div>${html}`;
   layer.append(backdrop, sheet);
+  stack.at(-1)?.setAttribute('inert', ''); // a sheet opened over a sheet switches the lower one off
   stack.push(sheet);
   document.documentElement.classList.add('sheet-open');
   app.classList.add('behind');
+  setBehindInert(true);
 
   let anim = null;
   const h = () => sheet.getBoundingClientRect().height;
@@ -128,8 +161,12 @@ export function openSheet({ html, label = 'Sheet', onMount, onClose, tall = true
       done: () => {
         backdrop.remove(); sheet.remove();
         stack.splice(stack.indexOf(sheet), 1);
-        if (!stack.length) document.documentElement.classList.remove('sheet-open');
-        prevFocus?.focus?.({ preventScroll: true });
+        if (!stack.length) { document.documentElement.classList.remove('sheet-open'); setBehindInert(false); }
+        stack.at(-1)?.removeAttribute('inert');
+        // give focus back to what opened the sheet, or to the page if that was redrawn meanwhile
+        if (prevFocus?.isConnected) prevFocus.focus({ preventScroll: true });
+        else if (!stack.length) document.getElementById('view')?.focus({ preventScroll: true });
+        else stack[stack.length - 1].focus({ preventScroll: true });
         onClose?.();
       },
     });
@@ -182,6 +219,7 @@ export function openSheet({ html, label = 'Sheet', onMount, onClose, tall = true
   sheet.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } });
 
   onMount?.(sheet, close);
+  focusableScrollers(sheet);
   setTimeout(() => (sheet.querySelector('[autofocus]') || sheet).focus?.({ preventScroll: true }), 30);
   sheet.tabIndex = -1;
   return { el: sheet, close };

@@ -177,12 +177,12 @@ export function renderHome(h) {
       <div class="strip${pTotal ? '' : ' empty'}" aria-hidden="true">
         ${ACCOUNTS.map((a, i) => `<span class="seg${focus === a.id ? ' on' : ''}" data-seg="${a.id}" style="--c:${a.color}; flex-grow:${pTotal ? positive[i] : 1}"></span>`).join('')}
       </div>
-      <div class="keys" role="tablist" aria-label="Show account">
+      <div class="keys" role="group" aria-label="Show account">
         <span class="keys-pill" aria-hidden="true"></span>
         ${order().map((id) => {
           const on = focus === id;
           const v = id === 'all' ? m.total : m.bals.get(id)?.balance || 0;
-          return `<button type="button" role="tab" class="key-acc${on ? ' on' : ''}" aria-selected="${on}" data-focus="${id}" style="--c:${id === 'all' ? 'var(--label)' : accountMeta(id).color}">
+          return `<button type="button" class="key-acc${on ? ' on' : ''}" aria-pressed="${on}" data-focus="${id}" style="--c:${id === 'all' ? 'var(--label)' : accountMeta(id).color}">
             <span class="ka-name">${id === 'all' ? 'All' : id}</span><span class="ka-val num">${m.matched ? fmtCompact(v) : '—'}</span></button>`;
         }).join('')}
         <button type="button" class="key-acc key-add" data-acct-new="1" aria-label="Add an account">${icon('plus', { size: 18 })}</button>
@@ -451,7 +451,7 @@ function setFocus(next, { scrub = false } = {}) {
   lens.dataset.focus = focus;
   lens.style.setProperty('--lens-c', lensColor(focus));
   lens.querySelectorAll('.seg').forEach((s) => s.classList.toggle('on', s.dataset.seg === focus));
-  lens.querySelectorAll('.key-acc').forEach((k) => { const on = k.dataset.focus === focus; k.classList.toggle('on', on); k.setAttribute('aria-selected', String(on)); });
+  lens.querySelectorAll('.key-acc').forEach((k) => { const on = k.dataset.focus === focus; k.classList.toggle('on', on); k.setAttribute('aria-pressed', String(on)); });
   placePill(true);
   setAmount(lens.querySelector('.lv'), valueFor(m, focus));
   swapContent(lens.querySelector('.lens-label'), label(m, focus), dir);

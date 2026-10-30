@@ -324,3 +324,23 @@ Choices made while running the app on my own, newest first, with the reason for 
   unnecessary), Insights (about 170 ms, mostly SVG and style, not maths).
 - **Perf follow-ups (review).** Activity keeps a high-water mark of rows drawn per search/filter, so a redraw (selection, edit, delete, sync) redraws at least as many rows and your place holds; it resets when the search/filter changes or the tab is entered afresh. `balances` and `summarize` keep the last three (entries, settings) combinations instead of one, so Home's filtered balances call and Report/Insights alternating don't evict each other. In `homeNotice`, owed is worked out when the only other candidates are the weekly summary (it ranks above it).
 - **Budget line in the Apple Pay / bank-alert reply, and features-based old-script detection.** After a payment is logged, the reply gets one last line when its category has a limit in the `budgets` extra: `Food: AED 412 of 500 this cycle (82%)`. Spend is the same gross rule as Insights (type Spend only, so transfers and income are out and refunds are not netted), for the payment's own cycle (the sheet's start day), and the name is the renamed label from the `categories` extra's `names` when there is one. It is appended after the existing text (which is unchanged), never added for moves or categories with no limit, and wrapped so missing or junk extras (or a non-positive limit) can only drop the line, never fail the logging. Bank alerts share `logCardSpend_`, so they get it too. The percentage is rounded down, like the app. The script now also sends `features` in its `ping` reply, and the app remembers the last `features` it saw (`state.scriptFeatures`, from ping, install and list): a script that lists features without `extras` is treated as old (extras stay phone-only, nothing is sent), and one without `install` is not asked to install. A script that sends no `features` (the oldest) still falls back to matching the "Unknown action" error text.
+- **Accessibility pass** (`claude/a11y`, `tests/verify-a11y.mjs`). axe-core runs on every tab and the main sheets, light and dark, at
+  390×844 on `?demo=1&notour=1`, and fails on serious or critical issues (before: 45 hits / 100 nodes, after: 0). axe is **not
+  added to the repo**: the test finds it on `NODE_PATH`, in `$AXE_CORE`, or `npm pack`s it into the temp folder; with no network it
+  skips just the axe scans (set `A11Y_REQUIRE_AXE=1` to fail instead). Choices: a sheet now switches the page behind it off with
+  `inert` (not only `aria-modal`, which VoiceOver on iOS follows loosely) and hands focus back to what opened it, or to `#view`
+  if that was redrawn; toasts are read out through an always-present `#announce` polite live region (text put into a region that
+  appears at the same moment is often skipped) while `#toast` stays a plain group so its Undo is a normal focusable button, the
+  Undo toast lasts 7 s (was 5) and waits while focus is on it; the Home account keys and Activity kind chips were `role="tab"`
+  with no tab panels, so they are now a group of `aria-pressed` buttons and a `radiogroup`; entry amounts and the pace chart are
+  spoken ("spent AED 37.50", "By 12 Nov: spent AED 900, AED 40 over an even pace") with `role="text"` + `aria-label` on the amount
+  span, so the visible text and every test that reads it are unchanged. **Contrast**: `--label-2` is #5f5f64 (was #6e6e73, 4.4 on
+  the tinted fills), `--warn` #a34809 and `--neg` #b92f27 in light, new `--placeholder` for text that must still be read
+  (`--label-3` is now decorative only: chevrons, grabber), a solid red button uses `--on-neg` (white fails on the dark-mode red),
+  account chips darken their colour 14% under the white letters, and a cancelled subscription is dimmed by its icon, not by
+  `opacity` on the whole row. **Dynamic Type**: `html { font: -apple-system-body }` after a `106.25%` fallback, `body` is `1rem`, and
+  every 10–20px text size is `rem` (÷17, so the default looks identical); inputs, keypad, tab bar, FAB and the big balance stay px
+  (inputs must stay ≥16px or iOS zooms on focus). At 200% text and 200% zoom (195px wide) no tab scrolls sideways; the only
+  layout change needed was letting `.btn-*` pills wrap. Not done on purpose: the white glyph on a category colour (amber, pink,
+  green series colours are 2–3:1; the category name sits beside every icon, so it is never the only carrier), heading-order and
+  banner-landmark notices (moderate), and per-key spoken amounts on the Home account keys (they read the compact "12.3k").

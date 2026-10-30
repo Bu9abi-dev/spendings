@@ -22,7 +22,7 @@ const warn = (t) => toast(t, { tone: 'warn', icon: icon('warn', { size: 18 }) })
 
 function ring(pct, done) {
   const r = 22, c = 2 * Math.PI * r;
-  return `<svg class="gl-ring" viewBox="0 0 56 56" width="56" height="56" aria-hidden="true"><circle cx="28" cy="28" r="${r}" class="gl-ring-bg"/>
+  return `<svg class="gl-ring" viewBox="0 0 56 56" width="56" height="56" role="img" aria-label="${done ? 'Goal reached' : `${Math.round(pct * 100)}% saved`}"><circle cx="28" cy="28" r="${r}" class="gl-ring-bg"/>
     <circle cx="28" cy="28" r="${r}" class="gl-ring-fg${done ? ' done' : ''}" stroke-dasharray="${(c * pct).toFixed(2)} ${c.toFixed(2)}" transform="rotate(-90 28 28)"/></svg>`;
 }
 

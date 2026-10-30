@@ -6,7 +6,7 @@
 // On screen it's "Buy now, pay later" and "payment", never "BNPL" or "instalment".
 import { ACCOUNTS, isPerson, accountMeta, categoryMeta, pickerCategories, money, fmt, dayKey, dayLabel, timeLabel, toAED, cycleBounds, cycleOf } from './model.js';
 import { state, subscribe, getExtra, saveExtra, addEntry, batch, topUndoId } from './store.js';
-import { openSheet, haptic, toast, esc } from './ui.js';
+import { openSheet, haptic, toast, esc, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 import { doUndo } from './views.js';
 import {
@@ -417,7 +417,7 @@ export function openPlanEditor(existing) {
       sheet.addEventListener('click', (ev) => {
         const btn = ev.target.closest('[data-act]'), a = btn?.dataset.act;
         if (a === 'cancel') close();
-        if (a === 'delete') { haptic(); btn.hidden = true; $('.bn-del').hidden = false; $('.bn-del').scrollIntoView?.({ behavior: 'smooth', block: 'nearest' }); }
+        if (a === 'delete') { haptic(); btn.hidden = true; $('.bn-del').hidden = false; $('.bn-del').scrollIntoView?.({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'nearest' }); }
         if (a === 'confirm-delete') {
           haptic();
           const at = plans().findIndex((x) => x.id === p.id), gone = plans()[at];
