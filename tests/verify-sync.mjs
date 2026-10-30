@@ -30,7 +30,7 @@ p.on('pageerror', (e) => errors.push(e.message));
 const store = (fn, arg) => p.evaluate(async ([src, a]) => { const s = await import('/js/store.js'); return new Function('s', 'a', `return (${src})(s, a)`)(s, a); }, [fn.toString(), arg]);
 const status = () => store((s) => s.state.sync.status);
 const server = () => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
-async function until(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await fn()) return; await p.waitForTimeout(100); } throw new Error(`still waiting after ${ms}ms`); }
+async function until(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (await fn()) return; await new Promise((r) => setTimeout(r, 100)); } throw new Error(`still waiting after ${ms}ms`); }
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log(`PASS  ${name}`); } catch (e) { failed++; console.log(`FAIL  ${name}: ${e.message}`); } }
 
@@ -40,13 +40,14 @@ await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');
 await p.waitForSelector('.status-row .row-title:text("Connected")');
 await p.click('.tabbar [data-tab="home"]');
-await p.waitForTimeout(500);
+await p.waitForSelector('.tabbar [data-tab="home"][aria-current="page"]');
+await until(async () => (await status()) === 'ok' && (await store((s) => s.state.outbox.length)) === 0, 10000);
 
 await check('a quick save never shows the Syncing spinner', async () => {
   let seen = false;
   const watch = setInterval(async () => { if (await p.locator('.sync-badge.spin').count().catch(() => 0)) seen = true; }, 50);
   await store((s) => s.addEntry({ type: 'Spend', amount: 5, account: 'ADCB', category: 'Groceries', merchant: 'Quick' }));
-  await p.waitForTimeout(1500);
+  await until(async () => (await store((s) => s.state.outbox.length)) === 0 && (await status()) === 'ok', 10000);
   clearInterval(watch);
   assert.equal(seen, false);
   assert.equal(await status(), 'ok');
@@ -83,7 +84,7 @@ await check('a sync over 3 seconds shows the spinner, and it clears after', asyn
 await check('offline: the change waits quietly (no red error) and retries on its own', async () => {
   online = false;
   await store((s) => s.addEntry({ type: 'Spend', amount: 7, account: 'ADCB', category: 'Groceries', merchant: 'Offline' }));
-  await p.waitForTimeout(800);
+  await until(async () => (await status()) === 'pending', 5000);
   assert.equal(await status(), 'pending');
   assert.equal(await p.locator('.sync-badge.err').count(), 0, 'no red error badge');
   assert.match(await p.textContent('.sync-badge'), /1 waiting/);
@@ -99,7 +100,7 @@ await check('offline: the change waits quietly (no red error) and retries on its
 await check('coming back to the app retries straight away', async () => {
   online = false;
   await store((s) => s.addEntry({ type: 'Spend', amount: 8, account: 'ADCB', category: 'Groceries', merchant: 'Visible' }));
-  await p.waitForTimeout(500);
+  await until(async () => (await status()) === 'pending', 5000);
   assert.equal(await status(), 'pending');
   online = true;
   await p.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));

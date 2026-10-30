@@ -298,7 +298,14 @@ const lid = await app((st) => st.addEntry({ type: 'Spend', amount: 333.33, accou
 await p.click('.bn-plan:has-text("Postpay") [data-bn-act="link"]');
 await p.waitForSelector(`.bn-cands [data-entry="${lid}"]`);
 await p.click(`.bn-cands [data-entry="${lid}"]`);
-await p.waitForFunction(async (id) => { const st = await import('/js/store.js'); return st.getExtra('bnpl').plans.some((x) => x.paid[0]?.entry === id); }, lid);
+// (polls inside evaluate: waitForFunction treats an async predicate's Promise as truthy at once)
+await p.evaluate(async (id) => {
+  const st = await import('/js/store.js');
+  for (const t0 = Date.now(); !st.getExtra('bnpl').plans.some((x) => x.paid[0]?.entry === id);) {
+    if (Date.now() - t0 > 10000) throw new Error('the paid instalment never got its entry');
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}, lid);
 let pp = (await snap()).plans.find((x) => x.provider === 'Postpay');
 ok(pp.paid[0]?.entry === lid, '“Link a payment” links the chosen entry instead of logging another');
 
@@ -313,7 +320,13 @@ await app((st, m, bn, a2) => {
 }, pp.id);
 await p.fill('#bn-item', 'TV');
 await p.click(sheet('[data-act="save"]'));
-await p.waitForFunction((id) => import('/js/store.js').then((st) => st.getExtra('bnpl').plans.find((x) => x.id === id)?.item === 'TV'), pp.id);
+await p.evaluate(async (id) => {   // polls inside evaluate: waitForFunction treats an async predicate's Promise as truthy at once
+  const st = await import('/js/store.js');
+  for (const t0 = Date.now(); st.getExtra('bnpl').plans.find((x) => x.id === id)?.item !== 'TV';) {
+    if (Date.now() - t0 > 10000) throw new Error('Save never reached the store');
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}, pp.id);
 pp = await planOf(pp.id);
 ok(pp.item === 'TV' && pp.paid[0]?.entry === lid && pp.paid[1]?.entry === '', 'Save keeps links made while the editor was open (paid read fresh at save time)');
 ok(pp.total === 1000 && pp.count === 3, 'and the total and count are unchanged');

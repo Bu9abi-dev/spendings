@@ -52,11 +52,22 @@ async function inject(n) {
     store.state.entries = out;
     store.restoreEntry(out[0]); // same entry again: swaps the array and re-renders
   }, n);
-  await p.waitForTimeout(300);
+  await idle();
 }
 
 // median of a few runs, so one GC pause doesn't decide the result
 const med = (a) => [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)];
+// The page is still: no running animation/transition, same scroll position and row count for 4 frames
+// (replaces fixed sleeps, which are too short when the machine is busy and wasted time when it is not).
+const idle = () => p.evaluate(async () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  let last = '', same = 0;
+  for (const t0 = Date.now(); same < 4 && Date.now() - t0 < 15000;) {
+    await frame();
+    const k = `${scrollY}|${document.querySelectorAll('#view .entry').length}|${document.getAnimations().length}`;
+    same = k === last && !document.getAnimations().length ? same + 1 : 0; last = k;
+  }
+});
 const frames = () => p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 
 /** Tap a tab from Home and time until two frames have painted. */
@@ -64,7 +75,7 @@ async function timeTab(tab, from = 'home') {
   const runs = [];
   for (let i = 0; i < 3; i++) {
     await p.evaluate((from) => document.querySelector(`[data-tab="${from}"]`).click(), from);
-    await p.waitForTimeout(700);
+    await idle();
     runs.push(await p.evaluate(async (tab) => {
       const t0 = performance.now();
       document.querySelector(`[data-tab="${tab}"]`).click();
@@ -77,7 +88,7 @@ async function timeTab(tab, from = 'home') {
 
 await p.goto(`${BASE}/?demo=1#home`);
 await p.waitForSelector('.lens');
-await p.waitForTimeout(500);
+await idle();
 await cdp.send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
 await inject(N);
 
@@ -86,7 +97,7 @@ const res = {};
 const hr = [];
 for (let i = 0; i < 3; i++) {
   hr.push(await p.evaluate(async () => { const s = await import('/js/store.js'); const e = s.state.entries[5]; const t = performance.now(); s.restoreEntry(e); return performance.now() - t; }));
-  await p.waitForTimeout(100);
+  await idle();
 }
 res.homeRender = med(hr);
 res.home = await timeTab('home', 'settings');
@@ -97,7 +108,7 @@ await p.evaluate(() => document.querySelector('[data-tab="home"]').click());
 
 // the add sheet
 await p.evaluate(() => document.querySelector('[data-tab="home"]').click());
-await p.waitForTimeout(700);
+await idle();
 const addRuns = [];
 for (let i = 0; i < 3; i++) {
   addRuns.push(await p.evaluate(async () => {
@@ -108,13 +119,13 @@ for (let i = 0; i < 3; i++) {
   }));
   await p.evaluate(() => document.querySelector('.sheet [data-act="cancel"]')?.click());
   await p.waitForSelector('.sheet', { state: 'detached' }); // closing takes longer on a slow CPU; an open sheet makes the page inert
-  await p.waitForTimeout(200);
+  await idle();
 }
 res.addSheet = med(addRuns);
 
 // typing in Activity search: time per key until the list has redrawn
 await p.evaluate(() => document.querySelector('[data-tab="activity"]').click());
-await p.waitForTimeout(800);
+await idle();
 await p.focus('.search input');
 const text = 'carrefour';
 const keys = [];
@@ -158,10 +169,10 @@ if (process.env.PERF_PROFILE) {
   const metrics = async () => Object.fromEntries((await cdp.send('Performance.getMetrics')).metrics.map((m) => [m.name, m.value]));
   for (const [from, to] of [['home', 'activity'], ['home', 'insights'], ['activity', 'home']]) {
     await p.evaluate((t) => document.querySelector(`[data-tab="${t}"]`).click(), from);
-    await p.waitForTimeout(800);
+    await idle();
     const a = await metrics();
     await p.evaluate(async (t) => { document.querySelector(`[data-tab="${t}"]`).click(); await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))); }, to);
-    await p.waitForTimeout(500);
+    await idle();
     const z = await metrics();
     const d = (k) => Math.round((z[k] - a[k]) * 1000);
     console.log(`${from}->${to}: script ${d('ScriptDuration')} layout ${d('LayoutDuration')} style ${d('RecalcStyleDuration')} task ${d('TaskDuration')} ms (cpu-throttled)`);
@@ -169,12 +180,12 @@ if (process.env.PERF_PROFILE) {
 }
 // structure: a long list draws in pieces, and scrolling brings the rest (capped at 400 with the footer)
 await p.fill('.search input', '');
-await p.waitForTimeout(300);
+await idle();
 const first = await p.evaluate(() => document.querySelectorAll('#view .entry').length);
 let last = first;
 for (let i = 0; i < 30; i++) {
   await p.evaluate(() => window.scrollTo(0, document.body.scrollHeight));
-  await p.waitForTimeout(150);
+  await idle();
   const n = await p.evaluate(() => document.querySelectorAll('#view .entry').length);
   if (n === last && n > first) break;
   last = n;
@@ -183,12 +194,12 @@ const foot = await p.evaluate(() => !!document.querySelector('.activity-list .gr
 // a redraw (an entry changing, Select mode) keeps the rows drawn and your place in the list
 await p.evaluate(() => window.scrollTo(0, 0));
 await p.fill('.search input', 'a'); // a different search starts the list over, then clearing it starts again at 40 rows
-await p.waitForTimeout(400);
+await idle();
 await p.fill('.search input', '');
-await p.waitForTimeout(300);
+await idle();
 for (let i = 0; i < 80 && (await p.evaluate(() => document.querySelectorAll('#view .entry').length)) < 220; i++) {
   await p.evaluate(() => window.scrollBy(0, 300)); // small steps, so the list stops part-way (rows grow with the reader's text size)
-  await p.waitForTimeout(150);
+  await idle();
 }
 const mark = await p.evaluate(() => {
   const rows = [...document.querySelectorAll('#view .entry')];
@@ -196,17 +207,17 @@ const mark = await p.evaluate(() => {
   r.scrollIntoView({ block: 'center' });
   return { id: r.dataset.id, n: rows.length };
 });
-await p.waitForTimeout(200);
+await idle();
 const where = (id) => p.evaluate((id) => { const r = document.querySelector(`#view .entry[data-id="${id}"]`); return r ? Math.round(r.getBoundingClientRect().top) : null; }, id);
 const top0 = await where(mark.id);
 await p.evaluate(async () => { const s = await import('/js/store.js'); s.restoreEntry(s.state.entries[300]); });
-await p.waitForTimeout(300);
+await idle();
 const afterEmit = { top: await where(mark.id), n: await p.evaluate(() => document.querySelectorAll('#view .entry').length) };
 await p.evaluate(() => document.querySelector('[data-act="select"]').click());
-await p.waitForTimeout(300);
+await idle();
 const afterSelect = { top: await where(mark.id), n: await p.evaluate(() => document.querySelectorAll('#view .entry').length) };
 await p.evaluate(() => document.querySelector('[data-act="select-done"]').click());
-await p.waitForTimeout(200);
+await idle();
 console.log(`place: row ${mark.n} drawn before; top ${top0} -> ${afterEmit.top} (entry changed, ${afterEmit.n} rows) -> ${afterSelect.top} (select mode, ${afterSelect.n} rows)`);
 
 console.log(`activity rows: first paint ${first}, after scrolling ${last}, footer ${foot}`);

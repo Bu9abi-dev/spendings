@@ -36,7 +36,18 @@ const allowed = (rule, target) => ALLOW.some((a) => { const [r, sel] = a.split('
 const browser = await chromium.launch();
 const phone = devices['iPhone 13'];
 const newCtx = (o = {}) => browser.newContext({ ...phone, reducedMotion: 'reduce', ...o });
-const settle = (p, ms = 350) => p.waitForTimeout(ms);
+// Waits for the page to be still (no running animation or transition, scroll position unchanged for 4
+// frames) instead of sleeping a fixed time. The second argument is kept for the call sites and ignored.
+const settle = (p) => p.evaluate(async () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  await frame();
+  let last = '', same = 0;
+  for (const t0 = Date.now(); same < 4 && Date.now() - t0 < 5000;) {
+    await frame();
+    const k = `${scrollY}|${document.getAnimations().length}|${document.querySelectorAll('.sheet').length}`;
+    same = k === last && !document.getAnimations().length ? same + 1 : 0; last = k;
+  }
+});
 
 /** Runs axe on the open sheet (or the whole page) and returns serious/critical violations that are not allow-listed. */
 async function axeScan(p, scope) {

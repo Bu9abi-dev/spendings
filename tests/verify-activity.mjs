@@ -121,9 +121,9 @@ await p.waitForSelector('.status-row .row-title:text("Connected")');
 const app = (fn, arg) => p.evaluate(async ([src, a]) => { const st = await import('/js/store.js'); return new Function('st', 'a', `return (${src})(st, a)`)(st, a); }, [fn.toString(), arg]);
 // waits until every queued change has reached the sheet (polls from Node: an async waitForFunction never waits)
 async function settle() {
-  for (let i = 0; i < 100; i++) {
-    if (await app((st) => st.state.outbox.length === 0)) { await p.waitForTimeout(50); if (await app((st) => st.state.outbox.length === 0)) return; }
-    await p.waitForTimeout(100);
+  for (let i = 0; i < 300; i++) {
+    if (await app((st) => st.state.outbox.length === 0)) { await new Promise((r) => setTimeout(r, 50)); if (await app((st) => st.state.outbox.length === 0)) return; }
+    await new Promise((r) => setTimeout(r, 100));
   }
   throw new Error('changes never reached the sheet');
 }
@@ -142,7 +142,7 @@ await p.click('[data-act="filters"]');
 await p.selectOption('.sheet select[name="account"]', 'ADCB');
 await p.fill('.sheet input[name="max"]', '50');
 await p.click('.sheet [data-act="done"]');
-await p.waitForTimeout(400);
+await p.waitForFunction(() => !document.querySelector('.sheet') && document.querySelectorAll('.activity-list .entry').length === 2);
 ok(await p.locator('.activity-list .entry').count() === 2, 'browser: ADCB up to AED 50 shows the two kiosk payments');
 ok((await p.textContent('.act-bar')).includes('AED 30.00'), 'browser: the filtered total shows AED 30.00');
 ok(await p.locator('.af-pill').count() === 2 && (await p.textContent('.filter-count')) === '2', 'browser: two filter pills and a 2 on the Filter button');
@@ -192,7 +192,7 @@ const wantKeys = ['Bulk Four|44', 'Bulk One|11', 'Bulk Three|33', 'Bulk Two|22']
 ok(sheetKeys().join() === wantKeys.join(), 'browser: four Bulk entries are on the sheet');
 const balB0 = await balances();
 await p.fill('.search input', 'Bulk ');
-await p.waitForTimeout(200);
+await p.waitForFunction(() => { const r = [...document.querySelectorAll('.activity-list .entry')]; return r.length > 0 && r.every((x) => /Bulk/.test(x.textContent)); });
 const keepId = await app((st) => st.state.entries.find((e) => e.merchant === 'Bulk Four').id);
 const selectAndDelete = async () => {
   await p.click('[data-act="select"]');
@@ -242,7 +242,7 @@ await p.click('[data-act="select"]');
 await p.click('[data-act="select-all"]');
 ok((await p.textContent('.act-bar')).includes('4 selected'), 'browser: four Bulk entries selected');
 await p.fill('.search input', 'Bulk One');
-await p.waitForTimeout(200);
+await p.waitForFunction(() => { const r = [...document.querySelectorAll('.activity-list .entry')]; return r.length === 1 && /Bulk One/.test(r[0].textContent); });
 ok((await p.textContent('.act-bar')).includes('1 selected'), 'browser: narrowing the search drops hidden rows from the selection');
 await p.click('[data-act="bulk-del"]');
 await p.click('.sheet [data-act="confirm"]');

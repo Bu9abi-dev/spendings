@@ -21,6 +21,26 @@ const PHONES = [
   { name: 'iPhone SE (375×667)', ...devices['iPhone SE'] },
 ];
 
+// Waits on real conditions instead of fixed sleeps (a fixed sleep is too short when the machine is busy).
+// Everything polls inside p.evaluate: waitForFunction treats a returned Promise as truthy at once.
+// Resolves false on timeout, so the ok() that follows reports it.
+const pageUntil = (p, fn, arg, ms = 10000) => p.evaluate(async ([src, a, ms]) => {
+  const st = await import('/js/store.js');
+  const f = new Function('st', 'a', `return (${src})(st, a)`);
+  for (const t0 = Date.now(); !(await f(st, a));) { if (Date.now() - t0 > ms) return false; await new Promise((r) => setTimeout(r, 50)); }
+  return true;
+}, [fn.toString(), arg, ms]);
+// Layout is settled: no running animations and the scroll position unchanged for 4 frames.
+const settleLayout = (p) => p.evaluate(async () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  let last = -1, same = 0;
+  for (const t0 = Date.now(); same < 4 && Date.now() - t0 < 5000;) {
+    await frame();
+    const y = scrollY + document.scrollingElement.scrollHeight * 1e-3 + document.getAnimations().length * 1e6;
+    same = y === last ? same + 1 : 0; last = y;
+  }
+});
+
 async function layoutAudit(p, label) {
   return p.evaluate((label) => {
     const vw = innerWidth, out = { label, hscroll: document.scrollingElement.scrollWidth - vw, overflow: [], smallInputs: [] };
@@ -51,7 +71,9 @@ for (const ph of PHONES) {
 
   for (const tab of ['home', 'activity', 'insights', 'settings']) {
     await p.tap(`.tabbar [data-tab="${tab}"]`);
-    await p.waitForTimeout(250);
+    await p.waitForSelector(`.tabbar [data-tab="${tab}"][aria-current="page"]`);
+    await p.waitForFunction(() => document.querySelector('#view').children.length > 0);
+    await settleLayout(p);
     const a = await layoutAudit(p, tab);
     ok(a.hscroll <= 0, `${tab}: no horizontal page scroll`, a.hscroll > 0 ? `(+${a.hscroll}px)` : '');
     ok(!a.overflow.length, `${tab}: nothing sticks out of the screen`, a.overflow.slice(0, 4).join(', '));
@@ -71,13 +93,14 @@ for (const ph of PHONES) {
 
   // account keys row: reachable by touch?
   await p.tap('.tabbar [data-tab="home"]');
-  await p.waitForTimeout(200);
+  await p.waitForSelector('.tabbar [data-tab="home"][aria-current="page"]');
+  await p.waitForSelector('.keys');
   const keys = await p.evaluate(() => { const k = document.querySelector('.keys'); return { sw: k.scrollWidth, cw: k.clientWidth, ta: getComputedStyle(k).touchAction }; });
   console.log(`      .keys scrollWidth ${keys.sw} / clientWidth ${keys.cw}, touch-action ${keys.ta}`);
   {
     // add two more accounts (demo state only) and re-check
     await p.evaluate(async () => { const s = await import('/js/store.js'); s.addAccount({ name: 'Wio', note: 'Savings', color: 'blue' }); s.addAccount({ name: 'Mashreq', note: 'Card', color: 'gold' }); });
-    await p.waitForTimeout(300);
+    await p.waitForFunction(() => document.querySelectorAll('.keys .key-acc').length >= 6);
     const k2 = await p.evaluate(() => { const k = document.querySelector('.keys'); const last = [...k.querySelectorAll('.key-acc')].pop().getBoundingClientRect(); return { sw: k.scrollWidth, cw: k.clientWidth, lastRight: Math.round(last.right), vw: innerWidth }; });
     console.log(`      with 6 accounts: .keys scrollWidth ${k2.sw} / clientWidth ${k2.cw}; last key right edge ${k2.lastRight} (viewport ${k2.vw})`);
     if (k2.sw > k2.cw + 1) {
@@ -89,7 +112,7 @@ for (const ph of PHONES) {
       for (let i = 1; i <= 10; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: Math.round(x0 + ((x1 - x0) * i) / 10), y }] });
       for (let i = 0; i < 30; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: x1 - (i % 2), y }] });
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await p.waitForTimeout(500);
+      await p.waitForFunction(() => document.querySelector('.keys').scrollLeft > 0 && document.querySelector('.lens').dataset.focus === 'Mashreq').catch(() => {});
       const after = await p.evaluate(() => ({ sl: document.querySelector('.keys').scrollLeft, focus: document.querySelector('.lens').dataset.focus }));
       console.log(`      scrub to the edge: scrollLeft ${after.sl}, focused ${after.focus}`);
       ok(after.sl > 0 && after.focus === 'Mashreq', `${ph.name}: with 6 accounts, scrubbing to the edge scrolls the keys and reaches the last account`);
@@ -100,21 +123,23 @@ for (const ph of PHONES) {
 
   // filter chips (Activity) swallow vertical page scroll?
   await p.tap('.tabbar [data-tab="activity"]');
-  await p.waitForTimeout(250);
+  await p.waitForSelector('.tabbar [data-tab="activity"][aria-current="page"]');
+  await p.waitForSelector('.filter-chips');
+  await settleLayout(p);
   {
     const cdp = await ctx.newCDPSession(p);
     const drag = async (x, y) => {
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x, y }] });
       for (let i = 1; i <= 15; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x, y: y - i * 20 }] });
       await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await p.waitForTimeout(400);
+      await settleLayout(p);   // scroll momentum has stopped
     };
     const box = await p.locator('.filter-chips').boundingBox();
     const y0 = await p.evaluate(() => scrollY);
     await drag(Math.round(box.x + 60), Math.round(box.y + box.height / 2));
     const y1 = await p.evaluate(() => scrollY);
     await p.evaluate(() => scrollTo(0, 0));
-    await p.waitForTimeout(200);
+    await p.waitForFunction(() => scrollY === 0);
     const rowBox = await p.locator('.group-head.day').first().boundingBox();
     await drag(Math.round(rowBox.x + 30), Math.round(rowBox.y + rowBox.height / 2));
     const y2 = await p.evaluate(() => scrollY);
@@ -134,13 +159,20 @@ for (const ph of PHONES) {
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: b.x + b.width - 20, y }] });
     for (let i = 1; i <= 12; i++) await cdp.send('Input.dispatchTouchEvent', { type: 'touchMove', touchPoints: [{ x: b.x + b.width - 20 - i * 25, y }] });
     await cdp.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-    await p.waitForTimeout(500);
+    await pageUntil(p, (st, n) => st.state.entries.length === n - 1, count0);
     const count1 = await p.evaluate(async () => (await import('/js/store.js')).state.entries.length);
     ok(count1 === count0 - 1, `touch swipe-left deletes the row (${count0} → ${count1})`);
+    await p.waitForSelector('#toast.show .toast-action').catch(() => {});
+    await settleLayout(p);   // the toast has finished sliding in
     const hasUndo = await p.locator('.toast .toast-action').isVisible().catch(() => false);
     ok(hasUndo, 'toast offers Undo');
-    if (hasUndo) await p.tap('.toast .toast-action');
-    await p.waitForTimeout(300);
+    // A tap just after a CDP touch drag can be dropped by Chromium's gesture handling, so tap again
+    // until the entry is back (the toast leaves after the first tap that lands, so this can't double-undo).
+    for (let tries = 0; hasUndo && tries < 6; tries++) {
+      if (!(await p.locator('.toast .toast-action').isVisible().catch(() => false))) break;
+      await p.tap('.toast .toast-action');
+      if (await pageUntil(p, (st, id) => st.state.entries.some((e) => e.id === id), id, 1500)) break;
+    }
     const back = await p.evaluate(async (id) => (await import('/js/store.js')).state.entries.some((e) => e.id === id), id);
     ok(back, 'toast Undo restores the swiped entry');
   }
@@ -149,7 +181,7 @@ for (const ph of PHONES) {
   {
     await p.tap('.fab');
     await p.waitForSelector('.sheet .keypad');
-    await p.waitForTimeout(300);
+    await settleLayout(p);
     const s = await p.evaluate(() => { const sh = document.querySelector('.sheet').getBoundingClientRect(); const sv = document.querySelector('.sheet .save-btn').getBoundingClientRect(); return { top: Math.round(sh.top), bottom: Math.round(sh.bottom), saveBottom: Math.round(sv.bottom), vh: innerHeight }; });
     ok(s.top >= 0 && s.saveBottom <= s.vh, `add sheet fits (top ${s.top}, save button bottom ${s.saveBottom} ≤ ${s.vh})`);
     const a = await layoutAudit(p, 'sheet');
@@ -158,17 +190,17 @@ for (const ph of PHONES) {
     await p.screenshot({ path: `${OUT}/${slug}-add-sheet.png` });
     // keyboard logic: replace visualViewport with a fake that we can shrink like the iOS keyboard does
     await p.evaluate(() => document.querySelector('.sheet [data-act="cancel"]').click());
-    await p.waitForTimeout(400);
+    await p.waitForFunction(() => !document.querySelector('.sheet') && !document.getElementById('app').inert);
     const kb = await p.evaluate(async () => {
       const fake = new EventTarget(); fake.height = innerHeight; fake.offsetTop = 0;
       Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => fake });
       const { openEntry } = await import('/js/entry.js');
       openEntry();
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
       const sheet = [...document.querySelectorAll('.sheet')].pop();
       fake.height = innerHeight - 336; fake.offsetTop = 0; fake.dispatchEvent(new Event('resize'));
       sheet.querySelector('input[name="merchant"]').focus();
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
       const r = sheet.getBoundingClientRect(), f = sheet.querySelector('input[name="merchant"]').getBoundingClientRect();
       const res = { kbVar: sheet.style.getPropertyValue('--kb'), kbOpen: sheet.classList.contains('kb-open'), typing: sheet.classList.contains('typing'), sheetBottom: Math.round(r.bottom), visibleBottom: innerHeight - 336, fieldTop: Math.round(f.top), fieldBottom: Math.round(f.bottom), sheetTop: Math.round(r.top) };
       // iOS also scrolls the layout viewport: offsetTop > 0
@@ -183,14 +215,16 @@ for (const ph of PHONES) {
 
   // numbers on screen vs the maths (demo data)
   {
-    await p.click('.key-acc[data-focus="all"]'); await p.waitForTimeout(500);
+    await p.click('.key-acc[data-focus="all"]');
+    await p.waitForSelector('.where-row.total');
+    await settleLayout(p);
     const r = await p.evaluate(async () => {
       const M = await import('/js/model.js'); const { state } = await import('/js/store.js');
       const m = M.homeNumbers(state.entries, state.plan, state.settings);
       const { total, safe, allowBal } = m;
       const sum = m.sum;
       const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: x.shown }));  // the whole numbers shown, after largest-remainder rounding
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
       if (!document.querySelector('.where-row.total')) return { missing: location.hash + ' ' + document.querySelector('.lens-detail')?.innerHTML.slice(0, 200) };
       const rows = [...document.querySelectorAll('.where-row:not(.total)')].map((x) => ({ label: x.querySelector('b').textContent, v: +x.querySelector('.num').textContent.replace(/[,−]/g, (c) => (c === '−' ? '-' : '')) }));
       const shownTotal = +document.querySelector('.where-row.total .num').textContent.replace(/,/g, '');
@@ -210,12 +244,12 @@ for (const ph of PHONES) {
   // ghost "Allowance not moved yet"
   {
     await p.evaluate(async () => { const s = await import('/js/store.js'); s.addEntry({ type: 'Transfer', amount: 1000, account: 'ADCB', toAccount: 'BOTIM' }); });
-    await p.waitForTimeout(300);
+    await settleLayout(p);
     const g = await p.evaluate(() => { const b = document.querySelector('.lens-meta [data-plan-act="move"]'); return b ? { text: b.textContent, id: b.dataset.planId } : null; });
     if (g) {
       const n0 = await p.evaluate(async () => (await import('/js/store.js')).state.entries.length);
       await p.tap('.lens-meta [data-plan-act="move"]');
-      await p.waitForTimeout(300);
+      await settleLayout(p);
       const n1 = await p.evaluate(async () => (await import('/js/store.js')).state.entries.length);
       finding(`BUG ghost-unmoved confirmed in UI (${ph.name}): after ADCB→BOTIM 1000 the hero shows "${g.text}" with data-plan-id="${g.id}"; tapping it adds ${n1 - n0} entries`);
     }
@@ -251,7 +285,7 @@ for (const ph of PHONES) {
   // choose a start day that moves yesterday's spend into a different cycle than today's (or vice versa)
   const newStart = Math.min(28, Math.max(2, today));
   await p.selectOption('select[name="cycleStart"]', String(newStart));
-  await p.waitForTimeout(1500);
+  await pageUntil(p, (st, d) => st.state.settings.cycleStart === d && st.state.outbox.length === 0, newStart, 15000);
   const r = await p.evaluate(async (newStart) => {
     const s = await import('/js/store.js'); const M = await import('/js/model.js');
     const local = s.state.entries.find((e) => e.id === 'k1').cycle;

@@ -61,20 +61,20 @@ ok(await p.evaluate(async () => (await import('/js/model.js')).SPEND_CATEGORIES.
 await p.click('[data-cat-new]');
 await p.fill('#cf-name', 'groceries');
 await p.click('.sheet [data-act="save"]');
-await p.waitForTimeout(300);
+await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 ok(await p.evaluate(async () => (await import('/js/model.js')).allCategories('Spend').filter((c) => c.id.toLowerCase() === 'groceries').length === 1), 'a name already taken is refused');
 await p.click('.sheet [data-act="cancel"]');
-await p.waitForTimeout(400);
+await p.waitForFunction(() => !document.querySelector('.sheet') && !document.getElementById('app').inert);
 
 // rename a built-in and hide another
 await p.click('[data-cat-edit="Food & Drinks"]');
 await p.fill('#cf-name', 'Eating out');
 await p.click('.sheet [data-act="save"]');
-await p.waitForTimeout(400);
+await p.waitForFunction(() => !document.querySelector('.sheet') && !document.getElementById('app').inert);
 await p.click('[data-cat-edit="Travel"]');
 await p.click('#cf-shown');
 await p.click('.sheet [data-act="save"]');
-await p.waitForTimeout(400);
+await p.waitForFunction(() => !document.querySelector('.sheet') && !document.getElementById('app').inert);
 const st = await p.evaluate(async () => { const m = await import('/js/model.js'); return { food: m.categoryMeta('Food & Drinks').label, travel: m.SPEND_CATEGORIES.some((c) => c.id === 'Travel') }; });
 ok(st.food === 'Eating out' && !st.travel, 'rename and hide take effect');
 
@@ -93,13 +93,15 @@ ok(await p.evaluate(async () => (await import('/js/model.js')).SPEND_CATEGORIES.
 // a label can't inject markup
 await p.evaluate(async () => (await import('/js/store.js')).saveExtra('categories', { v: 1, custom: [{ id: '<img src=x onerror=window.__x=1>', type: 'Spend', icon: 'dots' }] }));
 await p.evaluate(async () => { const st = await import('/js/store.js'); const e = st.state.entries.find((x) => x.type === 'Spend'); st.updateEntry(e.id, { category: '<img src=x onerror=window.__x=1>' }); });
-await p.waitForTimeout(300); // Settings redraws with the name
+await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // Settings redraws with the name
 await p.evaluate(async () => (await import('/js/entry.js')).openEntry());
-await p.waitForTimeout(300);
+await p.waitForSelector('.sheet .cat-grid [data-cat]');
+const open0 = await p.locator('.sheet').count();
 await p.locator('.sheet [data-act="cancel"]').last().click();
-await p.waitForTimeout(500);
+await p.waitForFunction((n) => document.querySelectorAll('.sheet').length === n - 1, open0);
 await p.evaluate(() => document.querySelector('[data-tab="insights"]').click());
-await p.waitForTimeout(500);
+await p.waitForSelector('.tabbar [data-tab="insights"][aria-current="page"]');
+await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));
 ok(!(await p.evaluate(() => window.__x)), 'a category name is shown as text, never as markup');
 ok(!errors.length, 'no page errors' + (errors.length ? `: ${errors.join(' | ')}` : ''));
 await b.close();
