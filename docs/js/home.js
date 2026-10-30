@@ -3,7 +3,7 @@
 // from the side you moved towards. Below: the payday plan and where this cycle's money went.
 import {
   ACCOUNTS, cycleOf, SPEND_CATEGORIES, INCOME_CATEGORIES, pickerCategories, accountMeta, cycleName, cycleRange, daysLeft,
-  balances, homeNumbers, whereRows, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
+  balances, homeNumbers, whereRows, entriesByCycle, listsVer, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
 import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
@@ -33,21 +33,33 @@ function ago(iso) {
 
 /* ───────────────────────── Numbers ───────────────────────── */
 
-function model() {
+/* What each account had when this cycle began, and what has flowed in since: two passes over every entry, and they only change
+   with the entries, so redraws for anything else (a sync badge, a tab switch back) reuse them.
+   Invalidated by: a new entries array, a different usdRate / cycle start, the account list changing, or the cycle rolling over. */
+let startMemo = null;
+function sinceCycleStart(m) {
   const s = state.settings;
-  const m = homeNumbers(state.entries, state.plan, s, new Date(), state.dismissed);
-  const matched = [...m.bals.values()].some((b) => b.matchedAt);
-  // what each account had when this cycle began, and what has flowed in since
+  const key = `${m.cyc}|${s.usdRate}|${s.cycleStart}|${listsVer()}`;
+  if (startMemo && startMemo.entries === state.entries && startMemo.key === key) return startMemo;
   const startIso = cycleBounds(m.cyc, s.cycleStart).start.toISOString();
   const startBals = balances(state.entries.filter((e) => e.date < startIso), s);
   const inflow = new Map();
-  for (const e of state.entries) {
-    if (e.cycle !== m.cyc || e.date < startIso) continue;
+  for (const e of entriesByCycle(state.entries).get(m.cyc) || []) {
+    if (e.date < startIso) continue;
     const v = toAED(e, s);
     if (e.type === 'Income') inflow.set(e.account, (inflow.get(e.account) || 0) + v);
     if (e.type === 'Transfer' && e.toAccount) inflow.set(e.toAccount, (inflow.get(e.toAccount) || 0) + v);
     if (e.type === 'Adjustment' && v > 0) inflow.set(e.account, (inflow.get(e.account) || 0) + v);
   }
+  startMemo = { entries: state.entries, key, startBals, inflow };
+  return startMemo;
+}
+
+function model() {
+  const s = state.settings;
+  const m = homeNumbers(state.entries, state.plan, s, new Date(), state.dismissed);
+  const matched = [...m.bals.values()].some((b) => b.matchedAt);
+  const { startBals, inflow } = sinceCycleStart(m);
   return { ...m, matched, startBals, inflow };
 }
 
@@ -187,17 +199,28 @@ export function renderHome(h) {
 const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'pace:out', 'budget:near', 'owed', 'week:summary'];
 function homeNotice(m, whereShown) {
   const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
+  // Ask the features in rank order and stop at the first that can't be outranked, so a higher-ranked winner
+  // (an overdue payment, a limit already passed) means the rest are never worked out.
+  // overdue BNPL outranks everything
+  const bn = bnplHomeNotice(); // a buy-now-pay-later payment overdue, or due within 7 days
+  if (bn && bn.rank === 'bnpl:overdue') return bn.html;
   const found = [];
-  const b = budgetNotice(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent });
-  if (b) found.push({ rank: `budget:${b.priority}`, html: budgetNudge(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent }) });
+  const rows = budgetRows(m.sum.byCategory, currentLimits());
+  const b = budgetNotice(rows, { isCurrent });
+  if (b) {
+    if (b.priority === 'over') return budgetNudge(rows, { isCurrent }); // outranks everything below
+    found.push({ rank: `budget:${b.priority}`, html: budgetNudge(rows, { isCurrent }) });
+  }
   const s = subscriptionNotice(detectRecurring(state.entries, state.settings, { ignored: getExtra('recurring', { v: 1, ignored: [] }).ignored || [] }));
   if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
-  const bn = bnplHomeNotice(); // a buy-now-pay-later payment overdue, or due within 7 days
   if (bn) found.push(bn);
   found.push(...weeklyHomeNotices(m, isCurrent)); // allowance running out early; last week's summary on Mondays and Tuesdays
   // what people owe sits in "Where your money is" when that card is on screen; otherwise it's the last of the notices
-  const owed = whereShown ? '' : owedLineHTML();
-  if (owed) found.push({ rank: 'owed', html: owed });
+  // except the weekly summary, so it is only worked out when nothing ranked above it has anything to say
+  if (!whereShown && found.every((f) => f.rank === 'week:summary')) {
+    const owed = owedLineHTML();
+    if (owed) found.push({ rank: 'owed', html: owed });
+  }
   found.sort((x, y) => NOTICE_ORDER.indexOf(x.rank) - NOTICE_ORDER.indexOf(y.rank));
   return found[0]?.html || '';
 }

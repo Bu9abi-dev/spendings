@@ -7,7 +7,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 9 | Performance pass, part 2 | `claude/perf2` | measured at 4x CPU throttle, 3,000 entries |
+| 10 | Accessibility pass | `claude/a11y` | axe audit, VoiceOver labels, contrast, zoom |
 
 ## Next
 
@@ -18,7 +18,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
 - **Chart follow-ups:** tap a place to filter Activity; "on pace for AED X this cycle".
 - **Report for a filtered set; rules from bulk recategorise** (council wave 1, Expansionist).
-- **Accessibility pass.** VoiceOver labels, contrast, Dynamic Type.
+- **Performance pass, part 3.** Insights is the slowest tab left (about 170 ms at 4x CPU, mostly SVG and style). See DECISIONS.md.
 - **Budget line in the Apple Pay notification** (Code.gs reads Extras). Batch with the next script change.
 - **Use the `features` list** to detect an old script, instead of the "Unknown action" text.
 - **Self-reinforcing categories** (Contrarian): a wrong bulk filing teaches the learner. Consider learning only from
@@ -26,6 +26,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v27 · Performance pass 2: Activity ~4x faster with 3,000 entries, memoised sums, lazy rows
 - v26 · Your week + allowance pace alert (one pace rule for Home, Insights and the alert)
 - v25 · First-time setup guide; Sign in with Google creates the sheet + script (off until a client ID is set)
 - v24 · Money owed and split bills (people as accounts, Split, Settle up)

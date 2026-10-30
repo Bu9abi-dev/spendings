@@ -316,8 +316,6 @@ h1, h2, h3, p { margin: 0; }
   gap: 8px;
 }
 .flow > div { display: flex; flex-direction: column; gap: 3px; }
-.flow-label { display: inline-flex; align-items: center; gap: 4px; font-size: 0.765rem; color: var(--label-2); font-weight: 500; }
-.flow-val { font-size: clamp(18px, 5.6vw, 22px); font-weight: 650; white-space: nowrap; }
 
 /* ───── Grouped lists ───── */
 .group-title { font-size: 1.176rem; font-weight: 700; letter-spacing: -0.01em; padding: 26px var(--gutter) 10px; }
@@ -331,6 +329,7 @@ h1, h2, h3, p { margin: 0; }
   border-radius: var(--r-group);
   overflow: hidden;
 }
+.act-more { height: 1px; } /* end-of-list marker: Activity draws the next rows when it nears the screen */
 .group-foot { font-size: 0.765rem; color: var(--label-2); padding: 8px calc(var(--gutter) + 16px) 0; }
 
 .row {
@@ -347,14 +346,13 @@ h1, h2, h3, p { margin: 0; }
 }
 button.row, a.row { transition: background-color 0.15s; }
 button.row:active, a.row:active { background: var(--fill-3); transition: none; }
-.row-icon, .acc-tile {
+.row-icon {
   width: 36px; height: 36px; flex: none;
   display: grid; place-items: center;
   border-radius: 11px;
   color: var(--tint);
   background: color-mix(in srgb, var(--tint) 15%, transparent);
 }
-.acc-tile { border-radius: 10px; color: #fff; background: var(--tint); }
 .row-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .row-title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .row-sub { font-size: 0.824rem; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -364,9 +362,6 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .row-amt small { font-size: 0.706rem; font-weight: 500; color: var(--label-2); }
 .row-amt.tr { color: var(--label-2); }
 .entry.review .row-title::after { content: ""; display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--warn); margin-left: 6px; vertical-align: middle; }
-.acc-figs { display: flex; flex-direction: column; align-items: flex-end; font-weight: 600; }
-.acc-figs small { font-size: 0.706rem; font-weight: 500; color: var(--label-2); }
-.acc-figs small.in { color: var(--good); }
 .chev { color: var(--label-3); }
 
 .review-row {
@@ -960,17 +955,11 @@ html.sheet-open { overflow: hidden; }
 .swatch[aria-checked="true"] .i { opacity: 1; }
 .swatch:active { transform: scale(0.9); }
 .accent-swatch { width: 38px; height: 38px; background: linear-gradient(160deg, var(--sw-top), var(--sw)); }
-.card-pick { display: grid; gap: 8px; }
-.card-pick + .card-pick { padding-top: 12px; border-top: 0.5px solid var(--sep); }
-.card-pick .ap-label { align-items: center; justify-content: flex-start; gap: 8px; color: var(--label); font-size: 0.882rem; }
-.card-pick .acc-dot { width: 10px; height: 10px; }
-.card-pick .swatches { gap: 8px; }
-.card-pick .swatch { width: 28px; height: 28px; }
 .reset-btn { justify-self: start; font-size: 0.882rem; }
 
 /* ───── Swipe to delete ───── */
 .swipe { position: relative; overflow: hidden; background: var(--neg); }
-.swipe .entry { position: relative; z-index: 1; background: var(--bg-2); touch-action: pan-y; will-change: transform; }
+.swipe .entry { position: relative; z-index: 1; background: var(--bg-2); touch-action: pan-y; }
 .swipe .entry:active { background: color-mix(in srgb, var(--label) 6%, var(--bg-2)); }
 .swipe-del {
   position: absolute; inset: 0;
