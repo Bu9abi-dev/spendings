@@ -4,6 +4,8 @@
  * Paste this whole file into Extensions → Apps Script of your (empty) Google Sheet,
  * run `setup` once, then Deploy → New deployment → Web app
  * (Execute as: Me, Who has access: Anyone). See SETUP.md for the full walkthrough.
+ * Or let the app do all of that: Settings → Set up with Google (it uses docs/backend/Code.gs,
+ * an exact copy of this file, so keep the two the same).
  *
  * Tabs it manages:
  *   Ledger     — every entry, one row each. The source of truth. Edit with care.
@@ -155,7 +157,9 @@ function getToken_() {
   var props = PropertiesService.getScriptProperties();
   var t = props.getProperty('TOKEN');
   if (!t) {
-    t = Utilities.getUuid().replace(/-/g, '').slice(0, 24);
+    // A sheet made by the app's "Sign in with Google" setup brings its key in a small Bootstrap file.
+    var boot = typeof SPENDINGS_BOOTSTRAP !== 'undefined' ? SPENDINGS_BOOTSTRAP : null;
+    t = boot && /^[A-Za-z0-9]{16,64}$/.test(boot.token || '') ? boot.token : Utilities.getUuid().replace(/-/g, '').slice(0, 24);
     props.setProperty('TOKEN', t);
   }
   return t;
@@ -185,6 +189,8 @@ function doPost(e) {
     return json_({ ok: false, error: 'The sheet is busy. Try again in a moment.' });
   }
   try {
+    // A brand-new sheet made by the app's setup has no tabs yet: build them on its first request.
+    if (!SpreadsheetApp.getActive().getSheetByName(LEDGER)) setup();
     switch (action) {
       case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName() });
       case 'list': return json_(listAll_());
