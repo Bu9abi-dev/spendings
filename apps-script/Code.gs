@@ -277,7 +277,7 @@ function doPost(e) {
     // a sheet made by the setup guide has no tabs until `install` runs: build them first for anything else
     if (action !== 'ping' && action !== 'install' && !SpreadsheetApp.getActive().getSheetByName(LEDGER)) setupSheet_();
     switch (action) {
-      case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName() });
+      case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName(), features: FEATURES });
       case 'install': return json_(install_());
       case 'list': return json_(listAll_());
       case 'applepay': return json_(addApplePay_(body));
@@ -439,7 +439,32 @@ function logCardSpend_(s, p) {
   }
   if (problems.indexOf('category') >= 0) msg += '\nAdded to Needs review';
   if (res.duplicates) msg = 'Already logged · ' + msg;
+  // last line: how this category is doing against its limit (never lets a bad Extras value fail the logging)
+  if (!isMove && saved.type === 'Spend' && category) {
+    try { var bl = budgetLine_(category, saved.cycle); if (bl) msg += '\n' + bl; } catch (err) { /* the payment is logged; skip the line */ }
+  }
   return { ok: true, message: msg, entry: saved, duplicate: !!res.duplicates };
+}
+
+/** "Food: AED 412 of 500 this cycle (82%)" for a category that has a limit in the `budgets` extra
+    ({ v: 1, limits: { <id>: AED } }), else ''. Same gross spend as the app's Insights (docs/js/budgets.js):
+    Spend entries only, so transfers aren't counted and refunds aren't netted off. The name is the renamed
+    label from the `categories` extra when there is one. */
+function budgetLine_(category, cycle) {
+  var ex = readExtras_();
+  var limits = ex.budgets && typeof ex.budgets === 'object' && ex.budgets.limits && typeof ex.budgets.limits === 'object' ? ex.budgets.limits : null;
+  if (!limits || !Object.prototype.hasOwnProperty.call(limits, category)) return '';
+  var limit = Number(limits[category]);
+  if (!isFinite(limit) || limit <= 0) return '';
+  var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  var n = sh.getLastRow() - 1;
+  var spent = 0;
+  if (n > 0) sh.getRange(2, 1, n, COLS.length).getValues().forEach(function (r) {
+    if (r[C['Type']] === 'Spend' && String(r[C['Cycle']]) === cycle && r[C['Category']] === category) spent += Number(r[C['Amount (AED)']]) || 0;
+  });
+  var names = ex.categories && typeof ex.categories === 'object' && ex.categories.names && typeof ex.categories.names === 'object' ? ex.categories.names : {};
+  var label = typeof names[category] === 'string' && names[category].trim() ? names[category].trim() : category;
+  return label + ': ' + fmtMoney_(spent, 'AED') + ' of ' + Math.round(limit * 100) / 100 + ' this cycle (' + Math.floor(spent / limit * 100) + '%)';
 }
 
 /** Which of your accounts a merchant name is, by its Wallet-name word ("BOTIM MONEY" → BOTIM). Whole words only. */

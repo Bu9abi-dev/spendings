@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **30 Oct 2026**, at **v27**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **30 Oct 2026**, at **v28**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -61,9 +61,9 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v27, 30 Oct 2026)
+## 5. Current state (v28, 30 Oct 2026)
 
-**Live on main** (newest first): v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
@@ -74,7 +74,8 @@ and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New
    version). Covers v12 Extras tab, v13 Shortcut fixes, v18 custom categories from the Shortcut, v22 BNPL guard,
-   and (once merged) the people/split guards. Until then, feature settings live on the phone only and sync later.
+   v24 people/split guards, v25 setup install + key adoption, v28 budget line in the
+   Apple Pay notification. Until then, feature settings live on the phone only and sync later.
 2. **For Sign in with Google**: create a Google Cloud OAuth client ID (steps in SETUP.md → "Switch on Sign in with Google") and put it in
    `docs/js/config.js`; turn on the Apps Script API at script.google.com/home/usersettings.
 3. Check on a real iPhone: "Save as PDF" in the monthly report from the home-screen app.
@@ -98,7 +99,7 @@ for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** not
 
 ## 7. Session log (newest first)
 
-### 30 Oct 2026 · loop session (v15 → v27)
+### 30 Oct 2026 · loop session (v15 → v28)
 - Took over six wave-1 threads that had hit their usage limit. Ran councils over every branch, applied fixes, merged:
   activity filters (v15), smart categories (v16), monthly report (v17), custom categories (v18, asked for by
   Abdullah), budgets (v19), subscriptions + one Home notice (v20), outbox race fix (v21, found while fixing a flaky

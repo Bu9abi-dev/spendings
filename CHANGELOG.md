@@ -40,7 +40,16 @@ timeline
         v25 : Setup guide : Sign in with Google (off until set up) : Never overwrites
         v26 : Your week : Allowance pace alert : One pace rule
         v27 : Faster Activity and search : Same numbers
+        v28 : Budget line in the Apple Pay notification : Smarter script check
 ```
+
+---
+
+## v28: Budget line in the Apple Pay notification
+**30 October 2026** · sheet update needed
+
+- The sheet part: when you pay with Apple Pay (or a bank alert logs a payment) in a category that has a limit, the notification adds one line, e.g. "Food: AED 412 of 500 this cycle (82%)". Needs the script update.
+- The app now asks the sheet's script what it can do, instead of guessing from error messages, so it knows sooner when the script needs updating.
 
 ---
 

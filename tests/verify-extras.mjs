@@ -14,6 +14,8 @@ const token = ctx.getToken_();
 const URL_ = 'https://script.google.com/macros/s/TEST/exec';
 const server = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, ...body }) } }).text);
 
+let featuresOnly = false; // a script that lists its features (without extras) and answers anything else with a different error
+let extrasCalls = 0;
 let oldScript = true; // pretend the sheet still runs the script from before the Extras tab
 // hold(match) keeps the next matching request waiting until release() is called, so a test can
 // change things while that request is still on its way to the sheet
@@ -25,9 +27,12 @@ await c.route('https://script.google.com/**', async (route) => {
   const body = JSON.parse(route.request().postData());
   if (holding?.match(body)) { const h = holding; holding = null; await new Promise((release) => h.arrived(release)); }
   let out;
-  if (oldScript && body.action === 'extras') out = JSON.stringify({ ok: false, error: 'Unknown action: extras' });
+  if (body.action === 'extras') extrasCalls++;
+  if (featuresOnly && body.action === 'extras') out = JSON.stringify({ ok: false, error: 'Nope' });
+  else if (oldScript && body.action === 'extras') out = JSON.stringify({ ok: false, error: 'Unknown action: extras' });
   else {
     out = ctx.doPost({ postData: { contents: route.request().postData() } }).text;
+    if (featuresOnly && (body.action === 'list' || body.action === 'ping')) { const d = JSON.parse(out); delete d.extras; d.features = ['install']; out = JSON.stringify(d); }
     if (oldScript && body.action === 'list') { const d = JSON.parse(out); delete d.extras; out = JSON.stringify(d); }
   }
   await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out });
@@ -112,6 +117,28 @@ await app((st, id) => st.updateEntry(id, { amount: 9 }), added); // edits an ent
 release();
 await settle();
 ok(server({ action: 'list' }).entries.find((e) => e.id === added)?.amount === 9, 'an edit made while its entry is still being added reaches the sheet');
+
+// 3b. a script that lists its features: no `extras` there means old, without matching any error text
+featuresOnly = true; extrasCalls = 0;
+await p.waitForTimeout(31000);
+await app((st) => st.sync());
+ok(await app((st) => JSON.stringify(st.state.scriptFeatures) === '["install"]'), 'the features the script sends are remembered');
+await app((st) => st.saveExtra('viaFeatures', { v: 1 }));
+await app((st) => st.addEntry({ type: 'Spend', amount: 3, account: 'ADCB', category: 'Groceries', merchant: 'FeatureShop' }));
+await settle();
+ok(extrasCalls === 0, 'a script without the extras feature is not even sent an extra');
+ok(await app((st) => st.extrasOnPhoneOnly() && st.getExtra('viaFeatures')?.v === 1), 'its extras stay on the phone');
+ok(server({ action: 'list' }).entries.some((e) => e.merchant === 'FeatureShop'), 'and the queue behind them still goes through');
+ok(await app((st) => st.scriptLacks('extras') && !st.scriptLacks('install') && !st.scriptLacks('x', null)), 'scriptLacks: only a script that listed its features can lack one');
+const skipped = await app(async (st) => { st.state.scriptFeatures = []; return st.installSheet('https://script.google.com/macros/s/NONE/exec', 'x'); });
+ok(skipped.old === true, 'a script that lists features without install is not asked to install (counts as set up by hand)');
+await app((st) => { st.state.scriptFeatures = ['install']; });
+// the updated script sends extras again: the phone-only value goes up
+featuresOnly = false; oldScript = false;
+await p.waitForTimeout(31000);
+await app((st) => st.sync());
+await settle();
+ok(server({ action: 'list' }).extras.viaFeatures?.v === 1 && await app((st) => !st.extrasOnPhoneOnly()), 'once the script lists extras the phone-only value is sent up');
 
 // 4. survives a reload (cached)
 await p.reload();
