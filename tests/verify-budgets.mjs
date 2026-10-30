@@ -142,7 +142,7 @@ ok(await p.$$eval('.budget-nudge', (x) => x.length) === 1, 'Home shows just the 
 await p.evaluate(async (cid) => { (await import('/js/budgets-settings.js')).setLimit(cid, 1); }, food2.id);
 await p.waitForSelector('.budget-nudge.over');
 await p.evaluate(async () => (await import('/js/store.js')).saveExtra('recurring', null)); // subscriptions back
-await p.waitForTimeout(300);
+await p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))); // Home has redrawn
 ok(await p.$$eval('.budget-nudge, .sub-line', (x) => x.length) === 1 && await p.$('.budget-nudge.over'), 'over a limit outranks a subscription: still one line on Home');
 await p.evaluate(async () => (await import('/js/store.js')).undo()); // subscriptions set aside again
 ok(/over its limit by AED/.test(await p.textContent('.budget-nudge')), 'over the limit says by how much');

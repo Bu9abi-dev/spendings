@@ -68,7 +68,17 @@ await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');
 await p.waitForSelector('.status-row .row-title:text("Connected")');
 const app = (fn, arg) => p.evaluate(async ([src, a]) => { const st = await import('/js/store.js'); return new Function('st', 'a', `return (${src})(st, a)`)(st, a); }, [fn.toString(), arg]);
-const settle = () => p.waitForFunction(async () => { const st = await import('/js/store.js'); return st.state.outbox.length === 0; }, null, { timeout: 8000 });
+// Waits until every queued change has gone. Polls inside evaluate: waitForFunction treats a returned
+// Promise as truthy, so an async predicate there returns at once (that was this file's flake under load).
+const settle = () => p.evaluate(async () => {
+  const st = await import('/js/store.js');
+  for (const t0 = Date.now(); st.state.outbox.length;) {
+    if (Date.now() - t0 > 15000) throw new Error(`outbox still has ${st.state.outbox.length} change(s)`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+});
+// Waits until the Needs review sheet shows n cards (it redraws a moment after the change lands).
+const cards = (n) => p.waitForFunction((k) => document.querySelectorAll('.review-card').length === k, n, { timeout: 15000 });
 
 // past entries typed in the app, then three bank-style Apple Pay payments
 await app((st) => { st.addEntry({ type: 'Spend', amount: 120, account: 'ADCB', category: 'Groceries', merchant: 'Carrefour' }); st.addEntry({ type: 'Spend', amount: 90, account: 'ADCB', category: 'Groceries', merchant: 'Carrefour' }); });
@@ -91,12 +101,14 @@ await p.screenshot({ path: '/tmp/categorize-review.png' });
 
 await p.click('.review-card .rc-suggest[data-all] >> nth=0');
 await settle();
+await cards(2);
 let srv = post({ action: 'list' }).entries.filter((e) => /CARREFOUR MCC/.test(e.merchant));
 ok(srv.length === 2 && srv.every((e) => e.category === 'Groceries' && e.status === 'OK'), '"File all 2" files both in the sheet');
 ok(await p.locator('.review-card').count() === 2, 'the medium and low cards are left');
 ok(await app((st) => st.lastAction()) === 'Filed 2 from CARREFOUR MCC 5411 ABU DHABI AE as Groceries', 'the two filings are one undo step');
 await p.click('.toast-action');
 await settle();
+await cards(4);
 srv = post({ action: 'list' }).entries.filter((e) => /CARREFOUR MCC/.test(e.merchant));
 ok(srv.every((e) => !e.category && e.status === 'Review'), 'one Undo puts both back in Needs review, in the sheet too');
 ok(await p.locator('.review-card').count() === 4, 'the sheet redraws with all four cards after Undo');
@@ -104,6 +116,7 @@ ok(await app((st) => st.canUndo() && st.lastAction().startsWith('Added')), 'undo
 // accept-all files only the high-confidence ones
 await p.click('.rc-accept-all');
 await settle();
+await cards(2);
 srv = post({ action: 'list' }).entries;
 ok(srv.filter((e) => /CARREFOUR MCC/.test(e.merchant)).every((e) => e.category === 'Groceries'), 'accept-all filed the two high-confidence Carrefour payments');
 ok(srv.filter((e) => /CARREFOUR MARKET|ADNOC/.test(e.merchant)).every((e) => !e.category && e.status === 'Review'), 'accept-all left the medium (Carrefour Market) and low (ADNOC) payments alone');
@@ -111,7 +124,7 @@ ok(/Undo puts these 2 back/.test(await p.textContent('#toast')), 'the toast says
 await p.click('[data-act="done"]');
 
 // the add sheet uses the same matching
-await p.waitForTimeout(400);
+await p.waitForFunction(() => !document.querySelector('.sheet') && !document.getElementById('app').inert);
 await p.click('.fab');
 await p.waitForSelector('.sheet .keypad');
 await p.fill('input[name="merchant"]', 'carrefour market');

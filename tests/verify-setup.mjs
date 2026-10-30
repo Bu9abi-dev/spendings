@@ -243,6 +243,9 @@ async function fresh() {
   p.on('pageerror', (e) => errors.push(e.message));
   return { c, p };
 }
+// The app has drawn its first screen and had two frames to open (or not open) the guide.
+const booted = (p) => p.waitForFunction(() => document.querySelector('#view')?.children.length > 0 && document.readyState === 'complete')
+  .then(() => p.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0))))));
 const sheetList = (env, token) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text);
 
 await check('a fresh phone opens the guide at Home; Try with demo data closes it and shows demo data', async () => {
@@ -256,7 +259,7 @@ await check('a fresh phone opens the guide at Home; Try with demo data closes it
   await p.waitForSelector('.setup-sheet', { state: 'detached' });
   assert.equal(await p.evaluate(async () => (await import('/js/store.js')).isDemo()), true);
   await p.reload();
-  await p.waitForTimeout(600);
+  await booted(p);
   assert.equal(await p.locator('.setup-sheet').count(), 0, 'demo mode: no guide');
   await c.close();
 });
@@ -265,17 +268,17 @@ await check('links straight to Settings, ?notour and "Not now" don\'t open it ag
   const { c, p } = await fresh();
   await p.goto(`${BASE}/#settings`);
   await p.waitForSelector('input[name="url"]');
-  await p.waitForTimeout(400);
+  await booted(p);
   assert.equal(await p.locator('.setup-sheet').count(), 0);
   await p.goto(`${BASE}/?notour=1#home`);
-  await p.waitForTimeout(500);
+  await booted(p);
   assert.equal(await p.locator('.setup-sheet').count(), 0);
   await p.goto(`${BASE}/#home`);
   await p.waitForSelector('.setup-sheet');
   await p.click('[data-su="close"]');
   await p.waitForSelector('.setup-sheet', { state: 'detached' });
   await p.reload();
-  await p.waitForTimeout(600);
+  await booted(p);
   assert.equal(await p.locator('.setup-sheet').count(), 0, 'put off: stays closed');
   // Home's "Set up" and Settings â†’ Set up step by step open it again
   await p.click('.onboard [data-act="setup-guide"]');
@@ -333,7 +336,7 @@ await check('no client ID: accounts and money, then "Paste URL and key" sends th
   await p.waitForSelector('.setup-sheet', { state: 'detached' });
   await p.goto(`${BASE}/#home`);
   await p.reload();
-  await p.waitForTimeout(700);
+  await booted(p);
   assert.equal(await p.locator('.setup-sheet').count(), 0, 'connected: never shown again');
   assert.equal(await p.locator('.onboard').count(), 0);
   await c.close();
@@ -442,7 +445,7 @@ await check('Sign in with Google (all Google calls faked): Apps Script API off â
   // reload mid-way: it comes back at the allow step, not at the start
   await p.reload();
   await p.waitForSelector('.su-allow');
-  await p.waitForTimeout(3000);
+  for (const t0 = Date.now(); !pings.length && Date.now() - t0 < 15000;) await new Promise((r) => setTimeout(r, 100));
   assert.ok(pings.length >= 1, 'it keeps asking the sheet');
   assert.ok(!env.props.TOKEN, 'nothing reached the script yet');
   allowed = true;

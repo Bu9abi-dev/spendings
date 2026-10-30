@@ -56,6 +56,13 @@ const settle = () => p.evaluate(async () => {
   }
 });
 
+// Moves the page's clock forward 31s (Date.now only) instead of sleeping through the store's 30s
+// "the list was just read" window: no real waiting, and nothing to go wrong when the machine is slow.
+const skipPastFreshWindow = () => p.evaluate(() => {
+  if (!window.__realNow) { window.__realNow = Date.now.bind(Date); window.__skew = 0; Date.now = () => window.__realNow() + window.__skew; }
+  window.__skew += 31000;
+});
+
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };
 
@@ -74,7 +81,7 @@ ok(await app((st) => st.getExtra('budgets')?.Groceries === 600), 'old script: a 
 oldScript = false;
 await app((st) => st.saveExtra('theme', { v: 1 }));
 await settle();
-await p.waitForTimeout(31000); // past the "list was just read" window, so the next sync reads the sheet
+await skipPastFreshWindow(); // past the "list was just read" window (30s), so the next sync reads the sheet
 await app((st) => st.sync());
 await settle();
 ok(server({ action: 'list' }).extras.budgets?.Groceries === 600, 'updated script: the phone-only budget reaches the Extras tab and beats the older sheet value');
@@ -90,7 +97,7 @@ await app((st) => st.undo());
 await settle();
 ok(server({ action: 'list' }).extras.budgets.Groceries === 600, 'undo puts the old value back in the sheet');
 server({ action: 'extras', key: 'goals', value: [{ id: 'g', name: 'Car' }] });
-await p.waitForTimeout(31000); // past the "list was just read" window
+await skipPastFreshWindow(); // past the "list was just read" window (30s), so the next sync reads the sheet
 await app((st) => st.sync());
 ok(await app((st) => st.getExtra('goals')?.[0]?.name === 'Car'), 'a value saved in the sheet shows up in the app');
 
@@ -120,9 +127,10 @@ ok(server({ action: 'list' }).entries.find((e) => e.id === added)?.amount === 9,
 
 // 3b. a script that lists its features: no `extras` there means old, without matching any error text
 featuresOnly = true; extrasCalls = 0;
-await p.waitForTimeout(31000);
+await skipPastFreshWindow(); // past the "list was just read" window (30s), so the next sync reads the sheet
 await app((st) => st.sync());
-ok(await app((st) => JSON.stringify(st.state.scriptFeatures) === '["install"]'), 'the features the script sends are remembered');
+// sync() joins a sync that is already running (and reads again after it), so wait for the read to land
+ok(await app(async (st) => { for (const t0 = Date.now(); Date.now() - t0 < 10000;) { if (JSON.stringify(st.state.scriptFeatures) === '["install"]') return true; await new Promise((r) => setTimeout(r, 50)); } return false; }), 'the features the script sends are remembered');
 await app((st) => st.saveExtra('viaFeatures', { v: 1 }));
 await app((st) => st.addEntry({ type: 'Spend', amount: 3, account: 'ADCB', category: 'Groceries', merchant: 'FeatureShop' }));
 await settle();
@@ -135,7 +143,7 @@ ok(skipped.old === true, 'a script that lists features without install is not as
 await app((st) => { st.state.scriptFeatures = ['install']; });
 // the updated script sends extras again: the phone-only value goes up
 featuresOnly = false; oldScript = false;
-await p.waitForTimeout(31000);
+await skipPastFreshWindow(); // past the "list was just read" window (30s), so the next sync reads the sheet
 await app((st) => st.sync());
 await settle();
 ok(server({ action: 'list' }).extras.viaFeatures?.v === 1 && await app((st) => !st.extrasOnPhoneOnly()), 'once the script lists extras the phone-only value is sent up');
