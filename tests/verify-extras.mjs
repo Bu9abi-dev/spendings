@@ -15,10 +15,15 @@ const URL_ = 'https://script.google.com/macros/s/TEST/exec';
 const server = (body) => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, ...body }) } }).text);
 
 let oldScript = true; // pretend the sheet still runs the script from before the Extras tab
+// hold(match) keeps the next matching request waiting until release() is called, so a test can
+// change things while that request is still on its way to the sheet
+let holding = null;
+const hold = (match) => new Promise((arrived) => { holding = { match, arrived }; });
 const b = await chromium.launch();
 const c = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
 await c.route('https://script.google.com/**', async (route) => {
   const body = JSON.parse(route.request().postData());
+  if (holding?.match(body)) { const h = holding; holding = null; await new Promise((release) => h.arrived(release)); }
   let out;
   if (oldScript && body.action === 'extras') out = JSON.stringify({ ok: false, error: 'Unknown action: extras' });
   else {
@@ -30,13 +35,21 @@ await c.route('https://script.google.com/**', async (route) => {
 const p = await c.newPage();
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
-await p.goto((process.env.BASE || 'http://localhost:8765/') + '#settings');
+await p.goto((process.env.BASE || 'http://localhost:8765') + '/#settings');
 await p.fill('input[name="url"]', URL_);
 await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');
 await p.waitForSelector('.status-row .row-title:text("Connected")');
 const app = (fn, arg) => p.evaluate(async ([src, a]) => { const st = await import('/js/store.js'); return new Function('st', 'a', `return (${src})(st, a)`)(st, a); }, [fn.toString(), arg]);
-const settle = () => p.waitForFunction(async () => { const st = await import('/js/store.js'); return st.state.outbox.length === 0; }, null, { timeout: 8000 });
+// waits until every queued change has gone. (Not waitForFunction with an async predicate: it treats
+// the returned Promise as truthy and returns at once, which made this file flaky.)
+const settle = () => p.evaluate(async () => {
+  const st = await import('/js/store.js');
+  for (const t0 = Date.now(); st.state.outbox.length;) {
+    if (Date.now() - t0 > 8000) throw new Error(`outbox still has ${st.state.outbox.length} change(s)`);
+    await new Promise((r) => setTimeout(r, 50));
+  }
+});
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };
@@ -82,6 +95,23 @@ await settle();
 await app((st) => st.undo());
 await settle();
 ok(!('fresh' in server({ action: 'list' }).extras) && await app((st) => st.getExtra('fresh', 'none') === 'none'), 'undoing a new key clears it in the sheet and the app');
+
+// a change made while an earlier one is still on its way doesn't knock a different change off the queue
+let release = hold((b) => b.action === 'extras' && b.key === 'race');
+await app((st) => st.saveExtra('race', { v: 1 }));
+release = await release; // the first 'race' is now in flight
+await app((st) => st.saveExtra('queued', { v: 1 }));
+await app((st) => st.saveExtra('race', { v: 2 })); // replaces the queued copy of 'race', which is the one in flight
+release();
+await settle();
+ok(server({ action: 'list' }).extras.queued?.v === 1 && server({ action: 'list' }).extras.race?.v === 2, 'a key saved while another is sending still reaches the sheet');
+release = hold((b) => b.action === 'add' && b.entry?.merchant === 'Spinneys');
+const added = await app((st) => st.addEntry({ type: 'Spend', amount: 5, account: 'ADCB', category: 'Groceries', merchant: 'Spinneys' }).id);
+release = await release;
+await app((st, id) => st.updateEntry(id, { amount: 9 }), added); // edits an entry whose add is in flight
+release();
+await settle();
+ok(server({ action: 'list' }).entries.find((e) => e.id === added)?.amount === 9, 'an edit made while its entry is still being added reaches the sheet');
 
 // 4. survives a reload (cached)
 await p.reload();
