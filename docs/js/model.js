@@ -69,12 +69,14 @@ export function categoryMeta(id, type = 'Spend') {
 export const seriesColor = (slot) => (slot ? `var(--series-${slot})` : 'var(--series-other)');
 export const accountMeta = (id) => ALL_ACCOUNTS.find((a) => a.id === id) || { id, name: id || 'Unknown', role: '', colorId: 'graphite', color: 'var(--series-other)', archived: true };
 
-/** Calendar parts of a date as seen in Dubai. */
+/** Calendar parts of a date as seen in Dubai. Dubai is UTC+4 all year (no daylight saving), so
+    shifting by four hours and reading the UTC parts gives the same answer as a time-zone formatter,
+    far faster: this runs for every entry on every screen. */
 export function dubaiParts(date) {
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
-    timeZone: TZ, year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric', hourCycle: 'h23',
-  }).formatToParts(new Date(date)).map((x) => [x.type, x.value]));
-  return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, min: +p.minute };
+  const t = new Date(date).getTime() + 4 * 3600e3;
+  if (Number.isNaN(t)) return { y: NaN, m: NaN, d: NaN, h: NaN, min: NaN };
+  const u = new Date(t);
+  return { y: u.getUTCFullYear(), m: u.getUTCMonth() + 1, d: u.getUTCDate(), h: u.getUTCHours(), min: u.getUTCMinutes() };
 }
 
 /** Same rule as the sheet: with start day 27, 27 Sep → 26 Oct is cycle "2026-10". */

@@ -25,7 +25,19 @@ timeline
         v11 : Calmer syncing : No red error on a slow connection : Fewer sheet reads
     section 30 October 2026
         v12 : Money rows always add up : Extras tab for new features : Sheet update needed
+        v13 : Testing the Shortcut logs nothing : Arabic digits read right : Faster screens
 ```
+
+---
+
+## v13: Cleaner Shortcut tests and faster screens
+**30 October 2026** · sheet update needed
+
+- Tapping ▶ on the Apple Pay Shortcut to test it now shows "Connected ✓" and logs nothing. Before, it added an AED 0 entry to Needs review that you had to delete.
+- If your iPhone sends amounts in Arabic digits (٤٢٫٥٠), the sheet now reads them as 42.50 instead of 0.
+- A real payment whose amount can't be read is still kept in Needs review, so nothing is ever dropped.
+- Every screen works out dates faster. With a few thousand entries, Insights opens about three times quicker.
+- The sheet part needs the new `apps-script/Code.gs` pasted into Apps Script and a new version of the deployment published. If you haven't done v12's update yet, this one covers both.
 
 ---
 

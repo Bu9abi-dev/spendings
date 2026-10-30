@@ -222,6 +222,7 @@ function openShortcutGuide() {
         <li>Add <b>Show Notification</b> with <b>Dictionary Value</b> as the text. Done ✓</li>
       </ol>
       <div class="tip-card">${icon('sparkle', { size: 18 })}<p><b>Want it zero-tap?</b> Skip step 3 and send <code>Decide later</code> as the category. Merchants you’ve filed before are categorised automatically. The rest wait in <b>Needs review</b>.</p></div>
+      <div class="tip-card">${icon('check', { size: 18 })}<p><b>Testing it?</b> Tap <b>▶</b> on the Shortcut. The notification says <b>Connected ✓</b> and nothing is logged, because there was no real payment.</p></div>
       <div class="tip-card">${icon('warn', { size: 18 })}<p>If you pay with no signal, the Shortcut can’t reach the sheet and shows an error. Add that payment with <b>+</b> later.</p></div>
     </div>`,
     onMount(sheet, close) {
