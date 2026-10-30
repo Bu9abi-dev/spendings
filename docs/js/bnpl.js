@@ -12,14 +12,14 @@
 // { entry: '' } means "paid before I started tracking": paid, with no entry to point at.
 // auto: true marks a link the app found by itself. skip lists entries you unlinked from this plan,
 // so the app never links them to it again.
-import { dayKey, toAED, money, entryIds } from './model.js';
+import { dayKey, toAED, money, entryIds, shortDay as dayShort } from './model.js';
+import { t } from './i18n.js';
 
 export const PROVIDERS = ['Tabby', 'Tamara', 'Postpay', 'Cashew', 'Card plan'];
 export const CADENCES = [{ id: '2w', label: 'Every 2 weeks' }, { id: '1m', label: 'Monthly' }];
 // how close a ledger payment must be to count as a plan's payment ("sync"); see windows()
 export const MATCH_AED = 1, MATCH_DAYS = 5;
 
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
 /* ───── Days as 'YYYY-MM-DD' (Dubai calendar days, like dayKey) ───── */
 
@@ -29,7 +29,7 @@ export const addDays = (key, n) => fromUTC(toUTC(key) + n * 864e5);
 /** Whole days from a to b (b later = positive). */
 export const daysBetween = (a, b) => Math.round((toUTC(b) - toUTC(a)) / 864e5);
 /** "6 Nov" */
-export const shortDay = (key) => { const [, m, d] = key.split('-').map(Number); return `${d} ${MONTHS[m - 1]}`; };
+export const shortDay = (key) => dayShort(key); // in the current language (model.js)
 /** Midday Dubai time on that day, for code that wants a Date (cycles, sorting). */
 export const dayDate = (key) => new Date(`${key}T12:00:00+04:00`);
 
@@ -270,12 +270,12 @@ export function bnplNotice(plans, entries, today = dayKey(new Date()), payday = 
   if (!s.next) return null;
   const late = s.overdue.length > 0, d = daysBetween(today, s.next.due);
   if (!late && d > 7) return null;
-  const when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : `on ${shortDay(s.next.due)}`;
+  const when = d === 0 ? t('home.today') : d === 1 ? t('bn.tomorrow') : t('bn.onDate', { date: shortDay(s.next.due) });
   const beforePayday = payday ? dueBeforePayday(plans, entries, payday, today) : 0;
   const text = late
-    ? `Buy now, pay later: ${money(s.overdueAmount)} overdue since ${shortDay(s.overdue[0].due)}`
-    : `Buy now, pay later: ${money(s.owed)} still to pay · next ${money(s.next.amount)} ${when}`;
-  const sub = [late ? `${money(s.owed)} still to pay` : '', beforePayday ? `${money(beforePayday)} due before payday` : ''].filter(Boolean).join(' · ');
+    ? t('bn.overdueLine', { amt: money(s.overdueAmount), date: shortDay(s.overdue[0].due) })
+    : t('bn.dueLine', { owed: money(s.owed), amt: money(s.next.amount), when });
+  const sub = [late ? t('bn.stillToPay', { amt: money(s.owed) }) : '', beforePayday ? t('bn.beforePayday', { amt: money(beforePayday) }) : ''].filter(Boolean).join(' · ');
   return { priority: late ? 'overdue' : 'due', text, sub, owed: s.owed, beforePayday };
 }
 

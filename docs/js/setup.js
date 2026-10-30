@@ -2,7 +2,8 @@
 // make (or connect) your sheet → Apple Pay Shortcut → done. Answers stay in this phone's storage (sp.setup) until a sheet is
 // connected, then go up through the normal store functions (applySetup). "Sign in with Google"
 // makes the sheet for you (provision.js); without a client ID the guide offers the by-hand path.
-import { colorHex, fmt } from './model.js';
+import { colorHex, fmt, amtAED } from './model.js';
+import { t, isRTL } from './i18n.js';
 import { state, isConnected, isDemo, setDemo, setConnection, ping, installSheet, applySetup, sync } from './store.js';
 import { CARD_COLORS } from './theme.js';
 import { openSheet, toast, haptic, esc, reduceMotion } from './ui.js';
@@ -69,7 +70,7 @@ export function setupPlan(a, basePlan = []) {
   // other plan items you already had stay, unless they point at an account you removed
   const keep = basePlan.filter((p) => p.id !== 'salary' && p.id !== 'allowance' && (!p.from || names.has(p.from)) && (!p.to || names.has(p.to)));
   const plan = [];
-  if (+a.salary > 0) plan.push({ id: 'salary', name: 'Salary', kind: 'Income', amount: +a.salary, day: Math.min(28, Math.max(1, +a.salaryDay || cycleStart)), from: '', to: pay, category: 'Salary' });
+  if (+a.salary > 0) plan.push({ id: 'salary', name: t('su.salary'), kind: 'Income', amount: +a.salary, day: Math.min(28, Math.max(1, +a.salaryDay || cycleStart)), from: '', to: pay, category: t('su.salary') });
   if (allowance > 0 && allow !== pay) plan.push({ id: 'allowance', name: 'Allowance', kind: 'Move', amount: allowance, day: cycleStart, from: pay, to: allow, category: '' });
   return { accounts, settings: { allowanceAccount: allow, emergencyAccount: pay, cycleStart, allowance }, plan: [...plan, ...keep] };
 }
@@ -83,8 +84,8 @@ const appLink = () => `${location.origin}${location.pathname}`;
 function popupError() {
   popupMisses++;
   return new SetupError('popup', standalone()
-    ? 'Google’s sign-in window can’t open inside the Home Screen app. Open this page in Safari to sign in, or set your sheet up by hand below.'
-    : 'Google’s sign-in window didn’t open. Open this page in Safari to sign in (or allow pop-ups for this site), or set your sheet up by hand below.');
+    ? t('su.popupHome')
+    : t('su.popupSafari'));
 }
 function loadGis() {
   if (globalThis.google?.accounts?.oauth2) return Promise.resolve();
@@ -93,7 +94,7 @@ function loadGis() {
     s.src = 'https://accounts.google.com/gsi/client';
     s.async = true;
     s.onload = () => resolve();
-    s.onerror = () => { gis = null; s.remove(); reject(new SetupError('offline', 'Couldn’t load Google sign-in. Check your connection and try again.')); };
+    s.onerror = () => { gis = null; s.remove(); reject(new SetupError('offline', t('su.noGis'))); };
     document.head.append(s);
   }));
 }
@@ -115,8 +116,8 @@ function signIn() {
   const ask = () => new Promise((resolve, reject) => {
     pending = {
       done(r) {
-        if (r.error) return reject(new SetupError('cancelled', 'Sign-in didn’t finish. Tap Sign in with Google to try again.', r.error));
-        if (!google.accounts.oauth2.hasGrantedAllScopes(r, ...SCOPES)) return reject(new SetupError('scopes', 'Spendings needs all three permissions to make your sheet. Sign in again and leave every box ticked.'));
+        if (r.error) return reject(new SetupError('cancelled', t('su.notFinish'), r.error));
+        if (!google.accounts.oauth2.hasGrantedAllScopes(r, ...SCOPES)) return reject(new SetupError('scopes', t('su.scopes')));
         accessToken = { token: r.access_token, until: Date.now() + (+r.expires_in || 3600) * 1000 };
         resolve(r.access_token);
       },
@@ -126,9 +127,9 @@ function signIn() {
         if (e?.type === 'popup_closed') {
           if (standalone() || popupMisses > 0) return reject(popupError());
           popupMisses++;
-          return reject(new SetupError('cancelled', 'Sign-in was closed before it finished. Tap Sign in with Google to try again.'));
+          return reject(new SetupError('cancelled', t('su.closed')));
         }
-        reject(new SetupError('google', 'Google sign-in didn’t work. Try again in a moment.', e?.type || ''));
+        reject(new SetupError('google', t('su.googleFail'), e?.type || ''));
       },
     };
     tokenClient.requestAccessToken({ prompt: '' });
@@ -173,195 +174,195 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
   /* ── step bodies ── */
   const welcome = () => `
     <div class="su-hero">${icon('wallet', { size: 34 })}</div>
-    <h2 class="su-h">Welcome to Spendings</h2>
-    <p class="su-p">A calm place for your money, set up in a few minutes.</p>
+    <h2 class="su-h">${t('su.welcome')}</h2>
+    <p class="su-p">${t('su.calm')}</p>
     <ul class="su-list">
-      <li>${icon('bell', { size: 20 })}<span><b>Logs itself.</b> Apple Pay payments arrive with a tap, or none at all.</span></li>
-      <li>${icon('chart', { size: 20 })}<span><b>Knows what’s safe to spend</b> until your next payday.</span></li>
-      <li>${icon('sheet', { size: 20 })}<span><b>Yours.</b> Everything lives in your own Google Sheet.</span></li>
+      <li>${icon('bell', { size: 20 })}<span>${t('su.f1')}</span></li>
+      <li>${icon('chart', { size: 20 })}<span>${t('su.f2')}</span></li>
+      <li>${icon('sheet', { size: 20 })}<span>${t('su.f3')}</span></li>
     </ul>
-    <p class="su-small center su-needs">You’ll need a Google account. Setup takes about 5 minutes.</p>`;
+    <p class="su-small center su-needs">${t('su.needs')}</p>`;
 
-  const swatches = (a, i) => `<div class="swatches su-swatches" role="radiogroup" aria-label="Colour for ${esc(a.name || 'this account')}" ${saved.openColour === i ? '' : 'hidden'}>
+  const swatches = (a, i) => `<div class="swatches su-swatches" role="radiogroup" aria-label="${t('su.colourFor', { name: esc(a.name || t('su.thisAcc')) })}" ${saved.openColour === i ? '' : 'hidden'}>
       ${CARD_COLORS.map((c) => `<button type="button" role="radio" class="swatch" aria-checked="${c.id === a.color}" aria-label="${esc(c.name)}" data-su-colour="${i}:${c.id}" style="--sw:${c.hex}">${icon('check', { size: 14 })}</button>`).join('')}
     </div>`;
   const roleChips = () => {
     const a = answers(), list = a.accounts.filter((x) => x.name.trim());
     const chips = (field) => list.map((x) => `<button type="button" class="chip${a[field] === x.name ? ' on' : ''}" data-su-role="${field}" data-name="${esc(x.name)}" aria-pressed="${a[field] === x.name}" style="--chip:${colorHex(x.color)}"><i class="acc-dot"></i>${esc(x.name)}</button>`).join('');
-    return `<h3 class="su-q">Your pay lands in</h3><div class="chips accounts">${chips('pay')}</div>
-      <h3 class="su-q">Your allowance card</h3><div class="chips accounts">${chips('allowanceAccount')}</div>
-      <p class="group-foot su-foot-note">The allowance card is the one you spend your own money from. They can be the same account.</p>`;
+    return `<h3 class="su-q">${t('su.payLandsIn')}</h3><div class="chips accounts">${chips('pay')}</div>
+      <h3 class="su-q">${t('su.allowCard')}</h3><div class="chips accounts">${chips('allowanceAccount')}</div>
+      <p class="group-foot su-foot-note">${t('su.allowCardNote')}</p>`;
   };
   const accountsStep = () => {
     const a = answers();
-    return `<h2 class="su-h">Your cards and accounts</h2>
-    <p class="su-p">Name each one like your bank does. The Wallet name is part of the card’s name in Apple Wallet, so Apple Pay payments land on the right card.</p>
+    return `<h2 class="su-h">${t('su.cardsTitle')}</h2>
+    <p class="su-p">${t('su.cardsLede')}</p>
     <section class="group su-accts">
       ${a.accounts.map((x, i) => `<div class="su-acct" data-i="${i}">
         <div class="su-acct-top">
-          <button type="button" class="su-dot" data-su-colours="${i}" style="--c:${colorHex(x.color)}" aria-label="Colour for ${esc(x.name || 'this account')}" aria-expanded="${saved.openColour === i}"></button>
-          <input class="su-name" data-su-field="name" data-i="${i}" type="text" maxlength="24" autocomplete="off" autocapitalize="words" value="${esc(x.name)}" placeholder="Name, e.g. ADCB" aria-label="Account name">
-          <button type="button" class="icon-btn su-del" data-su-del="${i}" aria-label="Remove ${esc(x.name || 'this account')}" ${a.accounts.length <= 1 ? 'disabled' : ''}>${icon('x', { size: 18 })}</button>
+          <button type="button" class="su-dot" data-su-colours="${i}" style="--c:${colorHex(x.color)}" aria-label="${t('su.colourFor', { name: esc(x.name || t('su.thisAcc')) })}" aria-expanded="${saved.openColour === i}"></button>
+          <input class="su-name" data-su-field="name" data-i="${i}" type="text" maxlength="24" autocomplete="off" autocapitalize="words" value="${esc(x.name)}" placeholder="${t('su.namePh')}" aria-label="${t('su.accName')}">
+          <button type="button" class="icon-btn su-del" data-su-del="${i}" aria-label="${t('su.removeAcc', { name: esc(x.name || t('su.thisAcc')) })}" ${a.accounts.length <= 1 ? 'disabled' : ''}>${icon('x', { size: 18 })}</button>
         </div>
-        <label class="su-wallet"><span>Wallet name has</span><input data-su-field="wallet" data-i="${i}" type="text" maxlength="40" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(x.wallet)}" placeholder="${x.name.toLowerCase() === 'cash' ? 'not a card' : 'e.g. adcb'}"></label>
+        <label class="su-wallet"><span>${t('su.walletHas')}</span><input data-su-field="wallet" data-i="${i}" type="text" maxlength="40" autocomplete="off" autocapitalize="off" spellcheck="false" value="${esc(x.wallet)}" placeholder="${x.name.toLowerCase() === 'cash' ? t('su.notCard') : t('su.egAdcb')}"></label>
         ${swatches(x, i)}
       </div>`).join('')}
     </section>
-    <button type="button" class="dup-btn su-add" data-su-add="1">${icon('plus', { size: 18 })}Add an account</button>
+    <button type="button" class="dup-btn su-add" data-su-add="1">${icon('plus', { size: 18 })}${t('home.addAcc')}</button>
     <div class="su-roles">${roleChips()}</div>`;
   };
 
   const days = (sel) => Array.from({ length: 28 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${d === +sel ? 'selected' : ''}>${ordinal(d)}</option>`).join('');
   const moneyStep = () => {
     const a = answers();
-    return `<h2 class="su-h">Your money</h2>
-    <p class="su-p">Rough numbers are fine. You can change all of this later in Settings.</p>
+    return `<h2 class="su-h">${t('su.moneyTitle')}</h2>
+    <p class="su-p">${t('su.moneyLede')}</p>
     <section class="group form">
-      <label class="row input-row"><span>Allowance per cycle</span><span class="suffix-input"><em>AED</em><input name="su-allowance" type="number" inputmode="decimal" min="0" step="any" value="${esc(a.allowance || '')}" placeholder="0"></span></label>
-      <label class="row input-row"><span>Cycle starts on the</span><select name="su-cycle">${days(a.cycleStart)}</select></label>
+      <label class="row input-row"><span>${t('set.allowancePer')}</span><span class="suffix-input"><em>${t('cur.aed')}</em><input name="su-allowance" type="number" inputmode="decimal" min="0" step="any" value="${esc(a.allowance || '')}" placeholder="0"></span></label>
+      <label class="row input-row"><span>${t('set.cycleStarts')}</span><select name="su-cycle">${days(a.cycleStart)}</select></label>
     </section>
-    <p class="group-foot">Your allowance is what you plan to spend on yourself each pay cycle, from ${esc(a.allowanceAccount || 'your allowance card')}. Safe to spend counts down from it.</p>
-    <h3 class="su-q">Salary <span>optional</span></h3>
+    <p class="group-foot">${t('su.allowExplain', { acc: esc(a.allowanceAccount || t('su.yourAllowCard')) })}</p>
+    <h3 class="su-q">${t('su.salary')} <span>${t('su.optional')}</span></h3>
     <section class="group form">
-      <label class="row input-row"><span>Salary</span><span class="suffix-input"><em>AED</em><input name="su-salary" type="number" inputmode="decimal" min="0" step="any" value="${esc(a.salary || '')}" placeholder="0"></span></label>
-      <label class="row input-row"><span>Lands on the</span><select name="su-salday">${days(a.salaryDay)}</select></label>
+      <label class="row input-row"><span>${t('su.salary')}</span><span class="suffix-input"><em>${t('cur.aed')}</em><input name="su-salary" type="number" inputmode="decimal" min="0" step="any" value="${esc(a.salary || '')}" placeholder="0"></span></label>
+      <label class="row input-row"><span>${t('su.landsOn')}</span><select name="su-salday">${days(a.salaryDay)}</select></label>
     </section>
-    <p class="group-foot">On payday the app asks you to tap “It landed”, so your total never runs ahead of the bank.</p>`;
+    <p class="group-foot">${t('su.paydayTap')}</p>`;
   };
 
   const apiStep = () => `<div class="su-hero">${icon('gear', { size: 34 })}</div>
-    <h2 class="su-h">Turn on the Apps Script API</h2>
-    <p class="su-p">Google needs one switch on in your account before Spendings can make your sheet. You only do this once.</p>
+    <h2 class="su-h">${t('su.apiTitle')}</h2>
+    <p class="su-p">${t('su.apiLede')}</p>
     <ol class="su-steps">
-      <li>Tap <b>Open Apps Script settings</b>. It opens in a new tab; sign in with your Google account if asked.</li>
-      <li>Tap <b>Google Apps Script API</b> and turn it <b>On</b>.</li>
-      <li>Come back to this app (close the tab, or switch back to Spendings). You’ll be on this same step: tap <b>It’s on</b>.</li>
+      <li>${t('su.api1')}</li>
+      <li>${t('su.api2')}</li>
+      <li>${t('su.api3')}</li>
     </ol>
-    <a class="btn-tinted su-wide su-api" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">${icon('gear', { size: 18 })}Open Apps Script settings</a>
-    <p class="group-foot su-foot-note">Already on? Tap It’s on. If it’s still off later, the app says so and links here again.</p>`;
+    <a class="btn-tinted su-wide su-api" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">${icon('gear', { size: 18 })}${t('su.openApiSettings')}</a>
+    <p class="group-foot su-foot-note">${t('su.alreadyOn')}</p>`;
 
   const p = () => saved.progress || {};
   const taskState = (id) => {
     const pr = p();
-    const i = TASKS.findIndex((t) => t[0] === id);
+    const i = TASKS.findIndex((tk) => tk[0] === id);
     const doneN = isConnected() ? 3 : phase === 'allow' || phase === 'installing' || pr.url ? 2 : phase === 'working' || tokenValid() ? 1 : 0;
     const nowN = phase === 'signing' ? 0 : phase === 'working' ? 1 : phase === 'allow' || phase === 'installing' ? 2 : -1;
     return i === nowN ? 'now' : i < doneN ? 'done' : '';
   };
-  const tasks = () => `<ol class="su-tasks" aria-label="Progress">${TASKS.map(([id, label], i) => {
+  const tasks = () => `<ol class="su-tasks" aria-label="${t('su.progress')}">${TASKS.map(([id, label], i) => {
     const st = taskState(id);
-    return `<li class="${st}">${st === 'done' ? icon('check', { size: 16 }) : st === 'now' ? '<span class="su-spin" aria-hidden="true"></span>' : '<i aria-hidden="true"></i>'}<span>${i + 1}. ${label}</span>${st === 'now' ? '<em class="sr">in progress</em>' : st === 'done' ? '<em class="sr">done</em>' : ''}</li>`;
+    return `<li class="${st}">${st === 'done' ? icon('check', { size: 16 }) : st === 'now' ? '<span class="su-spin" aria-hidden="true"></span>' : '<i aria-hidden="true"></i>'}<span>${i + 1}. ${t(`su.task.${id}`)}</span>${st === 'now' ? `<em class="sr">${t('su.inProgress')}</em>` : st === 'done' ? `<em class="sr">${t('su.doneSr')}</em>` : ''}</li>`;
   }).join('')}</ol>`;
 
   const errorCard = () => {
     if (!error) return '';
     const e = error;
     const acts = [];
-    if (e.code === 'script-api-off') acts.push(`<a class="btn-plain" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">Open Apps Script settings</a>`);
+    if (e.code === 'script-api-off') acts.push(`<a class="btn-plain" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">${t('su.openApiSettings')}</a>`);
     if (e.code === 'popup') {
       // never an endless "tap again": Safari, or the by-hand path just below
-      acts.push(`<a class="btn-primary" href="${esc(appLink())}" target="_blank" rel="noopener" data-su-safari="1">Open in Safari</a>`);
-      acts.push(`<button type="button" class="btn-plain" data-copy="${esc(appLink())}">${icon('copy', { size: 16 })}Copy this page’s address</button>`);
-      if (!standalone() && popupMisses < 2) acts.push(`<button type="button" class="btn-plain" data-su="signin">Try again</button>`);
-    } else if (['auth', 'cancelled', 'scopes'].includes(e.code)) acts.push(`<button type="button" class="btn-primary" data-su="signin">Sign in with Google</button>`);
-    else if (e.code !== 'api-disabled' && e.code !== 'manual') acts.push(`<button type="button" class="btn-primary" data-su="retry">Try again</button>`);
+      acts.push(`<a class="btn-primary" href="${esc(appLink())}" target="_blank" rel="noopener" data-su-safari="1">${t('su.openSafari')}</a>`);
+      acts.push(`<button type="button" class="btn-plain" data-copy="${esc(appLink())}">${icon('copy', { size: 16 })}${t('su.copyAddr')}</button>`);
+      if (!standalone() && popupMisses < 2) acts.push(`<button type="button" class="btn-plain" data-su="signin">${t('su.tryAgain')}</button>`);
+    } else if (['auth', 'cancelled', 'scopes'].includes(e.code)) acts.push(`<button type="button" class="btn-primary" data-su="signin">${t('su.signInGoogle')}</button>`);
+    else if (e.code !== 'api-disabled' && e.code !== 'manual') acts.push(`<button type="button" class="btn-primary" data-su="retry">${t('su.tryAgain')}</button>`);
     return `<div class="tip-card su-error" role="alert">${icon('warn', { size: 18 })}<div><p>${esc(e.message)}</p>${acts.length ? `<div class="su-actions">${acts.join('')}</div>` : ''}</div></div>`;
   };
 
   const manual = () => `<details class="su-manual" ${manualOpen ? 'open' : ''}>
-      <summary>${GOOGLE_CLIENT_ID ? 'Set it up by hand instead' : 'Set up your sheet by hand'}${icon('chevD', { size: 16, cls: 'chev' })}</summary>
-      <p class="su-p">Make a Google Sheet, paste in the script, run <b>setup</b> and publish it as a web app. About 5 minutes. <a href="${MANUAL_GUIDE}" target="_blank" rel="noopener">Open the step-by-step guide</a>. Then paste what it gives you here:</p>
+      <summary>${GOOGLE_CLIENT_ID ? t('su.byHandInstead') : t('su.byHand')}${icon('chevD', { size: 16, cls: 'chev' })}</summary>
+      <p class="su-p">${t('su.manual', { a: `<a href="${MANUAL_GUIDE}" target="_blank" rel="noopener">`, b: '</a>' })}</p>
       <section class="group form">
-        <label class="row input-row"><span>Web app URL</span><input name="su-url" type="url" inputmode="url" placeholder="https://script.google.com/…/exec" value="${esc(saved.manualUrl || '')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-        <label class="row input-row"><span>App key</span><input name="su-token" type="text" placeholder="From your sheet" value="" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="row input-row"><span>${t('set.webUrl')}</span><input name="su-url" type="url" inputmode="url" placeholder="https://script.google.com/…/exec" value="${esc(saved.manualUrl || '')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+        <label class="row input-row"><span>${t('set.appKey')}</span><input name="su-token" type="text" placeholder="${t('su.fromSheet')}" value="" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       </section>
-      <button type="button" class="btn-tinted su-connect" data-su="connect">${icon('link', { size: 18 })}Connect</button>
+      <button type="button" class="btn-tinted su-connect" data-su="connect">${icon('link', { size: 18 })}${t('set.connect')}</button>
     </details>`;
 
   const sheetStep = () => {
     if (isConnected()) {
       return `<div class="su-hero good">${icon('check', { size: 34 })}</div>
-      <h2 class="su-h">Your sheet is connected</h2>
-      <p class="su-p">${state.sheetUrl ? `<a href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">Open your sheet</a>. ` : ''}Everything you log is saved there.</p>`;
+      <h2 class="su-h">${t('su.connectedTitle')}</h2>
+      <p class="su-p">${state.sheetUrl ? `<a href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${t('su.openYourSheet')}</a>. ` : ''}${t('su.savedThere')}</p>`;
     }
     const pr = p();
     const busy = phase === 'working' || phase === 'signing' || phase === 'installing';
-    const head = `<h2 class="su-h">Create your sheet</h2>`;
+    const head = `<h2 class="su-h">${t('su.createTitle')}</h2>`;
     if (!GOOGLE_CLIENT_ID) {
-      return `${head}<p class="su-p">Spendings keeps everything in a Google Sheet in your own account.</p>
-        <div class="tip-card">${icon('sparkle', { size: 18 })}<p><b>Sign in with Google isn’t switched on for this app yet.</b> When it is, the app makes the sheet for you. For now, set it up by hand. It takes about 5 minutes.</p></div>
+      return `${head}<p class="su-p">${t('su.keepsAll')}</p>
+        <div class="tip-card">${icon('sparkle', { size: 18 })}<p>${t('su.noGoogle')}</p></div>
         ${manual()}`;
     }
     if (phase === 'allow' || phase === 'installing') {
       return `${head}${tasks()}
         <div class="su-allow">
-          <p class="su-p"><b>One last thing.</b> Google asks you to allow Spendings to use this sheet. Tap <b>Allow Spendings</b>; it opens in a new tab. Then:</p>
+          <p class="su-p">${t('su.lastThing')}</p>
           <ol class="su-steps">
-            <li>Tap <b>Review permissions</b> and choose your Google account.</li>
-            <li>Google says “Google hasn’t verified this app”. Tap <b>Advanced</b>, then <b>Go to Spendings (unsafe)</b>.</li>
-            <li>Tap <b>Allow</b>.</li>
-            <li>Come back to this app (close the tab, or switch back to Spendings). You’ll land on this same step and it carries on by itself.</li>
+            <li>${t('su.allow1')}</li>
+            <li>${t('su.allow2')}</li>
+            <li>${t('su.allow3')}</li>
+            <li>${t('su.allow4')}</li>
           </ol>
-          <p class="su-small">Google says “unsafe” only because the script is yours and Google hasn’t reviewed it. It can only use the sheet it lives in.</p>
-          <a class="btn-primary su-wide" href="${esc(allowUrl(pr))}" target="_blank" rel="noopener" data-su-allow="1">Allow Spendings</a>
-          <p class="su-small center" aria-live="polite">${phase === 'installing' ? 'Allowed ✓ Setting up the tabs…' : 'Waiting for you to allow it. Come back here afterwards; the app carries on by itself.'}</p>
-          <button type="button" class="text-btn su-check" data-su="check">Check again</button>
-          <p class="su-small">Google didn’t ask? <a href="${esc(editorUrl(pr))}" target="_blank" rel="noopener">Open the script</a>, choose <b>setup</b> at the top, tap <b>Run</b> and allow it there.</p>
+          <p class="su-small">${t('su.unsafe')}</p>
+          <a class="btn-primary su-wide" href="${esc(allowUrl(pr))}" target="_blank" rel="noopener" data-su-allow="1">${t('su.allowSp')}</a>
+          <p class="su-small center" aria-live="polite">${phase === 'installing' ? t('su.allowedSetting') : t('su.waitingAllow')}</p>
+          <button type="button" class="text-btn su-check" data-su="check">${t('su.checkAgain')}</button>
+          <p class="su-small">${t('su.didntAsk', { a: `<a href="${esc(editorUrl(pr))}" target="_blank" rel="noopener">`, b: '</a>' })}</p>
         </div>
         ${errorCard()}
-        <p class="su-small su-storage">On iPhone, Safari and the Home Screen app keep separate storage. Finish here, where you started; at the end you get your Web app URL and app key with copy buttons to paste into the other one.</p>
-        <p class="su-small"><button type="button" class="text-btn su-small" data-su="startover">Start again with a new sheet</button></p>`;
+        <p class="su-small su-storage">${t('su.storage')}</p>
+        <p class="su-small"><button type="button" class="text-btn su-small" data-su="startover">${t('su.startOver')}</button></p>`;
     }
-    return `${head}<p class="su-p">Sign in and Spendings makes a sheet called <b>Spendings</b> in your Google Drive, with its script, ready to use. Your sign-in is only used for this and isn’t kept.</p>
+    return `${head}<p class="su-p">${t('su.signInLede')}</p>
       ${tasks()}
       ${errorCard()}
-      ${error ? '' : `<button type="button" class="btn-primary su-wide su-google" data-su="signin" ${busy ? 'disabled' : ''}>${busy ? '<span class="su-spin" aria-hidden="true"></span>Working…' : `${googleG()}Sign in with Google`}</button>`}
-      ${error ? '' : '<p class="su-small">Google may say it hasn’t verified this app: tap <b>Continue</b>. Best done in Safari, not the Home Screen app.</p>'}
-      ${pr.spreadsheetId && !busy ? '<p class="su-small"><button type="button" class="text-btn su-small" data-su="startover">Start again with a new sheet</button></p>' : ''}
+      ${error ? '' : `<button type="button" class="btn-primary su-wide su-google" data-su="signin" ${busy ? 'disabled' : ''}>${busy ? `<span class="su-spin" aria-hidden="true"></span>${t('su.working')}` : `${googleG()}${t('su.signInGoogle')}`}</button>`}
+      ${error ? '' : `<p class="su-small">${t('su.mayWarn')}</p>`}
+      ${pr.spreadsheetId && !busy ? `<p class="su-small"><button type="button" class="text-btn su-small" data-su="startover">${t('su.startOver')}</button></p>` : ''}
       ${manual()}`;
   };
 
   const shortcutStep = () => `<div class="su-hero">${icon('bell', { size: 34 })}</div>
-    <h2 class="su-h">Log Apple Pay by itself</h2>
-    <p class="su-p">A Shortcut automation saves each Apple Pay payment to your sheet as you pay. It takes about 5 minutes in the Shortcuts app.</p>
-    ${isConnected() ? `<div class="su-copy">${copyRow('Web app URL', state.conn.url)}${copyRow('App key', state.conn.token)}</div>` : ''}
-    <button type="button" class="btn-tinted su-wide" data-su="shortcut">${icon('bell', { size: 18 })}Show me how</button>
-    <p class="group-foot su-foot-note">You can do this later from Settings → Log Apple Pay payments.</p>`;
+    <h2 class="su-h">${t('su.apTitle')}</h2>
+    <p class="su-p">${t('su.apLede')}</p>
+    ${isConnected() ? `<div class="su-copy">${copyRow(t('set.webUrl'), state.conn.url)}${copyRow(t('set.appKey'), state.conn.token)}</div>` : ''}
+    <button type="button" class="btn-tinted su-wide" data-su="shortcut">${icon('bell', { size: 18 })}${t('su.showMe')}</button>
+    <p class="group-foot su-foot-note">${t('su.laterSettings')}</p>`;
 
   const doneStep = () => {
     const a = answers();
     const n = a.accounts.filter((x) => x.name.trim()).length;
     return `<div class="su-hero good">${icon('check', { size: 34 })}</div>
-    <h2 class="su-h">You’re all set</h2>
-    <p class="su-p">${isConnected() ? 'Your sheet is connected and everything you log is saved there.' : 'Your answers are kept on this phone. Connect a sheet any time from Settings → Set up step by step, and they go with it.'}</p>
+    <h2 class="su-h">${t('su.allSet')}</h2>
+    <p class="su-p">${isConnected() ? t('su.connectedAll') : t('su.keptPhone')}</p>
     ${!connectedAtStart ? `<ul class="su-list small">
-      <li>${icon('card', { size: 20 })}<span>${n} ${n === 1 ? 'account' : 'accounts'}${a.pay ? `, pay lands in ${esc(a.pay)}` : ''}</span></li>
-      <li>${icon('wallet', { size: 20 })}<span>${+a.allowance > 0 ? `Allowance AED ${fmt(+a.allowance, { whole: true })} from ${esc(a.allowanceAccount)}` : 'No allowance set yet'}</span></li>
-      <li>${icon('calendar', { size: 20 })}<span>Cycle starts on the ${ordinal(+a.cycleStart || 1)}</span></li>
+      <li>${icon('card', { size: 20 })}<span>${t('su.nAccounts', { n })}${a.pay ? t('su.payLandsAcc', { acc: esc(a.pay) }) : ''}</span></li>
+      <li>${icon('wallet', { size: 20 })}<span>${+a.allowance > 0 ? t('su.allowFrom', { amt: amtAED(fmt(+a.allowance, { whole: true })), acc: esc(a.allowanceAccount) }) : t('su.noAllow')}</span></li>
+      <li>${icon('calendar', { size: 20 })}<span>${t('su.cycleOn', { d: ordinal(+a.cycleStart || 1) })}</span></li>
     </ul>` : ''}
-    ${isConnected() ? `<div class="su-copy">${copyRow('Web app URL', state.conn.url)}${copyRow('App key', state.conn.token)}</div>
-      <p class="group-foot su-foot-note">Keep these for your Shortcut. If you set this up in Safari, paste them into the Home Screen app’s Settings too.</p>` : ''}`;
+    ${isConnected() ? `<div class="su-copy">${copyRow(t('set.webUrl'), state.conn.url)}${copyRow(t('set.appKey'), state.conn.token)}</div>
+      <p class="group-foot su-foot-note">${t('su.keepThese')}</p>` : ''}`;
   };
 
   const BODY = { welcome, accounts: accountsStep, money: moneyStep, api: apiStep, sheet: sheetStep, shortcut: shortcutStep, done: doneStep };
   const footer = () => {
     if (step === 'welcome') {
-      return `<button type="button" class="btn-primary su-wide" data-su="next">Get started</button>
-        ${isConnected() ? '' : `<button type="button" class="btn-plain su-wide" data-su="demo">${icon('sparkle', { size: 18 })}Try with demo data</button>
-        <button type="button" class="text-btn su-have" data-su="have">I already have a sheet</button>`}`;
+      return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.getStarted')}</button>
+        ${isConnected() ? '' : `<button type="button" class="btn-plain su-wide" data-su="demo">${icon('sparkle', { size: 18 })}${t('su.tryDemo')}</button>
+        <button type="button" class="text-btn su-have" data-su="have">${t('su.haveSheet')}</button>`}`;
     }
     if (step === 'sheet') {
-      return isConnected() ? '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button>'
-        : '<button type="button" class="text-btn su-have" data-su="next">Skip for now</button>';
+      return isConnected() ? `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.continue')}</button>`
+        : `<button type="button" class="text-btn su-have" data-su="next">${t('su.skipNow')}</button>`;
     }
-    if (step === 'done') return '<button type="button" class="btn-primary su-wide" data-su="finish">Start using Spendings</button>';
-    if (step === 'api') return '<button type="button" class="btn-primary su-wide" data-su="next">It’s on</button><button type="button" class="text-btn su-have" data-su="have">Set up my sheet by hand instead</button>';
-    if (step === 'shortcut') return '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button><button type="button" class="text-btn su-have" data-su="next">Later</button>';
-    return '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button>';
+    if (step === 'done') return `<button type="button" class="btn-primary su-wide" data-su="finish">${t('su.startUsing')}</button>`;
+    if (step === 'api') return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.itsOn')}</button><button type="button" class="text-btn su-have" data-su="have">${t('su.byHandMine')}</button>`;
+    if (step === 'shortcut') return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.continue')}</button><button type="button" class="text-btn su-have" data-su="next">${t('su.later')}</button>`;
+    return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.continue')}</button>`;
   };
-  const dots = () => `<span class="su-dots" role="img" aria-label="Step ${idx() + 1} of ${steps.length}">${steps.map((s, i) => `<i class="${i === idx() ? 'on' : i < idx() ? 'past' : ''}"></i>`).join('')}</span>`;
+  const dots = () => `<span class="su-dots" role="img" aria-label="${t('su.stepOf', { i: idx() + 1, n: steps.length })}">${steps.map((s, i) => `<i class="${i === idx() ? 'on' : i < idx() ? 'past' : ''}"></i>`).join('')}</span>`;
   const head = () => `<header class="sheet-head su-head">
-      ${step === 'welcome' || step === 'done' ? '<button type="button" class="text-btn" data-su="close">Not now</button>' : `<button type="button" class="text-btn su-back" data-su="back">${icon('chevL', { size: 18 })}Back</button>`}
+      ${step === 'welcome' || step === 'done' ? `<button type="button" class="text-btn" data-su="close">${t('su.notNow')}</button>` : `<button type="button" class="text-btn su-back" data-su="back">${icon('chevL', { size: 18 })}${t('su.back')}</button>`}
       ${dots()}<span class="su-head-spacer"></span></header>`;
 
   function draw(dir = 0) {
@@ -372,7 +373,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     body.dataset.step = step;
     sheetEl.querySelector('.su-footer').innerHTML = footer();
     sheetEl.querySelector('.sheet-scroll').scrollTop = 0;
-    if (dir && !reduceMotion()) body.animate([{ opacity: 0, transform: `translateX(${dir * 24}px)` }, { opacity: 1, transform: 'none' }], { duration: 280, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
+    if (dir && !reduceMotion()) body.animate([{ opacity: 0, transform: `translateX(${dir * (isRTL() ? -24 : 24)}px)` }, { opacity: 1, transform: 'none' }], { duration: 280, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
   }
   const redrawBody = () => { if (!sheetEl) return; sheetEl.querySelector('.su-body').innerHTML = BODY[step](); sheetEl.querySelector('.su-footer').innerHTML = footer(); };
 
@@ -381,28 +382,28 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     if (step === 'accounts') {
       const a = answers();
       const names = a.accounts.map((x) => x.name.trim()).filter(Boolean);
-      if (!names.length) return warn('Add at least one account');
-      if (a.accounts.some((x) => !x.name.trim())) return warn('Give every account a name, or remove the empty one');
-      if (names.some((n) => n.toLowerCase() === 'all')) return warn('“All” is taken by the total. Pick another name.');
+      if (!names.length) return warn(t('su.addOne'));
+      if (a.accounts.some((x) => !x.name.trim())) return warn(t('su.giveName'));
+      if (names.some((n) => n.toLowerCase() === 'all')) return warn(t('su.allTaken'));
       const lower = names.map((n) => n.toLowerCase());
-      if (new Set(lower).size !== lower.length) return warn('Two accounts have the same name');
+      if (new Set(lower).size !== lower.length) return warn(t('su.sameName'));
       if (!names.includes(a.pay)) a.pay = names[0];
       if (!names.includes(a.allowanceAccount)) a.allowanceAccount = a.pay;
     }
     if (step === 'money') {
       const a = answers();
-      if (!(+a.allowance >= 0)) return warn('The allowance should be a number');
+      if (!(+a.allowance >= 0)) return warn(t('su.allowNum'));
     }
     return true;
   }
-  const warn = (t) => { toast(esc(t), { tone: 'warn', icon: icon('warn', { size: 18 }) }); return false; };
+  const warn = (msg) => { toast(esc(msg), { tone: 'warn', icon: icon('warn', { size: 18 }) }); return false; };
 
   /* ── making the sheet ── */
   async function runProvision(token) {
     phase = 'working'; error = null; redrawBody();
     try {
       const res = await fetch('setup/Code.gs.txt', { cache: 'no-cache' });
-      if (!res.ok) throw new SetupError('offline', 'Couldn’t load the script for your sheet. Check your connection and tap Try again.');
+      if (!res.ok) throw new SetupError('offline', t('su.noScript'));
       const code = await res.text();
       const done = await provision({
         token, code, progress: p(),
@@ -414,7 +415,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       startPolling();
     } catch (e) {
       phase = 'idle';
-      error = e instanceof SetupError ? e : new SetupError('google', `Something went wrong: ${e.message}`);
+      error = e instanceof SetupError ? e : new SetupError('google', t('su.wrong', { msg: e.message }));
       if (error.code === 'auth') accessToken = null;
       if (error.code === 'api-disabled') manualOpen = true;
       redrawBody();
@@ -424,12 +425,12 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     error = null;
     let token;
     try {
-      const t = signIn(); // first thing in the tap, so Google's window may open
+      const pending = signIn(); // first thing in the tap, so Google's window may open
       phase = 'signing'; redrawBody();
-      token = await t;
+      token = await pending;
     } catch (e) {
       phase = 'idle';
-      error = e instanceof SetupError ? e : new SetupError('google', 'Google sign-in didn’t work. Try again in a moment.');
+      error = e instanceof SetupError ? e : new SetupError('google', t('su.googleFail'));
       if (error.code === 'popup') manualOpen = true; // the by-hand path, right under the message
       redrawBody();
       return;
@@ -464,7 +465,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       await finishConnect(pr.url, pr.key, { fresh: inst?.fresh === true });
     } catch (e) {
       phase = 'allow';
-      error = new SetupError('busy', `Your sheet answered but couldn’t finish setting up: ${e.message}`);
+      error = new SetupError('busy', t('su.notFinished', { msg: e.message }));
       redrawBody();
     }
   }
@@ -485,15 +486,15 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     saved.progress = null; saved.answers = null; saved.done = true;
     persist();
     phase = 'idle';
-    toast(state.sync.status === 'error' ? esc(state.sync.error) : kept ? 'Connected. Your sheet already had its own accounts and settings, so it kept them.' : 'Connected to your sheet', { icon: icon(state.sync.status === 'error' ? 'warn' : 'check', { size: 18 }), tone: state.sync.status === 'error' ? 'warn' : 'good' });
+    toast(state.sync.status === 'error' ? esc(state.sync.error) : kept ? t('su.kept') : t('su.connectedSheet'), { icon: icon(state.sync.status === 'error' ? 'warn' : 'check', { size: 18 }), tone: state.sync.status === 'error' ? 'warn' : 'good' });
     if (step === 'sheet') go('shortcut');
   }
 
   async function connectManual(btn) {
     const url = sheetEl.querySelector('input[name="su-url"]').value.trim();
     const token = sheetEl.querySelector('input[name="su-token"]').value.trim();
-    if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) return warn('That doesn’t look like a Web app URL. It starts with https://script.google.com/');
-    if (!token) return warn('Paste your app key too');
+    if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) return warn(t('misc.badUrl'));
+    if (!token) return warn(t('misc.pasteKey'));
     saved.manualUrl = url; persist();
     btn.disabled = true; btn.classList.add('busy');
     try {
@@ -509,7 +510,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
   function close() { closeFn?.(); }
 
   openSheet({
-    label: 'Set up Spendings',
+    label: t('su.title'),
     html: `<div class="su-headwrap"></div><div class="sheet-scroll su-scroll"><div class="su-body"></div></div><div class="su-footer"></div>`,
     onClose() {
       sheetEl = null;
@@ -554,9 +555,9 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
         if (ev.key === 'Enter' && ev.target.matches('input[name="su-token"]')) { ev.preventDefault(); sheet.querySelector('[data-su="connect"]')?.click(); }
       });
       sheet.addEventListener('click', async (ev) => {
-        const t = ev.target;
+        const tg = ev.target;
         const a = answers();
-        const col = t.closest('[data-su-colours]');
+        const col = tg.closest('[data-su-colours]');
         if (col) {
           const i = +col.dataset.suColours;
           saved.openColour = saved.openColour === i ? null : i;
@@ -567,7 +568,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           });
           haptic(); return;
         }
-        const sw = t.closest('[data-su-colour]');
+        const sw = tg.closest('[data-su-colour]');
         if (sw) {
           const [i, c] = sw.dataset.suColour.split(':');
           const acc = a.accounts[+i];
@@ -579,14 +580,14 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           sheet.querySelector('.su-roles').innerHTML = roleChips();
           haptic(); return;
         }
-        const del = t.closest('[data-su-del]');
+        const del = tg.closest('[data-su-del]');
         if (del) {
           if (a.accounts.length <= 1) return;
           a.accounts.splice(+del.dataset.suDel, 1);
           a.touched = true; saved.openColour = null; persist();
           haptic(); redrawBody(); return;
         }
-        if (t.closest('[data-su-add]')) {
+        if (tg.closest('[data-su-add]')) {
           const used = new Set(a.accounts.map((x) => x.color));
           a.accounts.push({ name: '', note: '', wallet: '', color: CARD_COLORS.find((c) => !used.has(c.id))?.id || 'blue' });
           a.touched = true; persist();
@@ -595,20 +596,20 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           inputs[inputs.length - 1]?.focus();
           return;
         }
-        const role = t.closest('[data-su-role]');
+        const role = tg.closest('[data-su-role]');
         if (role) {
           a[role.dataset.suRole] = role.dataset.name; a.touched = true; persist();
           sheet.querySelector('.su-roles').innerHTML = roleChips();
           haptic(); return;
         }
-        const cp = t.closest('[data-copy]');
+        const cp = tg.closest('[data-copy]');
         if (cp) {
-          try { await navigator.clipboard.writeText(cp.dataset.copy); haptic(); toast('Copied', { icon: icon('check', { size: 18 }), tone: 'good' }); } catch { toast('Couldn’t copy. Press and hold the text instead.'); }
+          try { await navigator.clipboard.writeText(cp.dataset.copy); haptic(); toast(t('guide.copied'), { icon: icon('check', { size: 18 }), tone: 'good' }); } catch { toast(t('guide.noCopy')); }
           return;
         }
-        if (t.closest('[data-su-allow]')) { setTimeout(startPolling, 0); return; } // the link opens Google in a new tab
-        if (t.closest('.su-api, [data-su-safari]')) return; // plain links to a new tab
-        const act = t.closest('[data-su]')?.dataset.su;
+        if (tg.closest('[data-su-allow]')) { setTimeout(startPolling, 0); return; } // the link opens Google in a new tab
+        if (tg.closest('.su-api, [data-su-safari]')) return; // plain links to a new tab
+        const act = tg.closest('[data-su]')?.dataset.su;
         if (!act) return;
         if (act === 'signin') { haptic(); return signInAndRun(); }
         if (act === 'retry') {
@@ -618,17 +619,17 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
         }
         if (act === 'check') { haptic(); return checkAllowed(); }
         if (act === 'startover') {
-          if (!confirm('Start again with a new sheet? The sheet made so far stays in your Google Drive; you can delete it there.')) return;
+          if (!confirm(t('su.confirmStart'))) return;
           saved.progress = null; persist(); phase = 'idle'; error = null; stopPolling(); redrawBody(); return;
         }
-        if (act === 'connect') return connectManual(t.closest('[data-su]'));
+        if (act === 'connect') return connectManual(tg.closest('[data-su]'));
         if (act === 'shortcut') { haptic(); return onShortcut(); }
         if (act === 'demo') {
           haptic();
           setDemo(true);
           saved.step = 'welcome'; persist();
           close();
-          toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) });
+          toast(t('misc.showingDemo'), { icon: icon('sparkle', { size: 18 }) });
           return;
         }
         if (act === 'have') { haptic(); manualOpen = true; return go('sheet', 1); }
@@ -645,8 +646,8 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
   });
 }
 
-const ordinal = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
-const copyRow = (label, value) => `<div class="copy-row"><div><span>${label}</span><code>${esc(value)}</code></div><button type="button" class="icon-btn" data-copy="${esc(value)}" aria-label="Copy ${label}">${icon('copy', { size: 18 })}</button></div>`;
+const ordinal = (n) => isRTL() ? String(n) : n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+const copyRow = (label, value) => `<div class="copy-row"><div><span>${label}</span><code>${esc(value)}</code></div><button type="button" class="icon-btn" data-copy="${esc(value)}" aria-label="${t('guide.copy', { what: label })}">${icon('copy', { size: 18 })}</button></div>`;
 // Google's "G", as Google's sign-in button guidelines ask
 const googleG = () => '<svg class="su-g" width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.6 2.4 30.2 0 24 0 14.6 0 6.6 5.4 2.7 13.3l7.8 6C12.4 13.7 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v9h12.7c-.6 2.9-2.2 5.4-4.7 7.1l7.6 5.9c4.4-4.1 6.9-10.1 6.9-17.5z"/><path fill="#FBBC05" d="M10.5 28.7c-.5-1.4-.8-3-.8-4.7s.3-3.2.8-4.7l-7.8-6C1 16.6 0 20.2 0 24s1 7.4 2.7 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.6-5.9c-2.1 1.4-4.9 2.3-8.3 2.3-6.3 0-11.6-4.2-13.5-10l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>';
 

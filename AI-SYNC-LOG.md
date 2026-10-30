@@ -96,7 +96,9 @@ Gotchas: **never edit `state.entries` or an entry in place** — replace the arr
 see model.js); feature branches never bump VERSION or edit CHANGELOG (conflicts); when merging, keep **main's** `SHELL`
 and test list and add the branch's files; `categoryMeta(id)?.label` for names, `pickerCategories`/`allCategories`
 for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** notice (`homeNotice` in home.js); text sizes are rem (body follows iOS Larger Text) and
-sheets make the page `inert`, so tests must wait for a sheet to close before typing elsewhere.
+sheets make the page `inert`, so tests must wait for a sheet to close before typing elsewhere; **UI strings: add to strings/en.js and
+strings/ar.js; use t()** (`docs/js/i18n.js`; amounts via `money`/`amtAED`, dates via model.js helpers, logical CSS for
+left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated key).
 
 ## 7. Session log (newest first)
 

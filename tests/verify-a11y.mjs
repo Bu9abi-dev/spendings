@@ -11,9 +11,7 @@
 // Usage: (cd docs && python3 -m http.server 8765 &) ; NODE_PATH=$(npm root -g) node tests/verify-a11y.mjs
 import { createRequire } from 'node:module';
 import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { loadAxe } from './axe-loader.mjs';
 
 const require = createRequire(import.meta.url);
 const { chromium, devices } = require(process.env.PLAYWRIGHT || 'playwright');
@@ -21,23 +19,7 @@ const BASE = (process.env.BASE || 'http://localhost:8765').replace(/\/?$/, '/');
 let fails = 0, n = 0;
 const ok = (c, m, x = '') => { n++; console.log(`${c ? 'PASS' : 'FAIL'}  ${m}${x ? '  ' + x : ''}`); if (!c) fails++; };
 
-/* ───── axe-core, loaded from outside the repo ───── */
-function loadAxe() {
-  const tries = [process.env.AXE_CORE, () => require.resolve('axe-core/axe.min.js')];
-  for (const t of tries) {
-    try { const f = typeof t === 'function' ? t() : t; if (f && fs.existsSync(f)) return fs.readFileSync(f, 'utf8'); } catch { /* next */ }
-  }
-  try {
-    const dir = path.join(os.tmpdir(), 'spendings-axe');
-    const file = path.join(dir, 'package', 'axe.min.js');
-    if (!fs.existsSync(file)) {
-      fs.mkdirSync(dir, { recursive: true });
-      const tgz = execFileSync('npm', ['pack', 'axe-core@4.10.2', '--silent'], { cwd: dir, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim().split('\n').pop();
-      execFileSync('tar', ['xzf', tgz], { cwd: dir });
-    }
-    return fs.readFileSync(file, 'utf8');
-  } catch { return null; }
-}
+/* ───── axe-core, loaded from outside the repo (tests/axe-loader.mjs) ───── */
 const AXE = loadAxe();
 if (!AXE) {
   console.log('NOTE  axe-core is not available here: the axe scans are skipped (the other checks still run)');

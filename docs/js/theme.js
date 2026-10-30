@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 // Appearance: theme mode, accent preset (drives the tint and the allowance liquid), and card colours.
 // Every preset was contrast-checked in both themes: text ≥ 4.5:1 on its surface, button text ≥ 4.5:1 on the tint.
 
@@ -27,6 +28,8 @@ export const CARD_COLORS = [
   { id: 'pink', name: 'Pink', hex: '#bb5585' },
   { id: 'graphite', name: 'Graphite', hex: '#6b7078' },
 ];
+// Colour names are shown in the current language (strings: color.<id>); ids are what's saved.
+for (const x of [...ACCENTS, ...CARD_COLORS]) Object.defineProperty(x, 'name', { get: () => t(`color.${x.id}`), enumerable: true });
 
 export const DEFAULT_APPEARANCE = {
   theme: 'system',

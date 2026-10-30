@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 // Makes a new Spendings sheet in your Google account: the spreadsheet, its Apps Script, and a web app
 // deployment, using the access token from "Sign in with Google". No DOM here; fetch is passed in so
 // tests/verify-setup.mjs can run it against a fake Google.
@@ -56,16 +57,16 @@ export class SetupError extends Error {
 export function explain(status, body) {
   const msg = String(body?.error?.message || body?.error_description || body?.error || '');
   const reasons = (body?.error?.details || []).map((d) => d.reason).join(' ');
-  if (status === 401) return new SetupError('auth', 'Your Google sign-in has run out. Sign in with Google again to carry on.', msg);
+  if (status === 401) return new SetupError('auth', t('prov.auth'), msg);
   if (status === 403 && (/has not been used in project|is disabled/i.test(msg) || /SERVICE_DISABLED/.test(reasons))) {
-    return new SetupError('api-disabled', 'Sign in with Google isn’t fully switched on for this app yet (an API is off in Google Cloud). See SETUP.md, “Switch on Sign in with Google”. Meanwhile you can set the sheet up by hand.', msg);
+    return new SetupError('api-disabled', t('prov.apiOff'), msg);
   }
   if (status === 403 && /Apps Script API|usersettings/i.test(msg)) {
-    return new SetupError('script-api-off', 'Google needs one switch turned on first: open Apps Script settings, turn on “Google Apps Script API”, then come back and tap Try again.', msg);
+    return new SetupError('script-api-off', t('prov.scriptOff'), msg);
   }
-  if (status === 403) return new SetupError('denied', 'Google said no. Make sure you allowed every permission when you signed in, then try again.', msg);
-  if (status === 429 || status >= 500) return new SetupError('busy', 'Google is busy right now. Wait a moment and tap Try again.', msg);
-  return new SetupError('google', `Google couldn’t do that step: ${msg || `error ${status}`}`, msg);
+  if (status === 403) return new SetupError('denied', t('prov.denied'), msg);
+  if (status === 429 || status >= 500) return new SetupError('busy', t('prov.busy'), msg);
+  return new SetupError('google', t('prov.step', { msg: msg || t('prov.error', { status }) }), msg);
 }
 
 /**
@@ -92,7 +93,7 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
         body: body == null ? undefined : JSON.stringify(body),
       });
     } catch {
-      throw new SetupError('offline', globalThis.navigator?.onLine === false ? 'You’re offline. Connect to the internet and tap Try again.' : 'Couldn’t reach Google. Check your connection and tap Try again.');
+      throw new SetupError('offline', globalThis.navigator?.onLine === false ? t('prov.offline') : t('prov.reach'));
     }
     let data = null;
     try { data = await res.json(); } catch { /* not JSON */ }
@@ -120,7 +121,7 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
         name: 'Spendings', mimeType: SHEET_MIME, appProperties: { spendings: '1', setupId: p.setupId },
       });
     }
-    if (!file.id) throw new SetupError('google', 'Google didn’t say which sheet it made. Tap Try again.');
+    if (!file.id) throw new SetupError('google', t('prov.noSheet'));
     p.spreadsheetId = file.id;
     p.spreadsheetUrl = file.webViewLink || `https://docs.google.com/spreadsheets/d/${file.id}/edit`;
     keep();
@@ -132,7 +133,7 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
     const id = encodeURIComponent(p.spreadsheetId);
     const r = await api('GET', `${SHEETS}/${id}?fields=${encodeURIComponent('sheets.properties(sheetId,title)')}`);
     const first = r.sheets?.[0]?.properties;
-    if (!first || first.sheetId == null) throw new SetupError('google', 'Google didn’t show the new sheet’s tabs. Tap Try again.');
+    if (!first || first.sheetId == null) throw new SetupError('google', t('prov.noTabs'));
     const cell = (v) => ({ values: [{ userEnteredValue: { stringValue: v } }] });
     await api('POST', `${SHEETS}/${id}:batchUpdate`, {
       requests: [
@@ -148,7 +149,7 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
   if (!p.scriptId) {
     onStep('script');
     const r = await api('POST', SCRIPT, { title: 'Spendings', parentId: p.spreadsheetId });
-    if (!r.scriptId) throw new SetupError('google', 'Google didn’t say which script it made. Tap Try again.');
+    if (!r.scriptId) throw new SetupError('google', t('prov.noScript'));
     p.scriptId = r.scriptId;
     keep();
   }
@@ -168,7 +169,7 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
   if (!p.versionNumber) {
     onStep('publish');
     const r = await api('POST', `${SCRIPT}/${p.scriptId}/versions`, { description: 'Set up by the Spendings app' });
-    if (!r.versionNumber) throw new SetupError('google', 'Google didn’t make a version of the script. Tap Try again.');
+    if (!r.versionNumber) throw new SetupError('google', t('prov.noVersion'));
     p.versionNumber = r.versionNumber;
     keep();
   }
@@ -180,7 +181,7 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
     if (d.deploymentId) { p.deploymentId = d.deploymentId; keep(); }
     let url = webAppUrl(d);
     if (!url && p.deploymentId) url = webAppUrl(await api('GET', `${SCRIPT}/${p.scriptId}/deployments/${p.deploymentId}`));
-    if (!url) throw new SetupError('google', 'Google published the script but didn’t give its web address. Tap Try again.');
+    if (!url) throw new SetupError('google', t('prov.noUrl'));
     p.url = url;
     keep();
   }

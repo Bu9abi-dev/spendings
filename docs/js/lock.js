@@ -2,6 +2,7 @@
 // your data still lives in your Google Sheet behind your app key.
 import { state, setPrefs } from './store.js';
 import { icon } from './icons.js';
+import { t } from './i18n.js';
 
 const rand = (n) => crypto.getRandomValues(new Uint8Array(n));
 const b64 = (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -45,9 +46,9 @@ export function initLock() {
     document.documentElement.classList.add('locked');
     el.innerHTML = `<div class="lock-inner">
       <div class="lock-badge glass">${icon('lock', { size: 30 })}</div>
-      <h1>Spendings is locked</h1>
-      <p>Your balances are hidden until you unlock.</p>
-      <button type="button" class="lock-btn glass">${icon('faceid', { size: 22 })}<span>Unlock with Face ID</span></button>
+      <h1>${t('lock.locked')}</h1>
+      <p>${t('lock.hidden')}</p>
+      <button type="button" class="lock-btn glass">${icon('faceid', { size: 22 })}<span>${t('lock.unlock')}</span></button>
       <p class="lock-err" role="alert"></p></div>`;
     const btn = el.querySelector('.lock-btn'), err = el.querySelector('.lock-err');
     btn.onclick = async () => {
@@ -58,7 +59,7 @@ export function initLock() {
         document.documentElement.classList.remove('locked');
         setTimeout(() => { el.hidden = true; el.classList.remove('out'); }, 380);
       } catch {
-        err.textContent = 'Face ID didn’t go through. Try again.';
+        err.textContent = t('lock.failed');
       }
     };
   };

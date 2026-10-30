@@ -3,8 +3,9 @@
 // from the side you moved towards. Below: the payday plan and where this cycle's money went.
 import {
   ACCOUNTS, cycleOf, SPEND_CATEGORIES, INCOME_CATEGORIES, pickerCategories, accountMeta, cycleName, cycleRange, daysLeft,
-  balances, homeNumbers, whereRows, entriesByCycle, listsVer, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
+  balances, homeNumbers, whereRows, entriesByCycle, listsVer, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED, amtAED, planName, shortDay, categoryMeta,
 } from './model.js';
+import { t, ltr, isRTL } from './i18n.js';
 import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
@@ -23,12 +24,11 @@ let focus = (() => { try { return sessionStorage.getItem('sp.focus') || 'all'; }
 
 let helpers = null;
 
-const ord = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
-const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const shortDate = (d) => { const [y, m, dd] = dayKey(d).split('-').map(Number); return `${dd} ${MONTHS[m - 1]}`; };
+const ord = (n) => (isRTL() ? String(n) : n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th'));
+const shortDate = (d) => shortDay(dayKey(d));
 function ago(iso) {
   const days = Math.floor((Date.now() - new Date(iso)) / 864e5);
-  return days <= 0 ? 'today' : days === 1 ? 'yesterday' : `${days} days ago`;
+  return days <= 0 ? t('home.today') : days === 1 ? t('day.yesterday').toLowerCase() : t('home.daysAgo', { n: days });
 }
 
 /* ───────────────────────── Numbers ───────────────────────── */
@@ -103,54 +103,54 @@ function setAmount(lv, v, instant = false) {
   setOdo(lv.querySelector('.lv-int'), p.int, instant);
   setOdo(lv.querySelector('.lv-dec'), p.dec, instant);
   lv.closest('.lens-amount')?.style.setProperty('--chars', p.int.length + 3);
-  lv.setAttribute('aria-label', `AED ${p.int}${p.dec}`);
+  lv.setAttribute('aria-label', amtAED(p.int + p.dec));
   lv.dataset.v = v;
 }
 
 function amountHTML(v) {
   const p = amountParts(v);
-  return `${dirham()}<span class="lv num" data-v="${v}" role="text" aria-label="AED ${p.int}${p.dec}"><span class="lv-int" aria-hidden="true" data-sig="${sigOf(p.int)}" data-str="${p.int}">${odoHTML(p.int, p.int.replace(/\D/g, ''))}</span><span class="lv-dec" aria-hidden="true" data-sig="${sigOf(p.dec)}" data-str="${p.dec}">${odoHTML(p.dec, p.dec.replace(/\D/g, ''))}</span></span>`;
+  return `${dirham()}<span class="lv num" data-v="${v}" role="text" aria-label="${amtAED(p.int + p.dec)}"><span class="lv-int" aria-hidden="true" data-sig="${sigOf(p.int)}" data-str="${p.int}">${odoHTML(p.int, p.int.replace(/\D/g, ''))}</span><span class="lv-dec" aria-hidden="true" data-sig="${sigOf(p.dec)}" data-str="${p.dec}">${odoHTML(p.dec, p.dec.replace(/\D/g, ''))}</span></span>`;
 }
 
 function label(m, f) {
-  if (f === 'all') return 'All your money';
+  if (f === 'all') return t('home.allMoney');
   const a = accountMeta(f);
-  return `${a.name} <span class="lens-role">· ${f === m.hub ? 'pay lands here' : f === m.s.allowanceAccount ? 'allowance' : a.role.toLowerCase()}</span>`;
+  return `${a.name} <span class="lens-role">· ${f === m.hub ? t('home.payLands') : f === m.s.allowanceAccount ? t('home.allowance') : a.role.toLowerCase()}</span>`;
 }
 
 /* Pace: how this cycle's allowance spending compares with an even spread over the cycle.
    The state (and its tolerance) comes from allowancePace in model.js, shared with Insights and the "runs out" alert. */
 function paceLine(m) {
   const { delta, daysLeft: dl, state: st } = m.pace;
-  const perDay = dl > 0 && m.safe > 0 ? ` · ${fmt(m.safe / dl, { whole: true })} a day for ${dl} ${dl === 1 ? 'day' : 'days'}` : '';
-  if (st === 'spent') return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
-  if (st === 'over') return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
-  if (st === 'under') return `<span class="pace-good">On track · ${fmt(-delta, { whole: true })} under pace</span>${perDay}`;
-  return `<span class="pace-good">On track</span>${perDay}`;
+  const perDay = dl > 0 && m.safe > 0 ? ` · ${t('home.perDay', { amt: fmt(m.safe / dl, { whole: true }), n: dl })}` : '';
+  if (st === 'spent') return `<span class="pace-bad">${t('home.overAllowance', { n: fmt(-m.allowLeft, { whole: true }) })}</span>`;
+  if (st === 'over') return `<span class="pace-bad">${t('home.overPace', { n: fmt(delta, { whole: true }) })}</span>${perDay}`;
+  if (st === 'under') return `<span class="pace-good">${t('home.underPace', { n: fmt(-delta, { whole: true }) })}</span>${perDay}`;
+  return `<span class="pace-good">${t('home.onTrack')}</span>${perDay}`;
 }
 
 /* A small ✕ beside every payday prompt: "already done this cycle", so it stops asking until the next one. */
-const dismissBtn = (p, cls = 'dismiss-x') => `<button type="button" class="${cls}" data-plan-dismiss="${esc(p.id)}" aria-label="Dismiss ${esc(p.name)} until next cycle">${icon('x', { size: 14 })}</button>`;
+const dismissBtn = (p, cls = 'dismiss-x') => `<button type="button" class="${cls}" data-plan-dismiss="${esc(p.id)}" aria-label="${t('home.dismiss', { name: esc(planName(p)) })}">${icon('x', { size: 14 })}</button>`;
 /** The day a dismissed prompt comes back: the first day of the next cycle. */
 const backOn = (m) => shortDate(cycleBounds(m.cyc, m.s.cycleStart).end);
 
 function meta(m, f) {
   const nextIncome = m.status.find((p) => p.kind === 'Income' && !p.complete);
   const expect = nextIncome ? ` · <span class="prompt">${nextIncome.state === 'due'
-    ? `<button type="button" class="soon soon-btn" data-plan-act="land" data-plan-id="${esc(nextIncome.id)}">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} due · tap when it lands</button>`
-    : `<span class="soon">${esc(nextIncome.name)} +${fmt(nextIncome.remaining, { whole: true })} on ${shortDate(nextIncome.due)}</span>`}${dismissBtn(nextIncome)}</span>` : '';
-  if (!m.matched) return 'Match each account with your bank once, and these become your real numbers.';
+    ? `<button type="button" class="soon soon-btn" data-plan-act="land" data-plan-id="${esc(nextIncome.id)}">${t('home.dueTap', { name: esc(planName(nextIncome)), amt: ltr(`+${fmt(nextIncome.remaining, { whole: true })}`) })}</button>`
+    : `<span class="soon">${t('home.dueOn', { name: esc(planName(nextIncome)), amt: ltr(`+${fmt(nextIncome.remaining, { whole: true })}`), date: shortDate(nextIncome.due) })}</span>`}${dismissBtn(nextIncome)}</span>` : '';
+  if (!m.matched) return t('home.matchOnce');
   if (f === 'all') {
-    const unmoved = m.allowanceUnmoved ? ` · <span class="prompt"><button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.allowMove.id)}">Allowance not moved yet</button>${dismissBtn(m.allowMove)}</span>` : '';
-    return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend · ${paceLine(m)}${unmoved}${expect}`;
+    const unmoved = m.allowanceUnmoved ? ` · <span class="prompt"><button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.allowMove.id)}">${t('home.notMoved')}</button>${dismissBtn(m.allowMove)}</span>` : '';
+    return `${t('home.safeB', { n: fmt(m.safe, { whole: true }) })} · ${paceLine(m)}${unmoved}${expect}`;
   }
-  if (f === m.hub) return `<b>${fmt(m.hubB.free, { whole: true })}</b> is yours after responsibilities${expect}`;
+  if (f === m.hub) return `${t('home.yoursAfter', { n: fmt(m.hubB.free, { whole: true }) })}${expect}`;
   if (f === m.s.allowanceAccount) {
     const extra = m.allowBal - Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
-    return `<b>${fmt(m.safe, { whole: true })}</b> safe to spend${extra > 0.5 ? ` · <b>${fmt(extra, { whole: true })}</b> carried over from earlier cycles` : ''}`;
+    return `${t('home.safeB', { n: fmt(m.safe, { whole: true }) })}${extra > 0.5 ? ` · ${t('home.carried', { n: fmt(extra, { whole: true }) })}` : ''}`;
   }
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
-  return `<b>${fmt(acc.spent, { whole: true })}</b> spent this cycle`;
+  return t('home.spentCycle', { n: fmt(acc.spent, { whole: true }) });
 }
 
 /* ───────────────────────── Render ───────────────────────── */
@@ -163,32 +163,32 @@ export function renderHome(h) {
   const positive = ACCOUNTS.map((a) => Math.max(0, m.bals.get(a.id)?.balance || 0));
   const pTotal = positive.reduce((a, b) => a + b, 0);
   return `
-    ${h.largeTitle(cycleName(cyc), `${cycleRange(cyc, m.s.cycleStart)} · ${dl} ${dl === 1 ? 'day' : 'days'} to payday`, h.syncBadge())}
+    ${h.largeTitle(cycleName(cyc), `${cycleRange(cyc, m.s.cycleStart)} · ${t('home.toPayday', { n: dl })}`, h.syncBadge())}
     ${h.demoBanner()}
     ${!isConnected() && !isDemo() ? `<section class="onboard">
-        <h2>Connect your Google Sheet</h2>
-        <p>Your entries are kept on this phone for now. Connect your sheet so everything, Apple Pay included, lands in one place.</p>
-        <div class="onboard-actions"><button class="btn-primary" type="button" data-act="setup-guide">Set up</button><button class="btn-plain" type="button" data-act="demo">Try demo data</button></div>
+        <h2>${t('home.connectSheet')}</h2>
+        <p>${t('home.connectLede')}</p>
+        <div class="onboard-actions"><button class="btn-primary" type="button" data-act="setup-guide">${t('home.setUp')}</button><button class="btn-plain" type="button" data-act="demo">${t('home.tryDemo')}</button></div>
       </section>` : ''}
-    <section class="lens" data-focus="${focus}" style="--lens-c:${lensColor(focus)}" aria-label="Balances">
+    <section class="lens" data-focus="${focus}" style="--lens-c:${lensColor(focus)}" aria-label="${t('home.balances')}">
       <div class="lens-label">${label(m, focus)}</div>
       <div class="lens-amount" aria-live="polite" style="--chars:${amountParts(valueFor(m, focus)).int.length + 3}">${amountHTML(valueFor(m, focus))}</div>
       <p class="lens-meta">${meta(m, focus)}</p>
       <div class="strip${pTotal ? '' : ' empty'}" aria-hidden="true">
         ${ACCOUNTS.map((a, i) => `<span class="seg${focus === a.id ? ' on' : ''}" data-seg="${a.id}" style="--c:${a.color}; flex-grow:${pTotal ? positive[i] : 1}"></span>`).join('')}
       </div>
-      <div class="keys" role="group" aria-label="Show account">
+      <div class="keys" role="group" aria-label="${t('home.showAcc')}">
         <span class="keys-pill" aria-hidden="true"></span>
         ${order().map((id) => {
           const on = focus === id;
           const v = id === 'all' ? m.total : m.bals.get(id)?.balance || 0;
           return `<button type="button" class="key-acc${on ? ' on' : ''}" aria-pressed="${on}" data-focus="${id}" style="--c:${id === 'all' ? 'var(--label)' : accountMeta(id).color}">
-            <span class="ka-name">${id === 'all' ? 'All' : id}</span><span class="ka-val num">${m.matched ? fmtCompact(v) : '—'}</span></button>`;
+            <span class="ka-name">${id === 'all' ? t('home.all') : id}</span><span class="ka-val num">${m.matched ? fmtCompact(v) : '—'}</span></button>`;
         }).join('')}
-        <button type="button" class="key-acc key-add" data-acct-new="1" aria-label="Add an account">${icon('plus', { size: 18 })}</button>
+        <button type="button" class="key-acc key-add" data-acct-new="1" aria-label="${t('home.addAcc')}">${icon('plus', { size: 18 })}</button>
       </div>
     </section>
-    ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
+    ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>${t('home.setBalances')}</b><span>${t('home.setBalancesSub')}</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
     ${homeNotice(m, focus === 'all' && m.matched)}
     <div class="lens-detail">${detail(m, focus)}</div>`;
 }
@@ -238,11 +238,11 @@ function detailAll(m) {
     ${whereCard(m)}
     ${review.length ? `<button class="review-row" type="button" data-act="review">
         <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">${review.length} ${review.length === 1 ? 'payment' : 'payments'} to sort</span><span class="row-sub">Pick a category for each</span></span>
+        <span class="row-main"><span class="row-title">${t('home.toSort', { n: review.length })}</span><span class="row-sub">${t('home.pickEach')}</span></span>
         ${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
     ${h.quickAdd()}
-    <div class="group-head"><h3 class="group-title">Recent</h3>${state.entries.length ? '<button class="text-btn" type="button" data-go="activity">See all</button>' : ''}</div>
-    <section class="group">${state.entries.filter((e) => !(e.type === 'Adjustment' && !+e.amount)).slice(0, 6).map(h.entryRow).join('') || `<div class="empty">${icon('card', { size: 28 })}<p>No entries yet.</p><p class="muted">Pay with Apple Pay or tap <b>+</b>.</p></div>`}</section>`;
+    <div class="group-head"><h3 class="group-title">${t('home.recent')}</h3>${state.entries.length ? '<button class="text-btn" type="button" data-go="activity">' + t('home.seeAll') + '</button>' : ''}</div>
+    <section class="group">${state.entries.filter((e) => !(e.type === 'Adjustment' && !+e.amount)).slice(0, 6).map(h.entryRow).join('') || `<div class="empty">${icon('card', { size: 28 })}<p>${t('home.noEntries')}</p><p class="muted">${t('home.payOrTap')}</p></div>`}</section>`;
 }
 
 function detailAccount(m, f) {
@@ -252,26 +252,26 @@ function detailAccount(m, f) {
   let body = '';
   if (f === m.hub) body = leftCard(m, f) + hubCard(m) + flowCard(m);
   else if (f === m.s.allowanceAccount) body = allowanceCard(m);
-  else body = leftCard(m, f) + `<section class="figures"><div><span>In this cycle</span><b class="num in">+${fmt(m.inflow.get(f) || 0, { whole: true })}</b></div><div><span>Spent this cycle</span><b class="num">${fmt(acc.spent, { whole: true })}</b></div></section>`;
+  else body = leftCard(m, f) + `<section class="figures"><div><span>${t('home.inCycle')}</span><b class="num in">+${fmt(m.inflow.get(f) || 0, { whole: true })}</b></div><div><span>${t('home.spentThis')}</span><b class="num">${fmt(acc.spent, { whole: true })}</b></div></section>`;
   return `
     ${body}
     <section class="group match-group">
       <button type="button" class="row link-row" data-act="match" data-acc="${f}">
         <span class="row-icon" style="--tint:${accountMeta(f).color}">${icon('sync', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Match with ${esc(f === 'Cash' ? 'my wallet' : `my ${f} app`)}</span>
-          <span class="row-sub">${b.matchedAt ? `Last matched ${ago(b.matchedAt)}` : 'Never matched. Balance starts from zero'}</span></span>
+        <span class="row-main"><span class="row-title">${f === 'Cash' ? t('home.matchWallet') : t('home.matchApp', { acc: esc(f) })}</span>
+          <span class="row-sub">${b.matchedAt ? t('home.lastMatched', { ago: ago(b.matchedAt) }) : t('home.neverMatched')}</span></span>
         ${icon('chevR', { size: 16, cls: 'chev' })}</button>
     </section>
-    <div class="group-head"><h3 class="group-title">${esc(f)} activity</h3></div>
-    <section class="group">${recent.map(h.entryRow).join('') || `<div class="empty"><p>Nothing in ${esc(f)} yet.</p></div>`}</section>`;
+    <div class="group-head"><h3 class="group-title">${t('home.accActivity', { acc: esc(f) })}</h3></div>
+    <section class="group">${recent.map(h.entryRow).join('') || `<div class="empty"><p>${t('home.nothingIn', { acc: esc(f) })}</p></div>`}</section>`;
 }
 
 function hubCard(m) {
   const { hubB, status, hub } = m;
   const parts = [
-    { k: 'reserved', label: 'Responsibilities', v: Math.max(0, hubB.reserved), c: 'var(--warn)' },
-    { k: 'move', label: 'Still to move', v: Math.max(0, hubB.toMove), c: 'var(--label-3)' },
-    { k: 'free', label: 'Emergency', v: Math.max(0, hubB.free), c: accountMeta(hub).color },
+    { k: 'reserved', label: t('home.resp'), v: Math.max(0, hubB.reserved), c: 'var(--warn)' },
+    { k: 'move', label: t('home.toMove'), v: Math.max(0, hubB.toMove), c: 'var(--label-3)' },
+    { k: 'free', label: t('home.emergency'), v: Math.max(0, hubB.free), c: accountMeta(hub).color },
   ];
   const tot = parts.reduce((a, p) => a + p.v, 0) || 1;
   const resp = status.filter((p) => p.kind === 'Responsibility' && p.from === hub);
@@ -279,14 +279,14 @@ function hubCard(m) {
     <section class="panel hub">
       <div class="layer-bar">${parts.map((p) => `<span style="flex-grow:${p.v}; --c:${p.c}"></span>`).join('')}</div>
       <div class="layer-keys">${parts.map((p) => `<div><i style="--c:${p.c}"></i><span>${p.label}</span><b class="num">${fmt(p.v, { whole: true })}</b></div>`).join('')}</div>
-      ${hubB.free < 0 ? `<p class="hub-note warn-text">${icon('warn', { size: 14 })} ${esc(hub)} is short by ${fmt(-hubB.free, { whole: true })} for what’s still planned.</p>` : ''}
+      ${hubB.free < 0 ? `<p class="hub-note warn-text">${icon('warn', { size: 14 })} ${t('home.short', { acc: esc(hub), n: fmt(-hubB.free, { whole: true }) })}</p>` : ''}
       ${resp.length ? `<div class="resp">${resp.map((p) => `<div class="resp-line"><button type="button" class="resp-row" data-plan-edit="${esc(p.id)}">
-          <span>${esc(p.name)}</span>
-          ${p.dismissed ? `<em class="resp-done">Done · back ${backOn(m)}</em>` : p.amount ? `<span class="resp-track"><i style="--w:${Math.min(100, (p.done / p.amount) * 100)}%"></i></span><b class="num">${p.remaining ? `${fmt(p.remaining, { whole: true })} left` : 'paid'}</b>` : '<em>Set amount</em>'}
+          <span>${esc(planName(p))}</span>
+          ${p.dismissed ? `<em class="resp-done">${t('home.doneBackOn', { date: backOn(m) })}</em>` : p.amount ? `<span class="resp-track"><i style="--w:${Math.min(100, (p.done / p.amount) * 100)}%"></i></span><b class="num">${p.remaining ? t('home.left', { n: fmt(p.remaining, { whole: true }) }) : t('home.paid')}</b>` : `<em>${t('home.setAmount')}</em>`}
         </button>${p.dismissed
-          ? `<button type="button" class="text-btn resp-restore" data-plan-restore="${esc(p.id)}">Bring back</button>`
+          ? `<button type="button" class="text-btn resp-restore" data-plan-restore="${esc(p.id)}">${t('home.bringBack')}</button>`
           : p.remaining > 0 ? dismissBtn(p, 'dismiss-x resp-x') : ''}</div>`).join('')}</div>` : ''}
-      <button type="button" class="text-btn add-resp" data-plan-new="Responsibility" data-from="${esc(hub)}">${icon('plus', { size: 16 })} Add a responsibility</button>
+      <button type="button" class="text-btn add-resp" data-plan-new="Responsibility" data-from="${esc(hub)}">${icon('plus', { size: 16 })} ${t('home.addResp')}</button>
     </section>`;
 }
 
@@ -312,12 +312,12 @@ function leftCard(m, f) {
   const had = Math.max(0, (m.startBals.get(f)?.balance || 0) + (m.inflow.get(f) || 0));
   const now = m.bals.get(f)?.balance || 0;
   const spent = Math.max(0, had - now);
-  if (!had) return capsule({ label: 'Left this cycle', value: { n: now, text: `AED ${fmt(now, { whole: true })}` }, meta: 'Nothing came in yet this cycle', level: now > 0 ? 1 : 0 });
+  if (!had) return capsule({ label: t('home.leftCycle'), value: { n: now, text: `${amtAED(fmt(now, { whole: true }))}` }, meta: t('home.nothingCame'), level: now > 0 ? 1 : 0 });
   const level = now / had;
   return capsule({
-    label: now < 0 ? 'Overdrawn' : 'Left this cycle',
-    value: { n: Math.abs(now), text: `AED ${fmt(Math.abs(now), { whole: true })}` },
-    meta: `of ${fmt(had, { whole: true })} · ${Math.round(Math.min(1, spent / had) * 100)}% gone`,
+    label: now < 0 ? t('home.overdrawn') : t('home.leftCycle'),
+    value: { n: Math.abs(now), text: `${amtAED(fmt(Math.abs(now), { whole: true }))}` },
+    meta: t('home.ofGone', { n: fmt(had, { whole: true }), pct: Math.round(Math.min(1, spent / had) * 100) }),
     level, tone: now < 0 ? 'over' : level < 0.2 ? 'low' : '',
   });
 }
@@ -331,19 +331,19 @@ function allowanceCard(m, percent = false) {
   const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
   const spentPct = pot > 0 ? Math.round((sum.allowanceUsed / pot) * 100) : 0;
   const extra = sum.carryIn + sum.topUps;
-  const of = extra > 0.5 ? `${fmt(pot, { whole: true })} (${fmt(sum.allowance, { whole: true })} + ${fmt(extra, { whole: true })} top-up)` : fmt(pot, { whole: true });
+  const of = extra > 0.5 ? t('home.ofTopUp', { pot: fmt(pot, { whole: true }), a: fmt(sum.allowance, { whole: true }), x: fmt(extra, { whole: true }) }) : fmt(pot, { whole: true });
   if (percent) {
     return capsule({
-      label: left < 0 ? 'Allowance used up' : 'Allowance left',
+      label: left < 0 ? t('home.usedUp') : t('home.allowLeft'),
       value: { n: Math.round(level * 100), text: `${Math.round(level * 100)}%`, unit: 'pct' },
-      meta: `<b>${spentPct}% spent</b> · ${fmt(sum.allowanceUsed, { whole: true })} of ${of} on ${esc(m.allowAcc)}`,
+      meta: t('home.pctOn', { pct: spentPct, used: fmt(sum.allowanceUsed, { whole: true }), of, acc: esc(m.allowAcc) }),
       level, tone,
     });
   }
   return capsule({
-    label: left < 0 ? 'Over the allowance' : 'Allowance left',
-    value: { n: Math.abs(left), text: `AED ${fmt(Math.abs(left), { whole: true })}`, unit: 'aed' },
-    meta: `${spentPct}% spent · ${fmt(sum.allowanceUsed, { whole: true })} of ${of} this cycle${m.spentBefore ? ` · ${fmt(m.spentBefore, { whole: true })} before you started tracking` : ''}`,
+    label: left < 0 ? t('home.overAllow') : t('home.allowLeft'),
+    value: { n: Math.abs(left), text: `${amtAED(fmt(Math.abs(left), { whole: true }))}`, unit: 'aed' },
+    meta: `${t('home.pctCycle', { pct: spentPct, used: fmt(sum.allowanceUsed, { whole: true }), of })}${m.spentBefore ? ` · ${t('home.beforeTracking', { n: fmt(m.spentBefore, { whole: true }) })}` : ''}`,
     level, tone,
   });
 }
@@ -353,10 +353,10 @@ function whereCard(m) {
   if (!m.matched) return '';
   const rows = whereRows(m);
   return `<section class="where">
-    <h3>Where your ${fmt(m.total, { whole: true })} is</h3>
+    <h3>${t('home.whereTitle', { n: fmt(m.total, { whole: true }) })}</h3>
     <div class="where-bar">${rows.filter((r) => r.v > 0).map((r) => `<span style="flex-grow:${r.v}; --c:${r.c}"></span>`).join('')}</div>
     ${rows.map((r) => `<div class="where-row"><i style="--c:${r.c}"></i><span class="wr-main"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></span><b class="num${r.shown < 0 ? ' neg' : ''}">${r.shown < 0 ? '−' : ''}${fmt(Math.abs(r.shown), { whole: true })}</b></div>`).join('')}
-    <div class="where-row total"><span class="wr-main"><b>All your money</b></span><b class="num">${fmt(m.total, { whole: true })}</b></div>
+    <div class="where-row total"><span class="wr-main"><b>${t('home.allMoney')}</b></span><b class="num">${fmt(m.total, { whole: true })}</b></div>
     ${owedLineHTML({ inCard: true })}
   </section>`;
 }
@@ -366,20 +366,20 @@ function paydayCard(m) {
   if (!items.length) return '';
   const done = items.filter((p) => p.complete).length;
   return `<section class="payday">
-    <div class="pd-head"><h3>Payday plan</h3><span class="pd-count num">${done}/${items.length}</span><button type="button" class="text-btn" data-go="settings" data-anchor="plan">Edit</button></div>
+    <div class="pd-head"><h3>${t('home.payday')}</h3><span class="pd-count num">${done}/${items.length}</span><button type="button" class="text-btn" data-go="settings" data-anchor="plan">${t('common.edit')}</button></div>
     ${items.map((p) => {
-      const what = p.kind === 'Income' ? `into ${esc(p.to)}` : `${esc(p.from)} → ${esc(p.to)}`;
+      const what = p.kind === 'Income' ? t('home.into', { acc: esc(p.to) }) : `${esc(p.from)} → ${esc(p.to)}`;
       const right = p.dismissed
-        ? `<button type="button" class="text-btn pd-restore" data-plan-restore="${esc(p.id)}">Bring back</button>`
+        ? `<button type="button" class="text-btn pd-restore" data-plan-restore="${esc(p.id)}">${t('home.bringBack')}</button>`
         : p.complete
           ? `<span class="pd-done">${icon('check', { size: 16 })}</span>`
           : `${p.state === 'upcoming'
             ? `<span class="pd-when">${shortDate(p.due)}</span>`
-            : `<button type="button" class="pd-btn" data-plan-act="${p.kind === 'Income' ? 'land' : 'move'}" data-plan-id="${esc(p.id)}">${p.kind === 'Income' ? 'It landed' : 'Move now'}</button>`}${dismissBtn(p, 'dismiss-x pd-x')}`;
-      const sub = p.dismissed ? `${fmt(p.amount, { whole: true })} ${what} · done, back on ${backOn(m)}` : `${fmt(p.complete ? p.done : p.remaining, { whole: true })} ${what}`;
+            : `<button type="button" class="pd-btn" data-plan-act="${p.kind === 'Income' ? 'land' : 'move'}" data-plan-id="${esc(p.id)}">${p.kind === 'Income' ? t('home.landed') : t('home.moveNow')}</button>`}${dismissBtn(p, 'dismiss-x pd-x')}`;
+      const sub = p.dismissed ? t('home.doneBack', { n: fmt(p.amount, { whole: true }), what, date: backOn(m) }) : `${fmt(p.complete ? p.done : p.remaining, { whole: true })} ${what}`;
       return `<div class="pd-row${p.complete ? ' complete' : ''}" data-plan-row="${esc(p.id)}">
         <span class="pd-dot" style="--c:${p.kind === 'Income' ? 'var(--good)' : accountMeta(p.to).color}"></span>
-        <span class="pd-main"><b>${esc(p.name)}</b><span>${sub}</span></span>
+        <span class="pd-main"><b>${esc(planName(p))}</b><span>${sub}</span></span>
         ${right}</div>`;
     }).join('')}
   </section>`;
@@ -405,11 +405,11 @@ function flowCard(m) {
   ci = 0;
   const rightBands = R.map((n) => { const c0 = ci; ci += n.h; const y0 = n.y + (n.slotH - n.h) / 2; return `<path d="M${xC + wC} ${c0} C${xC + wC + 30} ${c0} ${xR - 34} ${y0} ${xR} ${y0} L${xR} ${y0 + n.h} C${xR - 34} ${y0 + n.h} ${xC + wC + 30} ${c0 + n.h} ${xC + wC} ${c0 + n.h} Z" class="band" style="--c:${colorOut(n.name)}"/>`; }).join('');
   const total = Math.max(L.reduce((a, n) => Math.max(a, n.y + n.slotH), 0), R.reduce((a, n) => Math.max(a, n.y + n.slotH), 0), hH);
-  const labelL = L.map((n) => `<text x="${xL - 8}" y="${n.y + n.slotH / 2 - 2}" text-anchor="end" class="fl-name">${esc(n.name)}</text><text x="${xL - 8}" y="${n.y + n.slotH / 2 + 11}" text-anchor="end" class="fl-val">+${fmt(n.v, { whole: true })}</text><rect x="${xL}" y="${n.y + (n.slotH - n.h) / 2}" width="${wN}" height="${n.h}" rx="2" class="node in"/>`).join('');
-  const labelR = R.map((n) => `<rect x="${xR}" y="${n.y + (n.slotH - n.h) / 2}" width="${wN}" height="${n.h}" rx="2" style="fill:${colorOut(n.name)}"/><text x="${xR + 14}" y="${n.y + n.slotH / 2 - 2}" class="fl-name">${n.name === 'Kept' ? `Kept in ${esc(m.hub)}` : esc(n.name === 'Spent' ? 'Spent from ' + m.hub : n.name)}</text><text x="${xR + 14}" y="${n.y + n.slotH / 2 + 11}" class="fl-val">${fmt(n.v, { whole: true })}</text>`).join('');
+  const labelL = L.map((n) => `<text x="${xL - 8}" y="${n.y + n.slotH / 2 - 2}" text-anchor="end" class="fl-name">${esc(categoryMeta(n.name, 'Income')?.label || n.name)}</text><text x="${xL - 8}" y="${n.y + n.slotH / 2 + 11}" text-anchor="end" class="fl-val">+${fmt(n.v, { whole: true })}</text><rect x="${xL}" y="${n.y + (n.slotH - n.h) / 2}" width="${wN}" height="${n.h}" rx="2" class="node in"/>`).join('');
+  const labelR = R.map((n) => `<rect x="${xR}" y="${n.y + (n.slotH - n.h) / 2}" width="${wN}" height="${n.h}" rx="2" style="fill:${colorOut(n.name)}"/><text x="${xR + 14}" y="${n.y + n.slotH / 2 - 2}" class="fl-name">${n.name === 'Kept' ? t('home.keptIn', { acc: esc(m.hub) }) : n.name === 'Spent' ? t('home.spentFrom', { acc: esc(m.hub) }) : esc(n.name)}</text><text x="${xR + 14}" y="${n.y + n.slotH / 2 + 11}" class="fl-val">${fmt(n.v, { whole: true })}</text>`).join('');
   return `<section class="flow-card">
-    <h3>How ${esc(m.hub)} moved money this cycle</h3>
-    <svg viewBox="-4 -4 ${W + 8} ${total + 8}" class="flow-svg" role="img" aria-label="${esc(m.hub)} received ${fmt(f.inTotal, { whole: true })} and sent out ${fmt(f.outTotal, { whole: true })} this cycle">
+    <h3>${t('home.howMoved', { acc: esc(m.hub) })}</h3>
+    <svg viewBox="-4 -4 ${W + 8} ${total + 8}" class="flow-svg" role="img" aria-label="${t('home.flowSaid', { acc: esc(m.hub), a: fmt(f.inTotal, { whole: true }), b: fmt(f.outTotal, { whole: true }) })}">
       ${leftBands}${rightBands}
       <rect x="${xC}" y="0" width="${wC}" height="${hH}" rx="3" style="fill:${accountMeta(m.hub).color}"/>
       ${labelL}${labelR}
@@ -441,7 +441,8 @@ function swapContent(el, html, dir) {
 
 function setFocus(next, { scrub = false } = {}) {
   if (!order().includes(next) || next === focus) return;
-  const dir = Math.sign(order().indexOf(next) - order().indexOf(focus)) || 1;
+  // the next account slides in from the trailing side: the right in English, the left in Arabic
+  const dir = (Math.sign(order().indexOf(next) - order().indexOf(focus)) || 1) * (isRTL() ? -1 : 1);
   focus = next;
   try { sessionStorage.setItem('sp.focus', focus); } catch { /* private mode */ }
   haptic();
@@ -576,7 +577,7 @@ export function bindHomeGestures(view) {
     if (pillFollowing) { pillFollowing = false; placePill(true); }
     if (s.zone === 'swipe') {
       const dx = e.clientX - s.x0, v = dx / Math.max(1, e.timeStamp - s.t0);
-      if (Math.abs(dx) > 40 || Math.abs(v) > 0.5) setFocus(order()[Math.max(0, Math.min(order().length - 1, order().indexOf(focus) + (dx < 0 ? 1 : -1)))]);
+      if (Math.abs(dx) > 40 || Math.abs(v) > 0.5) setFocus(order()[Math.max(0, Math.min(order().length - 1, order().indexOf(focus) + ((dx < 0) !== isRTL() ? 1 : -1)))]);
     }
   };
   view.addEventListener('pointerup', end);
@@ -586,25 +587,25 @@ let swallowing = false;
 function swallow() { swallowing = true; setTimeout(() => { swallowing = false; }, 60); }
 
 /* Clicks that belong to Home. Returns true when handled. */
-export function homeClick(t) {
+export function homeClick(tg) {
   if (swallowing) return true;
-  const key = t.closest('.key-acc');
+  const key = tg.closest('.key-acc');
   if (key && key.dataset.focus) { setFocus(key.dataset.focus); return true; }
-  const seg = t.closest('.seg');
+  const seg = tg.closest('.seg');
   if (seg) { setFocus(seg.dataset.seg); return true; }
-  const pd = t.closest('[data-plan-dismiss]');
+  const pd = tg.closest('[data-plan-dismiss]');
   if (pd) { dismissPrompt(pd.dataset.planDismiss); return true; }
-  const pr = t.closest('[data-plan-restore]');
+  const pr = tg.closest('[data-plan-restore]');
   // a double tap on ✕ lands its second tap on "Bring back" in the same spot: ignore that one
   if (pr) { if (Date.now() - lastDismiss.at > 600 || lastDismiss.id !== pr.dataset.planRestore) { haptic(); restorePlan(pr.dataset.planRestore); } return true; }
-  const pa = t.closest('[data-plan-act]');
+  const pa = tg.closest('[data-plan-act]');
   if (pa) { runPlan(pa.dataset.planId); return true; }
-  const pe = t.closest('[data-plan-edit]');
+  const pe = tg.closest('[data-plan-edit]');
   if (pe) { openPlanItem(state.plan.find((p) => p.id === pe.dataset.planEdit)); return true; }
-  const pn = t.closest('[data-plan-new]');
+  const pn = tg.closest('[data-plan-new]');
   if (pn) { openPlanItem(null, { kind: pn.dataset.planNew, from: pn.dataset.from || '' }); return true; }
-  const act = t.closest('[data-act]')?.dataset.act;
-  if (act === 'match') { openMatch(t.closest('[data-act]').dataset.acc); return true; }
+  const act = tg.closest('[data-act]')?.dataset.act;
+  if (act === 'match') { openMatch(tg.closest('[data-act]').dataset.acc); return true; }
   if (act === 'match-all') { openMatch(ACCOUNTS[0].id, { chain: true }); return true; }
   return false;
 }
@@ -619,8 +620,8 @@ function runPlan(id) {
   const e = p.kind === 'Income'
     ? addEntry({ type: 'Income', amount: p.remaining || p.amount, account: p.to, category: p.category || 'Other', merchant: p.name, source: `Plan:${p.id}` })
     : addEntry({ type: 'Transfer', amount: p.remaining || p.amount, account: p.from, toAccount: p.to, note: p.name, source: `Plan:${p.id}` });
-  toast(p.kind === 'Income' ? `${esc(p.name)} landed · +${fmt(e.amount, { whole: true })}` : `Moved ${fmt(e.amount, { whole: true })} to ${esc(p.to)}`, {
-    icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo(),
+  toast(p.kind === 'Income' ? t('home.landedT', { name: esc(planName(p)), amt: ltr(`+${fmt(e.amount, { whole: true })}`) }) : t('home.movedT', { n: fmt(e.amount, { whole: true }), acc: esc(p.to) }), {
+    icon: icon('check', { size: 18 }), tone: 'good', action: t('common.undo'), onAction: () => undo(),
   });
 }
 
@@ -635,8 +636,8 @@ function dismissPrompt(id) {
   lastDismiss = { id, at: Date.now() };
   const step = lastAction();
   // this toast's Undo brings back this prompt only, whatever was done since
-  toast(`${esc(p.name)} hidden until ${backOn(m)}`, {
-    icon: icon('check', { size: 18 }), action: 'Undo',
+  toast(t('home.hiddenUntil', { name: esc(planName(p)), date: backOn(m) }), {
+    icon: icon('check', { size: 18 }), action: t('common.undo'),
     onAction: () => { if (!(id in state.dismissed)) return; if (lastAction() === step) undo(); else restorePlan(id); },
   });
 }
@@ -649,16 +650,16 @@ export function openMatch(acc, { chain = false } = {}) {
   const idx = ACCOUNTS.findIndex((a) => a.id === acc);
   const nextAcc = chain ? ACCOUNTS[idx + 1]?.id : null;
   openSheet({
-    label: `Match ${acc}`, tall: false,
-    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">${chain ? 'Skip' : 'Cancel'}</button><h2 class="sheet-title">${chain ? `${idx + 1} of ${ACCOUNTS.length} · ` : ''}${esc(acc)}</h2><span class="icon-btn-spacer"></span></header>
-      <p class="sheet-lede center">What does ${acc === 'Cash' ? 'your wallet hold' : `your ${esc(acc)} app show`} right now?</p>
+    label: t('home.matchAcc', { acc }), tall: false,
+    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">${chain ? t('home.skip') : t('common.cancel')}</button><h2 class="sheet-title">${chain ? `${t('home.nOf', { i: idx + 1, n: ACCOUNTS.length })} · ` : ''}${esc(acc)}</h2><span class="icon-btn-spacer"></span></header>
+      <p class="sheet-lede center">${acc === 'Cash' ? t('home.askWallet') : t('home.askApp', { acc: esc(acc) })}</p>
       <div class="match-amount">${dirham()}<output class="amount num zero">0</output></div>
       <p class="amount-sub match-diff"></p>
       <div class="keypad-wrap">
-        <div class="keypad" role="group" aria-label="Amount keypad">
-          ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" class="key" data-key="${k}" aria-label="${k === 'del' ? 'Delete digit' : k}">${k === 'del' ? icon('backspace', { size: 24 }) : k}</button>`).join('')}
+        <div class="keypad" role="group" aria-label="${t('home.keypad')}">
+          ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" class="key" data-key="${k}" aria-label="${k === 'del' ? t('home.delDigit') : k}">${k === 'del' ? icon('backspace', { size: 24 }) : k}</button>`).join('')}
         </div>
-        <button class="save-btn" type="button" data-act="save" disabled>Type the balance</button>
+        <button class="save-btn" type="button" data-act="save" disabled>${t('home.typeBal')}</button>
       </div>`,
     onMount(sheet, close) {
       const out = sheet.querySelector('.amount'), diffEl = sheet.querySelector('.match-diff'), save = sheet.querySelector('[data-act="save"]');
@@ -668,9 +669,9 @@ export function openMatch(acc, { chain = false } = {}) {
         out.innerHTML = `${fmt(+i || 0, { whole: true })}${d !== undefined ? `<span class="dec">.${d}</span>` : ''}`;
         out.classList.toggle('zero', !str);
         const diff = Math.round((v - bal) * 100) / 100;
-        diffEl.textContent = !str ? (bal ? `The app thinks ${fmt(bal, { fixed: true })}` : '') : diff === 0 ? 'Spot on. Nothing to correct.' : `${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff), { fixed: true })} difference will be recorded`;
+        diffEl.textContent = !str ? (bal ? t('home.thinks', { n: fmt(bal, { fixed: true }) }) : '') : diff === 0 ? t('home.spotOn') : t('home.diffRec', { n: ltr(`${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff), { fixed: true })}`) });
         save.disabled = !str;
-        save.textContent = str ? (nextAcc ? `Save & next: ${nextAcc}` : 'Save balance') : 'Type the balance';
+        save.textContent = str ? (nextAcc ? t('home.saveNext', { acc: nextAcc }) : t('home.saveBal')) : t('home.typeBal');
       };
       sheet.querySelector('.keypad').addEventListener('pointerdown', (ev) => {
         const k = ev.target.closest('.key')?.dataset.key;
@@ -690,7 +691,7 @@ export function openMatch(acc, { chain = false } = {}) {
           haptic();
           close();
           if (nextAcc) setTimeout(() => openMatch(nextAcc, { chain }), 320);
-          else toast(diff === 0 ? `${esc(acc)} matches the bank` : `${esc(acc)} matched · ${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff), { whole: true })} corrected`, { icon: icon('check', { size: 18 }), tone: 'good' });
+          else toast(diff === 0 ? t('home.matchesBank', { acc: esc(acc) }) : t('home.matchedCorr', { acc: esc(acc), n: ltr(`${diff > 0 ? '+' : '−'}${fmt(Math.abs(diff), { whole: true })}`) }), { icon: icon('check', { size: 18 }), tone: 'good' });
         }
       });
       paint();
@@ -701,15 +702,15 @@ export function openMatch(acc, { chain = false } = {}) {
 /* ───────────────────────── Payday plan editor ───────────────────────── */
 
 export function planSettingsBlock() {
-  const kinds = [['Income', 'Money that lands'], ['Move', 'Money you move'], ['Responsibility', 'What ADIB pays']];
+  const kinds = [['Income', t('home.kindIncome')], ['Move', t('home.kindMove')], ['Responsibility', t('home.kindResp')]];
   return kinds.map(([k, title]) => {
     const items = state.plan.filter((p) => p.kind === k);
     return `<div class="plan-kind"><div class="ap-label">${title}</div>
       ${items.map((p) => `<button type="button" class="plan-row" data-plan-edit="${esc(p.id)}">
         <span class="pd-dot" style="--c:${k === 'Income' ? 'var(--good)' : k === 'Move' ? accountMeta(p.to).color : 'var(--warn)'}"></span>
-        <span class="pd-main"><b>${esc(p.name)}</b><span>${k === 'Income' ? `into ${esc(p.to)}` : k === 'Move' ? `${esc(p.from)} → ${esc(p.to)}` : `${esc(p.category)} from ${esc(p.from)}`}${p.day ? ` · on the ${ord(p.day)}` : ''}</span></span>
+        <span class="pd-main"><b>${esc(planName(p))}</b><span>${k === 'Income' ? t('home.into', { acc: esc(p.to) }) : k === 'Move' ? `${esc(p.from)} → ${esc(p.to)}` : t('home.catFrom', { cat: esc(categoryMeta(p.category)?.label || p.category), acc: esc(p.from) })}${p.day ? ` · ${t('home.onThe', { d: ord(p.day) })}` : ''}</span></span>
         <b class="num">${p.amount ? fmt(p.amount, { whole: true }) : '—'}</b>${icon('chevR', { size: 16, cls: 'chev' })}</button>`).join('')}
-      <button type="button" class="text-btn plan-add" data-plan-new="${k}">${icon('plus', { size: 16 })} Add</button></div>`;
+      <button type="button" class="text-btn plan-add" data-plan-new="${k}">${icon('plus', { size: 16 })} ${t('common.add')}</button></div>`;
   }).join('');
 }
 
@@ -718,28 +719,28 @@ export function openPlanItem(existing, preset = {}) {
   const accOpts = (sel) => ACCOUNTS.map((a) => `<option ${a.id === sel ? 'selected' : ''}>${a.id}</option>`).join('');
   const catOpts = (type, sel) => pickerCategories(type, sel).map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.label || c.id)}</option>`).join('');
   openSheet({
-    label: 'Plan item', tall: false,
-    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">Cancel</button><h2 class="sheet-title">${existing ? esc(p.name) : 'New plan item'}</h2><button class="text-btn strong" data-act="save" type="button">Save</button></header>
+    label: t('home.planItem'), tall: false,
+    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">${t('common.cancel')}</button><h2 class="sheet-title">${existing ? esc(planName(p)) : t('home.newPlanItem')}</h2><button class="text-btn strong" data-act="save" type="button">${t('common.save')}</button></header>
       <div class="sheet-scroll plan-form" data-kind="${p.kind}">
         <section class="group form">
-          <label class="row input-row"><span>Name</span><input id="pf-name" name="name" type="text" value="${esc(p.name)}" placeholder="e.g. Fuel" maxlength="40"></label>
-          <label class="row input-row"><span>Type</span><select id="pf-kind" name="kind">${['Income', 'Move', 'Responsibility'].map((k) => `<option ${k === p.kind ? 'selected' : ''}>${k}</option>`).join('')}</select></label>
-          <label class="row input-row"><span>Amount</span><span class="suffix-input"><em>AED</em><input id="pf-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" value="${p.amount || ''}"></span></label>
-          <label class="row input-row"><span>Day of month</span><select id="pf-day" name="day"><option value="">Any day</option>${Array.from({ length: 31 }, (_, i) => i + 1).map((d) => `<option ${d === p.day ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
-          <label class="row input-row f-from"><span>From</span><select id="pf-from" name="from">${accOpts(p.from || state.settings.emergencyAccount)}</select></label>
-          <label class="row input-row f-to"><span>Into</span><select id="pf-to" name="to">${accOpts(p.to || state.settings.emergencyAccount)}</select></label>
-          <label class="row input-row f-cat-spend"><span>Category</span><select id="pf-cat-s" name="catSpend">${catOpts('Spend', p.category)}</select></label>
-          <label class="row input-row f-cat-income"><span>Category</span><select id="pf-cat-i" name="catIncome">${catOpts('Income', p.category)}</select></label>
+          <label class="row input-row"><span>${t('home.name')}</span><input id="pf-name" name="name" type="text" value="${esc(p.name)}" placeholder="${t('home.egFuel')}" maxlength="40"></label>
+          <label class="row input-row"><span>${t('home.type')}</span><select id="pf-kind" name="kind">${['Income', 'Move', 'Responsibility'].map((k) => `<option value="${k}" ${k === p.kind ? 'selected' : ''}>${t(`kind.${k}`)}</option>`).join('')}</select></label>
+          <label class="row input-row"><span>${t('home.amount')}</span><span class="suffix-input"><em>${t('cur.aed')}</em><input id="pf-amount" name="amount" type="number" inputmode="decimal" min="0" step="any" value="${p.amount || ''}"></span></label>
+          <label class="row input-row"><span>${t('home.dayOfMonth')}</span><select id="pf-day" name="day"><option value="">${t('home.anyDay')}</option>${Array.from({ length: 31 }, (_, i) => i + 1).map((d) => `<option ${d === p.day ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
+          <label class="row input-row f-from"><span>${t('home.from')}</span><select id="pf-from" name="from">${accOpts(p.from || state.settings.emergencyAccount)}</select></label>
+          <label class="row input-row f-to"><span>${t('home.intoL')}</span><select id="pf-to" name="to">${accOpts(p.to || state.settings.emergencyAccount)}</select></label>
+          <label class="row input-row f-cat-spend"><span>${t('home.category')}</span><select id="pf-cat-s" name="catSpend">${catOpts('Spend', p.category)}</select></label>
+          <label class="row input-row f-cat-income"><span>${t('home.category')}</span><select id="pf-cat-i" name="catIncome">${catOpts('Income', p.category)}</select></label>
         </section>
         <p class="group-foot plan-hint"></p>
-        ${existing ? '<button type="button" class="dup-btn danger-btn" data-act="delete">Remove from plan</button>' : ''}
+        ${existing ? '<button type="button" class="dup-btn danger-btn" data-act="delete">' + t('home.removeFromPlan') + '</button>' : ''}
       </div>`,
     onMount(sheet, close) {
       const form = sheet.querySelector('.plan-form'), hint = sheet.querySelector('.plan-hint');
       const HINTS = {
-        Income: 'Shows up on Home on its day with an “It landed” button, so your total is never ahead of the bank.',
-        Move: 'A reminder to move money between accounts. One tap logs the transfer.',
-        Responsibility: 'Money held back in the main account until you’ve spent it in this category this cycle.',
+        Income: t('home.hintIncome'),
+        Move: t('home.hintMove'),
+        Responsibility: t('home.hintResp'),
       };
       const sync = () => { form.dataset.kind = sheet.querySelector('#pf-kind').value; hint.textContent = HINTS[form.dataset.kind]; };
       sheet.querySelector('#pf-kind').addEventListener('change', sync);
@@ -747,7 +748,7 @@ export function openPlanItem(existing, preset = {}) {
       sheet.addEventListener('click', (ev) => {
         const a = ev.target.closest('[data-act]')?.dataset.act;
         if (a === 'cancel') close();
-        if (a === 'delete') { savePlan(state.plan.filter((x) => x.id !== p.id)); close(); toast(`Removed ${esc(p.name)} from the plan`); }
+        if (a === 'delete') { savePlan(state.plan.filter((x) => x.id !== p.id)); close(); toast(t('home.removedPlan', { name: esc(planName(p)) })); }
         if (a === 'save') {
           const kind = sheet.querySelector('#pf-kind').value;
           const item = {
@@ -762,7 +763,7 @@ export function openPlanItem(existing, preset = {}) {
           savePlan(list);
           haptic();
           close();
-          toast(`Saved ${esc(item.name)}`, { icon: icon('check', { size: 18 }), tone: 'good' });
+          toast(t('home.savedItem', { name: esc(planName(item)) }), { icon: icon('check', { size: 18 }), tone: 'good' });
         }
       });
     },

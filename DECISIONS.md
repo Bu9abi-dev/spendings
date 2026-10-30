@@ -344,3 +344,21 @@ Choices made while running the app on my own, newest first, with the reason for 
   layout change needed was letting `.btn-*` pills wrap. Not done on purpose: the white glyph on a category colour (amber, pink,
   green series colours are 2–3:1; the category name sits beside every icon, so it is never the only carrier), heading-order and
   banner-landmark notices (moderate), and per-key spoken amounts on the Home account keys (they read the compact "12.3k").
+- **Arabic / English** (`claude/arabic`, `tests/verify-arabic.mjs`). Settings → Language: English (default), العربية, and
+  **Match iPhone** (Arabic when the phone's first language is Arabic) as a third choice, because it costs nothing and is what
+  iOS apps do; it is saved on the phone (`sp.lang`), not in the sheet, since it is a per-device choice like Face ID. Words live
+  in `docs/js/strings/en.js` and `ar.js` (about 1,050 keys, grouped by screen), read through `t()` in `docs/js/i18n.js`; English
+  text is unchanged, so every existing test still reads English. Arabic is short Modern Standard Arabic in the style of iOS
+  (أنفقت، المتبقي، هذه الدورة), plurals use all six Arabic forms from Intl.PluralRules. **Not translated**: user data, the ids saved
+  to the sheet (category ids like "Food & Drinks" stay; built-in categories, the starting account notes and plan items get
+  Arabic labels until renamed), notes the app writes into the sheet ("Split: …", "Matched with bank"), **CSV headers** (kept
+  English so the sheet and other tools keep reading them), the Apps Script's replies (Code.gs untouched, so "Connected ✓"
+  and its errors stay English), and the names of buttons in Apple's Shortcuts app and Google's consent screens (they're
+  shown as `<b lang="en">`, since they must match what those apps show). **Currency**: "د.إ" in Arabic text, the dirham glyph
+  stays for the big Home balance. **Digits**: Western (as UAE bank apps), dates from Intl `ar-AE-u-nu-latn`. **Direction**:
+  `<html dir="rtl">`, logical CSS throughout, the tab bar and + button mirror, swipe-to-delete goes right, chevrons/undo flip;
+  amounts stay left to right (money() wraps the number in Unicode LRI/PDI marks, `.num` uses `unicode-bidi: plaintext`, filled-in
+  values in a sentence are FSI isolates so "Disney+" stays "Disney+"); the number keypad stays 1-2-3 left to right like the iOS
+  keypad. **Charts**: time runs right to left in Arabic, as Swift Charts does in RTL locales (flex bar charts mirror by
+  themselves; the SVG pace chart mirrors its x axis in charts.js); the Home "money flow" diagram keeps sources on the left.
+  Font: the system font (-apple-system has Arabic), with a little more line height in RTL.

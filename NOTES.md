@@ -61,6 +61,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/goals-ui.js` | Insights Goals and Net worth cards, the Settings block, and the goal and investment sheets. |
 | `docs/js/weekly.js` | Pure weekly maths: last full Mon–Sun week (Dubai days), spent (Spend only, gross like Insights), usual week (median of the 6 weeks before, needs 3 with data), top 3 categories, biggest payment, "coming up" (reuses recurring.js, bnpl.js, budgets.js), and the words for the allowance pace alert (`paceAlert`, `paceSeen`; the maths is `allowancePace` in model.js). Tested by `tests/verify-weekly.mjs`. |
 | `docs/js/weekly-ui.js` | Home lines (`pace:out`, `week:summary`), the "Your week" sheet, the Insights "Last week" card. "Seen" is the `weekly` extra `{ v: 1, seen: '<Monday of the week>', pace: { cycle, outDay } }`, saved with `undoable: false`. Pace itself (on track / over, the "runs out" day) is `allowancePace` in model.js, shared with Home and Insights. |
+| `docs/js/i18n.js` | Language (Settings → Language: English, العربية, Match iPhone; saved on the phone as `sp.lang`). `t(key, vars)` with plurals (Intl.PluralRules), `lang()`, `setLang()`, `dir()`, `locale()` for dates, `ltr()` to keep a number left to right in Arabic. |
+| `docs/js/strings/en.js`, `docs/js/strings/ar.js` | Every UI word, as plain objects with the same keys. `tests/verify-arabic.mjs` checks both have every key the code uses and none it doesn't. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature
@@ -89,6 +91,19 @@ The thread running the loop does both when it merges, one version per merge.
   Never copy `SPEND_CATEGORIES` at import time; it changes when Abdullah edits categories.
 - Names on screen: `categoryMeta(id, type)?.label || id`, escaped with `esc`. The id is what the sheet stores and
   never changes.
+
+## UI strings (English and Arabic): rules for new code
+
+- **UI strings: add to strings/en.js and strings/ar.js; use t().** Never put words for the screen straight into the HTML/JS.
+  `t('area.key', { name })` fills `{name}`; a plural is an object (`{ one, other }` in English, `{ zero, one, two, few, many,
+  other }` in Arabic) and needs `{ n }`. Keep English the same as before (tests read it).
+- Amounts: `money()`, `amtAED(fmt(...))` or `amtOf()` from model.js, never `'AED ' + …`; in Arabic they become "د.إ" with the number
+  kept left to right. Dates: `shortDay`, `monthName`, `cycleName`, `dayLabel` (model.js), never a month array.
+- Not translated: user data (merchants, account/category/people names you typed), ids saved to the sheet (category ids,
+  plan/type ids, notes like "Split: …"), CSV headers, Apps Script replies. Built-in categories, the starting account notes
+  and plan items show in Arabic until renamed (getters in model.js).
+- Layout: use logical CSS (`margin-inline`, `padding-inline`, `inset-inline`, `text-align: start/end`); anything that slides
+  or points (swipes, chevrons with `i-flip`, chart x axes) checks `isRTL()`. Don't name a local variable `t`.
 
 ## People (money owed): rules for new code
 
