@@ -8,6 +8,7 @@ import {
 import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
+import { bnplHomeNotice } from './bnpl-ui.js';
 import { detectRecurring, subscriptionNotice } from './recurring.js';
 import { budgetRows, budgetNudge, budgetNotice } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
@@ -177,10 +178,10 @@ export function renderHome(h) {
     <div class="lens-detail">${detail(m, focus)}</div>`;
 }
 
-/** At most one quiet line on Home, the most urgent of: a category over its limit, a subscription that just
-    started charging, one due within 3 days, a category close to its limit. Each feature decides whether it has
+/** At most one quiet line on Home, the most urgent of: an overdue buy-now-pay-later payment, a category over its limit, a subscription that just
+    started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit. Each feature decides whether it has
     something to say (…Notice); Home only picks one, so notices never stack up. */
-const NOTICE_ORDER = ['budget:over', 'sub:new', 'sub:due', 'budget:near'];
+const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'budget:near'];
 function homeNotice(m) {
   const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
   const found = [];
@@ -188,6 +189,8 @@ function homeNotice(m) {
   if (b) found.push({ rank: `budget:${b.priority}`, html: budgetNudge(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent }) });
   const s = subscriptionNotice(detectRecurring(state.entries, state.settings, { ignored: getExtra('recurring', { v: 1, ignored: [] }).ignored || [] }));
   if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
+  const bn = bnplHomeNotice(); // a buy-now-pay-later payment overdue, or due within 7 days
+  if (bn) found.push(bn);
   found.sort((x, y) => NOTICE_ORDER.indexOf(x.rank) - NOTICE_ORDER.indexOf(y.rank));
   return found[0]?.html || '';
 }

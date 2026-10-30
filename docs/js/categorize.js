@@ -88,6 +88,7 @@ export function learn(entries, remembered = {}) {
   const index = new Map();
   for (const e of entries) {
     if (e.type !== 'Spend' || !e.merchant || !e.category || e.status === 'Review' || !known(e.category)) continue;
+    if (e.source === 'BNPL') continue; // a plan's payment carries the plan's category, not one you chose for that name
     const key = cleanMerchant(e.merchant);
     if (!key) continue;
     let g = index.get(key);

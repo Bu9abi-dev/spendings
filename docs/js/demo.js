@@ -1,7 +1,8 @@
 // Synthetic entries for the demo mode. Clearly labelled in the UI; never sent to the sheet.
 // Follows the owner's real money flow: pay lands in ADIB, ADIB pays responsibilities,
 // the allowance moves to ADCB, a top-up goes to BOTIM, and daily spending happens on ADCB/BOTIM.
-import { cycleOf, cycleBounds, shiftCycle, dateInCycle } from './model.js';
+import { cycleOf, cycleBounds, shiftCycle, dateInCycle, dayKey } from './model.js';
+import { addDays, dayDate, instalmentAmounts } from './bnpl.js';
 
 // [merchant, category, account, low, high]
 const DAILY = [
@@ -35,6 +36,28 @@ export const DEMO_PLAN = [
   { id: 'bills', name: 'Car & phone', kind: 'Responsibility', amount: 2325, day: 5, from: 'ADIB', to: '', category: 'Bills & Subscriptions' },
   { id: 'home', name: 'Home', kind: 'Responsibility', amount: 1500, day: 10, from: 'ADIB', to: '', category: 'Family & Gifts' },
 ];
+
+// two buy-now-pay-later plans, dated from today. Their payments are already in the demo ledger
+// (as the Apple Pay Shortcut would log them), so the app links them on its own: that's the "sync".
+// [id, provider, merchant, item, total, count, cadence, first due (days from today), account, paid (days from today)]
+const DEMO_BNPL = [
+  ['tabby', 'Tabby', 'Noon', 'AirPods Pro', 899, 4, '2w', -30, 'ADCB', [-30, -15, -2]], // next due in 12 days: no Home line, so the other notices show
+  ['tamara', 'Tamara', 'Namshi', 'Trainers', 600, 3, '1m', -20, 'BOTIM', [-19]],
+];
+
+/** The demo's saved extras: the BNPL plans, nothing linked yet. */
+export function demoExtras() {
+  const today = dayKey(new Date());
+  return {
+    bnpl: {
+      v: 1,
+      plans: DEMO_BNPL.map(([id, provider, merchant, item, total, count, cadence, first, account]) => ({
+        id: `d-${id}`, provider, merchant, item, category: 'Shopping', total, count, cadence,
+        first: addDays(today, first), account, paid: Array(count).fill(null),
+      })),
+    },
+  };
+}
 
 function rng(seed) { let s = seed; return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 
@@ -105,6 +128,16 @@ export function demoEntries(settings) {
   const recentPay = out.filter((e) => e.type === 'Spend' && e.account !== 'ADIB' && new Date(e.date) <= now).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(1, 3);
   // spelled the way a bank or Apple Pay sends them, so the smarter categories have something to match
   for (const e of recentPay) Object.assign(e, { category: '', status: 'Review', source: 'Apple Pay', merchant: `${e.merchant.toUpperCase()} ABU DHABI AE` });
+
+  // BNPL instalments, logged by Apple Pay with the provider's name as the merchant
+  const today = dayKey(now);
+  for (const [id, provider, merchant, , total, count, , , account, paidOn] of DEMO_BNPL) {
+    const amounts = instalmentAmounts(total, count);
+    paidOn.forEach((d, i) => {
+      const date = new Date(dayDate(addDays(today, d)).getTime() - 2 * 3600e3).toISOString(); // 10:00 Dubai
+      out.push({ ...base, id: `d-bnpl-${id}-${i}`, date, type: 'Spend', amount: amounts[i], account, category: 'Shopping', merchant: `${provider.toUpperCase()}*${merchant.toUpperCase()}`, source: 'Apple Pay' });
+    });
+  }
 
   return out
     .filter((e) => new Date(e.date) <= now)

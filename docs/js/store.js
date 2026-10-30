@@ -1,6 +1,6 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, balances, cycleOf, toAED, uid, money } from './model.js';
-import { demoEntries, DEMO_PLAN } from './demo.js';
+import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
 
@@ -284,7 +284,8 @@ const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'cat
 export function addEntry(fields) {
   const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields });
   state.entries = sortEntries([e, ...state.entries]);
-  if (e.merchant && e.category && e.type === 'Spend') state.merchants[merchantKey(e.merchant)] = e.category;
+  // a BNPL payment ("Tabby · Noon") takes the plan's category; it isn't you teaching the app a merchant
+  if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') state.merchants[merchantKey(e.merchant)] = e.category;
   if (!state.prefs.demo) enqueue({ op: 'add', id: e.id, entry: e });
   record(e.type === 'Adjustment' ? `Matched ${e.account} with bank` : `Added ${describe(e)}`, () => deleteEntry(e.id));
   persist(); emit('entries');
@@ -409,11 +410,15 @@ export const getExtra = (key, fallback) => (Object.hasOwn(state.extras, key) ? s
 /** True while some extras are only on this phone (the sheet's script needs updating). */
 export const extrasOnPhoneOnly = () => state.extrasUnsent.length > 0;
 
-/** Save one feature's data. `null` clears it. Undo puts back the previous value. */
-export function saveExtra(key, value, label = 'Changed a setting') {
+/** Save one feature's data. `null` clears it. Undo puts back the previous value.
+    `{ undoable: false }` is for bookkeeping the app does by itself (e.g. linking a BNPL payment it
+    found), which isn't something you did, so it doesn't take a place in the Undo history.
+    `{ reverse }` replaces the default Undo (put the whole old value back) with your own: BNPL uses it so
+    undoing one plan change undoes only that change, read fresh at undo time, and keeps links found since. */
+export function saveExtra(key, value, label = 'Changed a setting', { undoable = true, reverse = null } = {}) {
   if (!EXTRA_KEY.test(key)) throw new Error(`Bad extras key: ${key}`);
   const before = Object.hasOwn(state.extras, key) ? state.extras[key] : null;
-  record(label, () => saveExtra(key, before));
+  if (undoable) record(label, reverse || (() => saveExtra(key, before)));
   const next = { ...state.extras, [key]: value };
   if (value == null) delete next[key];
   state.extras = next;
@@ -527,7 +532,7 @@ export function loadDemo() {
   state.merchants = {};
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
   state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
-  state.extras = {};
+  state.extras = demoExtras();
   setAccountList(state.accounts);
 }
 
