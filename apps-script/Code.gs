@@ -4,6 +4,10 @@
  * Paste this whole file into Extensions → Apps Script of your (empty) Google Sheet,
  * run `setup` once, then Deploy → New deployment → Web app
  * (Execute as: Me, Who has access: Anyone). See SETUP.md for the full walkthrough.
+ * Or let the app's setup guide do all of that with "Sign in with Google".
+ *
+ * docs/setup/Code.gs.txt is a copy of this file that the setup guide installs. Change both
+ * (tests/verify-setup.mjs fails if they differ): cp apps-script/Code.gs docs/setup/Code.gs.txt
  *
  * Tabs it manages:
  *   Ledger     — every entry, one row each. The source of truth. Edit with care.
@@ -65,6 +69,9 @@ var DEFAULT_CARD_MAP = [
   ['adib', 'ADIB'], ['adcb', 'ADCB'], ['botim', 'BOTIM'],
 ];
 
+// what this version of the script can do, so the app can tell an old script from a new one
+var FEATURES = ['extras', 'install'];
+
 var INK = '#1d1d1f', MUTED = '#6e6e73', LINE = '#e5e5ea', TINT = '#0a7cff', SOFT = '#f2f2f7';
 
 /* ───────────────────────── Menu & setup ───────────────────────── */
@@ -80,7 +87,20 @@ function onOpen() {
 
 /** Run once. Safe to run again: it only adds what is missing. */
 function setup() {
+  setupSheet_();
+  var token = getToken_();
+  try {
+    SpreadsheetApp.getUi().alert('Spendings is set up ✓',
+      'Your app key is:\n\n' + token + '\n\nNext: Deploy → New deployment → Web app ' +
+      '(Execute as: Me · Who has access: Anyone), then paste the Web app URL and this key into the app’s Settings.',
+      SpreadsheetApp.getUi().ButtonSet.OK);
+  } catch (e) { Logger.log('App key: ' + token); }
+}
+
+/** Everything setup() does, without popups, so the app's setup guide can run it over the web (`install`). */
+function setupSheet_() {
   var ss = SpreadsheetApp.getActive();
+  var newLedger = !ss.getSheetByName(LEDGER);
   ss.setSpreadsheetTimeZone(TZ);
   ss.setSpreadsheetLocale('en_GB');
 
@@ -131,14 +151,43 @@ function setup() {
   if (sheet1 && sheet1.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sheet1);
   ss.setActiveSheet(ss.getSheetByName(OVERVIEW));
   ss.moveActiveSheet(1);
+  // remember what a brand-new sheet looked like, so `install` can tell it from one you've used
+  if (newLedger) PropertiesService.getScriptProperties().setProperty('SETUP_PRINT', setupPrint_());
+}
 
-  var token = getToken_();
-  try {
-    SpreadsheetApp.getUi().alert('Spendings is set up ✓',
-      'Your app key is:\n\n' + token + '\n\nNext: Deploy → New deployment → Web app ' +
-      '(Execute as: Me · Who has access: Anyone), then paste the Web app URL and this key into the app’s Settings.',
-      SpreadsheetApp.getUi().ButtonSet.OK);
-  } catch (e) { Logger.log('App key: ' + token); }
+/**
+ * Called by the app's setup guide once it can reach the sheet. Builds the tabs if they aren't there yet.
+ * A sheet that already has a Ledger is left exactly as it is (no restyling).
+ * `fresh: true` means nobody has used this sheet yet (no entries, and its accounts, settings and plan are
+ * still the ones setup made), so the app may send your guide answers. Anything else keeps what it has.
+ */
+function install_() {
+  var ss = SpreadsheetApp.getActive();
+  var ledger = ss.getSheetByName(LEDGER);
+  var fresh;
+  if (!ledger) {
+    // only a sheet with nothing of yours in it counts as new
+    fresh = [SETTINGS, ACCOUNTS_TAB, PLAN, EXTRAS, MERCHANTS].every(function (n) {
+      var sh = ss.getSheetByName(n);
+      return !sh || sh.getLastRow() === 0;
+    });
+    setupSheet_();
+  } else {
+    var print = PropertiesService.getScriptProperties().getProperty('SETUP_PRINT');
+    fresh = ledger.getLastRow() <= 1 && !!print && print === setupPrint_();
+  }
+  return { ok: true, message: 'Your sheet is ready', features: FEATURES, fresh: fresh };
+}
+
+/** A short fingerprint of the tabs you set up yourself (accounts, settings, plan, merchants, extras). */
+function setupPrint_() {
+  var ss = SpreadsheetApp.getActive();
+  var parts = [SETTINGS, ACCOUNTS_TAB, PLAN, MERCHANTS, EXTRAS].map(function (n) {
+    var sh = ss.getSheetByName(n);
+    if (!sh || sh.getLastRow() === 0) return n + ':';
+    try { return n + ':' + JSON.stringify(sh.getRange(1, 1, sh.getLastRow(), 12).getValues()); } catch (e) { return n + ':?' + sh.getLastRow(); }
+  });
+  return hash_(parts.join('|'));
 }
 
 function showToken() {
@@ -154,16 +203,54 @@ function rotateToken() {
 function getToken_() {
   var props = PropertiesService.getScriptProperties();
   var t = props.getProperty('TOKEN');
-  if (!t) {
-    t = Utilities.getUuid().replace(/-/g, '').slice(0, 24);
-    props.setProperty('TOKEN', t);
+  if (t) return t;
+  // No key yet. Two first requests can arrive together: hold the lock, then look again, so the second one
+  // finds the key the first one took from the Setup tab instead of making a different one.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    t = props.getProperty('TOKEN');
+    if (!t) {
+      t = installerKey_() || Utilities.getUuid().replace(/-/g, '').slice(0, 24);
+      props.setProperty('TOKEN', t);
+    }
+  } finally {
+    lock.releaseLock();
   }
   return t;
 }
 
+/**
+ * The app's setup guide makes the sheet from outside, where it can't set this script's properties.
+ * So it writes the app key it made into a "Setup" tab (A1 says what it is, A2 is the key). The first
+ * time the script needs a key it takes that one, keeps it in its properties, and removes the tab.
+ * Only used while there's no key yet, so a sheet set up by hand never looks at it.
+ */
+var SETUP_TAB = 'Setup';
+var SETUP_MARK = 'Spendings app key';
+function installerKey_() {
+  var ss = SpreadsheetApp.getActive();
+  var sh = ss && ss.getSheetByName(SETUP_TAB);
+  if (!sh) return '';
+  if (String(sh.getRange(1, 1).getValue()).indexOf(SETUP_MARK) !== 0) return '';
+  var key = String(sh.getRange(2, 1).getValue()).trim();
+  if (!/^[A-Za-z0-9]{24,64}$/.test(key)) return '';
+  // a spreadsheet can't lose its last tab: then it's emptied and renamed, and setup removes it later
+  if (ss.getSheets().length > 1) ss.deleteSheet(sh);
+  else { sh.clear(); sh.setName('Sheet1'); }
+  return key;
+}
+
 /* ───────────────────────── Web endpoints ───────────────────────── */
 
-function doGet() {
+function doGet(e) {
+  // the setup guide opens ?setup=1 so Google asks you to allow the script; afterwards this page says so
+  if (e && e.parameter && e.parameter.setup) {
+    return HtmlService.createHtmlOutput('<meta name="viewport" content="width=device-width, initial-scale=1">' +
+      '<div style="font:17px -apple-system,system-ui,sans-serif;padding:40px 24px;text-align:center">' +
+      '<h2>Spendings can use your sheet ✓</h2><p>Close this tab and go back to the app. It carries on by itself.</p></div>')
+      .setTitle('Spendings');
+  }
   return json_({ ok: true, app: 'spendings', hint: 'POST JSON with your app key.' });
 }
 
@@ -174,7 +261,9 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: 'Could not read the request.' });
   }
-  if (!body.token || String(body.token).trim() !== getToken_()) {
+  var key;
+  try { key = getToken_(); } catch (err) { return json_({ ok: false, error: 'The sheet is busy. Try again in a moment.' }); }
+  if (!body.token || String(body.token).trim() !== key) {
     return json_({ ok: false, error: 'Wrong app key. Copy it again from the sheet: Spendings → Show my app key.' });
   }
   var action = body.action || (body.source === 'applepay' ? 'applepay' : body.source === 'bank' ? 'bankalert' : 'add');
@@ -185,8 +274,11 @@ function doPost(e) {
     return json_({ ok: false, error: 'The sheet is busy. Try again in a moment.' });
   }
   try {
+    // a sheet made by the setup guide has no tabs until `install` runs: build them first for anything else
+    if (action !== 'ping' && action !== 'install' && !SpreadsheetApp.getActive().getSheetByName(LEDGER)) setupSheet_();
     switch (action) {
       case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName() });
+      case 'install': return json_(install_());
       case 'list': return json_(listAll_());
       case 'applepay': return json_(addApplePay_(body));
       case 'bankalert': return json_(addBankAlert_(body));
@@ -478,7 +570,7 @@ function listAll_() {
     accounts: readAccounts_(),
     extras: readExtras_(),
     // what this version of the script can do, so the app can tell an old script from a new one
-    features: ['extras'],
+    features: FEATURES,
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };

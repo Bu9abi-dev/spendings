@@ -16,6 +16,7 @@ function a1(ref) {
 class Sheet {
   constructor(name) { this.name = name; this.cells = []; this.charts = []; }
   getName() { return this.name; }
+  setName(n) { this.name = n; return this; }
   getLastRow() {
     for (let r = this.cells.length; r > 0; r--) if ((this.cells[r - 1] || []).some((v) => v !== '' && v != null)) return r;
     return 0;
@@ -80,6 +81,7 @@ export function makeEnv() {
       DigestAlgorithm: { SHA_1: 'sha1' },
     },
     Logger: { log() {} },
+    HtmlService: { createHtmlOutput: (h) => ({ html: h, setTitle() { return this; } }) },
   };
   vm.createContext(ctx);
   vm.runInContext(code, ctx);

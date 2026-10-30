@@ -25,6 +25,7 @@ import {
 import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
+import { openSetup, shouldAutoOpen } from './setup.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -85,6 +86,11 @@ function renderSettings() {
       </div>
       ${isConnected() ? '</details>' : ''}
       ${state.sheetUrl ? `<a class="row link-row" href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${icon('sheet', { size: 20 })}<span>Open the sheet</span>${icon('chevR', { size: 16, cls: 'chev' })}</a>` : ''}
+      <button type="button" class="row link-row" data-act="setup-guide">
+        <span class="row-icon" style="--tint:var(--tint-text)">${icon('sparkle', { size: 20 })}</span>
+        <span class="row-main"><span class="row-title">Set up step by step</span><span class="row-sub">${isConnected() ? 'The welcome guide again' : 'Your cards, your money and your sheet'}</span></span>
+        ${icon('chevR', { size: 16, cls: 'chev' })}
+      </button>
     </section>
     <p class="group-foot">The app key is like a password for your sheet. It stays on this phone and in your Shortcut, never in the app’s code.</p>
 
@@ -477,6 +483,7 @@ document.addEventListener('click', async (ev) => {
   if (act === 'sync') { haptic(); await sync(); if (state.sync.status === 'error') toast(state.sync.error, { icon: icon('warn', { size: 18 }), tone: 'warn' }); }
   if (act === 'review') openReview();
   if (act === 'shortcut') openShortcutGuide();
+  if (act === 'setup-guide') { haptic(); openGuide(); }
   if (act === 'demo') { setDemo(true); toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) }); }
   if (act === 'exit-demo') { setDemo(false); render(); }
   if (act === 'export') exportCSV();
@@ -525,6 +532,10 @@ async function connect(btn) {
   } catch (e) {
     toast(e.message, { icon: icon('warn', { size: 18 }), tone: 'warn' });
   } finally { btn.disabled = false; btn.classList.remove('busy'); }
+}
+
+function openGuide() {
+  openSetup({ onShortcut: openShortcutGuide, onFinish: () => render() });
 }
 
 /* Press and hold to confirm: a slip of the finger can't erase anything. */
@@ -734,6 +745,7 @@ render();
 initLock();
 handleDeepLink();
 sync();
+if (shouldAutoOpen()) openGuide();
 
 try {
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});

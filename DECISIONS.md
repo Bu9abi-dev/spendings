@@ -4,6 +4,85 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Setup guide: the council's fixes** (council/council-transcript-2026-10-30-setup.md; these replace the
+  matching points in the setup-guide entry below).
+  - **The sheet decides whether the guide's answers go in.** `install` answers `fresh: true` only when nobody
+    has used the sheet: it just built the Ledger (and no Accounts/Settings/Plan/Extras/Merchants tab of yours
+    had anything in it), or setup() built it and it still has no entries and the same accounts, settings, plan,
+    merchants and extras that setup made (a fingerprint saved in the script's properties when the Ledger is
+    built; hand edits in the sheet count too). Any other sheet keeps exactly what it has, and the guide says so.
+    A sheet set up by an older script has no fingerprint, so it is never fresh. The phone no longer guesses
+    from entries.
+  - **`install` leaves a sheet that already has a Ledger alone**: no restyling, no tabs moved.
+  - **`getToken_` takes the script lock when there's no key yet and looks again under it**, so two first
+    requests can't end up with different keys. If the lock can't be had, the request is told the sheet is busy.
+  - **The sheet is made through Drive** (`files.create`, mimeType `application/vnd.google-apps.spreadsheet`,
+    `appProperties { spendings: '1', setupId }`), with a random setup id saved on the phone before the call. If
+    the reply is lost, the retry lists `appProperties has { key='setupId' … } and trashed=false` first (drive.file
+    may list files the app made), so no second sheet. Then the Setup tab (first tab renamed, A1 marker, A2 key)
+    is written with the Sheets API; that step is safe to repeat.
+  - **Its own "Turn on the Apps Script API" step before sign-in**, linking to script.google.com/home/usersettings
+    and saying how to come back (the guide reopens on the same step). The 403 detection stays.
+  - **Sign-in window failures** (`popup_failed_to_open`; `popup_closed` in a Home Screen app or a second time)
+    say "Open this page in Safari to sign in", offer Open in Safari and Copy the address, and open the by-hand
+    path right under the message. No endless "tap again": one Try again in a normal browser, none in the Home
+    Screen app.
+  - **Words:** Google's exact "Go to Spendings (unsafe)", then "come back to this app, same step"; plain
+    three-step progress (Sign in · Make your sheet · Allow it); the welcome says it needs a Google account and
+    about 5 minutes; the allow step notes that Safari and the Home Screen app keep separate storage; SETUP.md
+    says to run the guide in Safari first.
+  - **Manifest scope `spreadsheets.currentonly`** (Code.gs only uses `SpreadsheetApp.getActive()`; a test fails
+    if it ever opens another spreadsheet). `script.container.ui` stays because Code.gs uses `getUi()` for the
+    sheet's menu and popups.
+
+- **First-run setup guide, with "Sign in with Google" that makes the sheet** (branch `claude/setup-wizard`).
+  Welcome → your cards → your money → create your sheet → Apple Pay Shortcut → done, in one tall sheet.
+  - **When it opens by itself:** not connected, not in demo, never finished or put off, and the app opened at
+    Home. A link straight to `#settings` (that's where the by-hand connect form is) or `?notour` skips it, which
+    also keeps every existing test that starts on a fresh profile unchanged. "Not now" puts it off for good;
+    Home's "Set up" button and **Settings → Set up step by step** open it again.
+  - **Answers stay in `sp.setup` until a sheet is connected,** then go up through the store (`applySetup`:
+    accounts, then settings, then the plan, one sync, no undo step). They are only sent to a sheet the guide
+    made, or a pasted sheet that has no entries yet. "I already have a sheet" on a phone that's new to an
+    existing sheet never overwrites its accounts or plan.
+  - **Cards start from the current list** (ADIB, ADCB, BOTIM, Cash), so Abdullah only confirms; anyone else
+    renames or removes. The plan the guide writes is just Salary (if given) and the allowance move from the pay
+    account to the allowance card (none if they're the same account; then the allowance is a plain setting).
+    Nafis and responsibilities are added later in Settings → Payday plan. Re-opening the guide while connected
+    skips the cards and money steps, so it can never overwrite real data.
+  - **Google sign-in is the Google Identity Services token model**, loaded only when the Create step opens (so
+    the popup opens within the tap, which iPhone Safari requires). Scopes: `drive.file`, `script.projects`,
+    `script.deployments`. The token is kept in memory only, never stored. The client ID lives in
+    `docs/js/config.js` (public, not a secret) and is empty for now: then the step says it isn't switched on
+    and offers the by-hand path (link to SETUP.md plus "paste URL and key"), so the guide works end to end
+    without Google.
+  - **Provisioning (`docs/js/provision.js`)**: one Sheets API call makes the spreadsheet *with* a "Setup" tab
+    holding the app's key (A1 a marker, A2 a 24-character key from `crypto.getRandomValues`), then Apps Script
+    API: bound project → code + manifest → version → web app deployment (Anyone, run as me). Each ID is saved
+    to `sp.setup.progress` as soon as it exists, so Try again carries on and never makes a second sheet.
+    Errors get plain words: Apps Script API off for the user (link to script.google.com/home/usersettings),
+    sign-in expired or cancelled, pop-up blocked, offline, an API off in Google Cloud.
+  - **The key:** scripts can't have their properties set from outside, so Code.gs's `getToken_()` now adopts
+    the key from the Setup tab the first time it needs one (only when there's no key yet, so sheets set up by
+    hand never look at it), then deletes the tab (or empties and renames it if it's the only one).
+  - **Allowing the script:** the web app runs as the owner, who must approve its permissions once. The guide
+    links to `/exec?setup=1` (Google asks there; `doGet` then shows "Spendings can use your sheet ✓") with the
+    script editor as a fallback ("choose setup, tap Run"), and asks the sheet every 4 seconds (and on return to
+    the app) until it answers. Then `install` builds the tabs and the answers are sent.
+  - **Code.gs, backward compatible:** `setup()` is now `setupSheet_()` + the popup; new `install` action (no
+    popups); any action other than ping on a sheet with no Ledger builds the tabs first. Old payloads, the
+    Shortcuts and existing deployments behave exactly as before. `features` is now `['extras', 'install']`.
+  - **Manifest scopes:** `spreadsheets` (what a by-hand setup already asks for, since Code.gs has no
+    `@OnlyCurrentDoc`) and `script.container.ui` (the sheet's menu and popups). `spreadsheets.currentonly` would
+    be narrower but couldn't be tried against real Google here, so parity with the by-hand setup won.
+  - **The browser gets Code.gs from `docs/setup/Code.gs.txt`**, a byte-identical copy; `tests/verify-setup.mjs`
+    fails if they differ. It isn't in the service worker's shell (59 KB, only needed online during setup).
+  - **Referrer-Policy is now `strict-origin-when-cross-origin`** (was `no-referrer`): Google's sign-in checks
+    the page's origin, and `no-referrer` is known to break it. Only the origin is sent cross-site; the app's
+    URLs never hold the key.
+  - **Done step shows the URL and key with copy buttons.** On iPhone, Safari and the Home Screen app keep
+    separate storage; if setup ran in Safari, these get pasted into the Home Screen app (and the Shortcut).
+
 - **Money owed (`people.js`, `people-ui.js`), as the council decided:** a person is an account (so the sheet's
   Accounts tab, rename-follow-through and unique names come for free) flagged in the `people` extra
   (`{ v: 1, names: [...] }`). `balances()` still counts them; `ACCOUNTS` leaves them out (balance bar, pay pickers,

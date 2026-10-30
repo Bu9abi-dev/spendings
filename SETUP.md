@@ -7,9 +7,64 @@ Allow about 15 minutes, once. There are four parts:
 3. **The Apple Pay Shortcut**: logs each payment as it happens.
 4. **Optional:** Face ID lock.
 
+**The easy way:** open the app on a new phone and its setup guide walks you through your cards, your
+allowance and your sheet. With **Sign in with Google** switched on (below), it makes the sheet and its
+script for you; without it, the guide sends you through part 1 by hand. Either way, part 1 below still works.
+
+**Run the guide in Safari first**, before adding the app to your Home Screen. Google's sign-in window often
+can't open inside a Home Screen app, and Safari and the Home Screen app keep separate storage. At the end the
+guide shows your Web app URL and app key with copy buttons: add the app to your Home Screen, open it, choose
+**I already have a sheet** and paste them in.
+
+---
+
+## Switch on Sign in with Google (one time, about 10 minutes)
+
+This lets the app's setup guide make the sheet in your Google account by itself. You do it once, for the app;
+after that anyone using the app just taps **Sign in with Google**.
+
+1. Open **console.cloud.google.com** and sign in. At the top, open the project list and choose **New project**.
+   Call it "Spendings" and press **Create**. Make sure it's selected at the top.
+2. Go to **APIs & Services → Library**. Search for and **Enable** each of these three:
+   **Google Sheets API**, **Google Drive API**, **Apps Script API**.
+3. Go to **APIs & Services → OAuth consent screen** (it may be called **Google Auth Platform → Branding**):
+   - App name: Spendings. Support email: yours. **Audience / User type: External.** Press **Create** / **Save**.
+   - Leave it in **Testing**. Under **Audience → Test users**, press **Add users** and add your own Gmail
+     address (and anyone else who will use the app).
+   - Under **Data access → Add or remove scopes**, add these three and **Save**:
+     `https://www.googleapis.com/auth/drive.file`,
+     `https://www.googleapis.com/auth/script.projects`,
+     `https://www.googleapis.com/auth/script.deployments`.
+4. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID**:
+   - Application type: **Web application**. Name: Spendings.
+   - **Authorized JavaScript origins:** your app's address, e.g. `https://spendings-xxxx.vercel.app`
+     (no slash at the end). For testing on a computer, also add `http://localhost:8765`.
+   - Leave redirect URIs empty. Press **Create** and copy the **Client ID** (it ends in
+     `.apps.googleusercontent.com`). You don't need the client secret; never put it in the app.
+5. Open [`docs/js/config.js`](docs/js/config.js) and paste the client ID between the quotes:
+   `export const GOOGLE_CLIENT_ID = '1234-abc.apps.googleusercontent.com';`. Commit to `main`; Vercel updates the app.
+
+**Each person who signs in** must also turn on one switch in their own Google account, once:
+**script.google.com/home/usersettings → Google Apps Script API → On**. The guide has its own step for this
+just before sign-in, with a link; come back to the app afterwards and it's on the same step.
+
+While the app is in **Testing**, Google shows a "Google hasn't verified this app" screen at sign-in: choose
+**Continue**. When the guide has made the sheet, Google asks once more to allow the sheet's own script
+(**Review permissions** → your account → **Advanced** → **Go to Spendings (unsafe)** → **Allow**, as in part 1
+below). Then go back to the app: it's on the same step and carries on by itself.
+
+The guide only sends your answers (cards, allowance, payday) to a sheet nobody has used yet. If you connect a
+sheet that already has entries, or its own accounts, settings or plan, it keeps exactly what it has.
+
+> **If you set up in Safari** and then add the app to your Home Screen, the Home Screen app starts empty (iPhone
+> keeps them apart). The guide's last page shows your Web app URL and app key with copy buttons: paste them into
+> the Home Screen app's **Settings**, or run the guide there and choose **I already have a sheet**.
+
 ---
 
 ## 1. The Google Sheet (5 min)
+
+If Sign in with Google isn't switched on, or you prefer doing it yourself:
 
 1. Open your empty Google Sheet. Rename it if you like, e.g. "Spendings".
 2. Go to **Extensions → Apps Script**.

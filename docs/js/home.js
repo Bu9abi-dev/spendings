@@ -154,7 +154,7 @@ export function renderHome(h) {
     ${!isConnected() && !isDemo() ? `<section class="onboard">
         <h2>Connect your Google Sheet</h2>
         <p>Your entries are kept on this phone for now. Connect your sheet so everything, Apple Pay included, lands in one place.</p>
-        <div class="onboard-actions"><button class="btn-primary" type="button" data-go="settings">Set up</button><button class="btn-plain" type="button" data-act="demo">Try demo data</button></div>
+        <div class="onboard-actions"><button class="btn-primary" type="button" data-act="setup-guide">Set up</button><button class="btn-plain" type="button" data-act="demo">Try demo data</button></div>
       </section>` : ''}
     <section class="lens" data-focus="${focus}" style="--lens-c:${lensColor(focus)}" aria-label="Balances">
       <div class="lens-label">${label(m, focus)}</div>

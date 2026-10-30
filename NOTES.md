@@ -26,6 +26,7 @@ Kept current by whoever is working on the app (Claude, running the improvement l
   `tests/verify-maths.mjs` and `tests/verify-undo.mjs`.
 - The Apple Pay Shortcut (`source=applepay`) and bank-notification Shortcut (`source=bank`) POSTs must keep
   working unchanged. `tests/apps-script.test.mjs` covers both.
+- **Code.gs has a copy in `docs/setup/Code.gs.txt`** (the setup guide installs it). Every Code.gs change: `cp apps-script/Code.gs docs/setup/Code.gs.txt`.
 - Sheet safety: never delete or overwrite Ledger data. New data goes in new tabs or the Extras tab.
 
 ## Code map
@@ -50,6 +51,10 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/categorize.js` | Learns merchant → category from past entries; `cleanMerchant` is the one shop-name normaliser. |
 | `docs/js/categories.js` | Settings → Categories (your own, rename, hide). Lists live in model.js (`setCategoryList`, `allCategories`, `pickerCategories`, `categoryMeta(id).label`). |
 | `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
+| `docs/js/setup.js` | First-run setup guide (welcome, cards, money, turn on the Apps Script API (only with a client ID), create sheet, Shortcut, done). Answers go to a sheet only when `install` says `fresh`. Auto-opens at Home on a fresh phone; `?notour` or `#settings` skips it. Answers in `sp.setup` until connected, then `applySetup` in store.js. |
+| `docs/js/provision.js` | Pure: makes the sheet with Google's REST APIs (Drive create/find by `setupId`, Sheets for the Setup tab, Apps Script) from a sign-in token; resumable, injectable `fetch`. |
+| `docs/js/config.js` | `GOOGLE_CLIENT_ID` for Sign in with Google (public; empty = by-hand setup only). |
+| `docs/setup/Code.gs.txt` | **A copy of `apps-script/Code.gs`** that the guide installs. Change both: `cp apps-script/Code.gs docs/setup/Code.gs.txt` (`tests/verify-setup.mjs` checks). |
 | `docs/js/people.js` | Pure money-owed maths: split shares and USD prices (`splitPrices`), linked halves (`${id}-split`), "Change both" amounts (`rescaledPartner`), settle-up preset and account (`lentFrom`), recent people, Home line text. People flags and `peopleBalances`/`moneyTotal` live in model.js (`setPeopleList`, `isPerson`, `PEOPLE_ACCOUNTS`). |
 | `docs/js/people-ui.js` | Settings → People, add/rename/remove a person (`people` extra + account, one undo step), Home "Owed to you" line (in "Where your money is", or the lowest-rank notice), People sheet with Settle up, split sheet, "half of a split" question. |
 | `docs/js/goals.js` | Pure maths for savings goals, investments, net worth and BNPL owed (per-cycle saving needed). Tested by `tests/verify-goals.mjs`. |
