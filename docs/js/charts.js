@@ -133,10 +133,11 @@ let barsView = 'day';
 
 /**
  * Bars of spending per day of the cycle, with a Week toggle.
- * days: [{ label, value, future, today }]; weeks: [{ label, range, value }]; avg = average per elapsed day.
+ * days: [{ label, value, future, today }]; weeks: [{ label, range, value, note }]; avg = average per elapsed day,
+ * soFar = the cycle is still running. A week's note (e.g. "2 days") marks a short last week.
  * Tapping a bar shows its day and amount in the readout line above the bars.
  */
-export function spendBars({ days, weeks, avg }) {
+export function spendBars({ days, weeks, avg, soFar }) {
   const dayMax = Math.max(1, ...days.map((d) => d.value));
   const weekMax = Math.max(1, ...weeks.map((w) => w.value));
   const bar = (b, max, cls) => `<button type="button" class="sb-bar ${cls}${b.future ? ' future' : ''}${b.today ? ' today' : ''}"
@@ -145,29 +146,63 @@ export function spendBars({ days, weeks, avg }) {
   const ticks = [0, Math.floor((days.length - 1) / 2), days.length - 1]
     .map((i) => `<span style="--x:${((i + 0.5) / days.length) * 100}%">${esc(days[i].label)}</span>`).join('');
   const avgLine = avg > 0 ? `<i class="sb-avg" style="--y:${(avg / dayMax) * 100}%"></i>` : '';
-  const defaultText = barsView === 'day' ? `Average <b class="num">AED ${fmt(avg, { whole: true })}</b> a day` : 'Tap a week to see it';
-  return `<div class="spend-bars" data-view="${barsView}" data-avg="${avg}">
+  // what the readout line says when no bar is picked, one per view
+  const defaults = {
+    day: `<i class="sw avg"></i> Average <b class="num">AED ${fmt(avg, { whole: true })}</b> a day${soFar ? ' so far' : ''}`,
+    week: 'Weeks count from the cycle’s first day. Tap one to see it.',
+  };
+  return `<div class="spend-bars" data-view="${barsView}">
+    <template class="sb-default" data-for="day">${defaults.day}</template>
+    <template class="sb-default" data-for="week">${defaults.week}</template>
     <div class="chart-seg" role="radiogroup" aria-label="Show spending by">
       <button type="button" role="radio" data-bars="day" aria-checked="${barsView === 'day'}">Day</button>
       <button type="button" role="radio" data-bars="week" aria-checked="${barsView === 'week'}">Week</button>
     </div>
-    <p class="sb-readout" aria-live="polite">${defaultText}</p>
+    <p class="sb-readout" aria-live="polite">${defaults[barsView]}</p>
     <div class="sb-plot sb-days">${avgLine}${days.map((d) => bar(d, dayMax, 'dy')).join('')}</div>
     <div class="sb-ticks sb-days">${ticks}</div>
     <div class="sb-plot sb-weeks">${weeks.map((w) => bar(w, weekMax, 'wk')).join('')}</div>
-    <div class="sb-wlabels sb-weeks">${weeks.map((w) => `<span>${esc(w.label)}</span>`).join('')}</div>
+    <div class="sb-wlabels sb-weeks">${weeks.map((w) => `<span>${esc(w.label)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>`).join('')}</div>
   </div>`;
 }
 
 export function bindBars(root) {
   root.querySelectorAll('.spend-bars').forEach((el) => {
     const readout = el.querySelector('.sb-readout');
-    const avg = +el.dataset.avg;
     const reset = () => {
       el.querySelectorAll('.sb-bar.on').forEach((b) => b.classList.remove('on'));
       el.classList.remove('picked');
-      readout.innerHTML = el.dataset.view === 'day' ? `Average <b class="num">AED ${fmt(avg, { whole: true })}</b> a day` : 'Tap a week to see it';
+      readout.innerHTML = el.querySelector(`.sb-default[data-for="${el.dataset.view}"]`).innerHTML;
     };
+    const pick = (b) => {
+      if (!b || b.disabled || b.classList.contains('on')) return;
+      el.querySelectorAll('.sb-bar.on').forEach((o) => o.classList.remove('on'));
+      b.classList.add('on');
+      el.classList.add('picked');
+      readout.innerHTML = `${esc(b.dataset.label)} · <b class="num">AED ${fmt(+b.dataset.value, { whole: true })}</b>`;
+    };
+    // Day bars are thin on a phone, so a finger picks the nearest bar and can slide along to scrub.
+    // A tap on the bar that's already picked clears it.
+    const nearest = (plot, x) => {
+      let best = null, gap = Infinity;
+      plot.querySelectorAll('.sb-bar:not([disabled])').forEach((b) => {
+        const r = b.getBoundingClientRect();
+        const d = Math.abs(x - (r.left + r.width / 2));
+        if (d < gap) { gap = d; best = b; }
+      });
+      return best;
+    };
+    el.querySelectorAll('.sb-plot').forEach((plot) => {
+      let down = false;
+      plot.addEventListener('pointerdown', (ev) => {
+        down = true;
+        const b = nearest(plot, ev.clientX);
+        if (b?.classList.contains('on')) { down = false; return reset(); }
+        pick(b);
+      });
+      plot.addEventListener('pointermove', (ev) => { if (down) pick(nearest(plot, ev.clientX)); });
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => plot.addEventListener(t, () => { down = false; }));
+    });
     el.addEventListener('click', (ev) => {
       const seg = ev.target.closest('[data-bars]');
       if (seg) {
@@ -175,13 +210,9 @@ export function bindBars(root) {
         el.querySelectorAll('[data-bars]').forEach((b) => b.setAttribute('aria-checked', b === seg));
         return reset();
       }
+      // keyboard (Enter/Space on a bar) arrives as a click with no pointer; pointer taps are handled above
       const b = ev.target.closest('.sb-bar');
-      if (!b || b.disabled) return;
-      if (b.classList.contains('on')) return reset(); // second tap clears
-      el.querySelectorAll('.sb-bar.on').forEach((o) => o.classList.remove('on'));
-      b.classList.add('on');
-      el.classList.add('picked');
-      readout.innerHTML = `${esc(b.dataset.label)} · <b class="num">AED ${fmt(+b.dataset.value, { whole: true })}</b>`;
+      if (b && ev.detail === 0) { if (b.classList.contains('on')) reset(); else pick(b); }
     });
   });
 }

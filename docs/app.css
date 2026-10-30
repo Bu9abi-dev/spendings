@@ -544,7 +544,7 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .chart-seg button[aria-checked="true"] { background: var(--bg-2); color: var(--label); box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1); }
 .sb-readout { font-size: 14px; color: var(--label-2); min-height: 20px; margin-bottom: 6px; }
 .sb-readout b { color: var(--label); font-weight: 600; }
-.sb-plot { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 140px; border-bottom: 1px solid var(--sep); }
+.sb-plot { position: relative; display: flex; align-items: flex-end; gap: 2px; height: 140px; border-bottom: 1px solid var(--sep); touch-action: pan-y; /* sideways drag scrubs, up/down still scrolls */ }
 .sb-bar { flex: 1; min-width: 0; height: 100%; padding: 0; position: relative; background: none; border-radius: 0; touch-action: manipulation; }
 /* the visible bar is drawn inside the full-height button so thin bars are still easy to tap */
 .sb-bar::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: var(--h); min-height: 2px; border-radius: 3px 3px 1px 1px; background: var(--series-1); transform-origin: bottom; animation: rise 0.8s var(--ease-out) both; }
@@ -560,7 +560,10 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .sb-ticks span:first-child { transform: none; left: 0; }
 .sb-ticks span:last-child { transform: none; left: auto; right: 0; }
 .sb-wlabels { display: flex; font-size: 12px; color: var(--label-2); padding-top: 4px; }
-.sb-wlabels span { flex: 1; text-align: center; white-space: nowrap; }
+.sb-wlabels span { flex: 1; display: grid; text-align: center; white-space: nowrap; }
+.sb-wlabels small { font-size: 11px; opacity: 0.8; }
+.sw.avg { width: 14px; height: 0; border-top: 1.5px dashed var(--label-2); background: none; vertical-align: middle; }
+.tm-rest b { font-weight: 400; color: var(--label-2); }
 .spend-bars[data-view="day"] .sb-weeks, .spend-bars[data-view="week"] .sb-days { display: none; }
 
 /* Top places */
@@ -577,7 +580,7 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .tr-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tr-val { text-align: right; font-weight: 600; }
 .spark { display: flex; align-items: flex-end; gap: 3px; height: 28px; }
-.spark i { flex: 1; height: var(--h); min-height: 2px; border-radius: 2px 2px 1px 1px; background: var(--tint); opacity: 0.3; transform-origin: bottom; animation: rise 0.8s var(--ease-out) both; }
+.spark i { flex: 1; height: var(--h); min-height: 2px; border-radius: 2px 2px 1px 1px; background: var(--tint); opacity: 0.4; transform-origin: bottom; animation: rise 0.8s var(--ease-out) both; }
 .spark i.now { opacity: 1; }
 
 /* ───── Settings ───── */

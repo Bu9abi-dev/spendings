@@ -9,7 +9,12 @@ import { cycleBounds, cycleLength, shiftCycle, toAED } from './model.js';
 const DAY = 864e5;
 const isSpend = (e) => e.type === 'Spend';
 
-/** Index of the cycle day an entry falls on (0 = first day). Clamped into the cycle. */
+/**
+ * Index of the cycle day an entry falls on (0 = first day). Cycle start is Dubai midnight (model.js),
+ * and Dubai has no daylight saving, so whole days of 24h are exact.
+ * Entries are already filtered by their cycle, so the clamp only matters for an entry whose cycle and
+ * date disagree; it keeps that money on an edge bar so the bars still add up to "Spent".
+ */
 function dayIndex(e, start, len) {
   return Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / DAY)));
 }
@@ -52,7 +57,7 @@ export function topMerchants(entries, cycle, settings, limit = 5) {
   for (const e of entries) {
     if (e.cycle !== cycle || !isSpend(e)) continue;
     const key = merchantKey(e.merchant);
-    if (!key) continue;
+    if (!key) continue; // no merchant name: counted in "Everything else" on the card
     const g = groups.get(key) || { total: 0, count: 0, spellings: new Map() };
     g.total += toAED(e, settings);
     g.count++;
@@ -69,8 +74,10 @@ export function topMerchants(entries, cycle, settings, limit = 5) {
 /**
  * Each spending category over the `count` cycles ending with `cycle` (oldest first).
  * Returns [{ id, values, total, usual }] for categories with any spend in that window, biggest first.
- * `usual` is the average of the earlier cycles, counting only cycles since the first entry
- * (so months before the app was used don't drag it down). null when there's no earlier cycle.
+ * `usual` is the average of the earlier cycles in the window. Cycles before the first entry don't count
+ * (the app wasn't used yet), and nor does the very first cycle once there's a later one to use, because
+ * logging usually starts part-way through it. null when no earlier cycle counts, or the category
+ * had nothing in any of them (so it's new, not "usually 0").
  */
 export function categoryTrends(entries, cycle, settings, count = 6) {
   const cycles = Array.from({ length: count }, (_, i) => shiftCycle(cycle, i - (count - 1)));
@@ -86,8 +93,11 @@ export function categoryTrends(entries, cycle, settings, count = 6) {
     rows.set(id, row);
   }
   return [...rows.values()].map((r) => {
-    const earlier = r.values.slice(0, -1).filter((_, i) => cycles[i] >= firstCycle);
-    const usual = earlier.length ? earlier.reduce((a, v) => a + v, 0) / earlier.length : null;
+    // cycle ids are "YYYY-MM", so comparing them as text compares them by date
+    let earlier = r.values.slice(0, -1).map((v, i) => [cycles[i], v]).filter(([c]) => c >= firstCycle);
+    if (earlier.length > 1) earlier = earlier.filter(([c]) => c !== firstCycle);
+    const sum = earlier.reduce((a, [, v]) => a + v, 0);
+    const usual = earlier.length && sum > 0 ? sum / earlier.length : null;
     return { ...r, total: r.values.reduce((a, v) => a + v, 0), usual };
   }).sort((a, b) => b.total - a.total);
 }

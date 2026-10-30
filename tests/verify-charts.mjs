@@ -41,6 +41,16 @@ ok(weeks.length === Math.ceil(daily.length / 7) && weeks[0].from === 0 && weeks[
 ok(near(weeks[0].total, 85.5) && near(weeks[1].total, 20 * S.usdRate), 'week totals add their days');
 ok(weeks.at(-1).to === daily.length - 1, 'the last week ends on the last day');
 
+// Dubai day boundaries: 23:59 and 00:01 Dubai time land on the right bars (Dubai is UTC+4, no daylight saving)
+const dubai = (y, m, d, h, min) => new Date(Date.UTC(y, m - 1, d, h - 4, min)).toISOString();
+const edge = [
+  ['2026-10-27T00:01', dubai(2026, 10, 27, 0, 1), 0], ['2026-10-27T23:59', dubai(2026, 10, 27, 23, 59), 0],
+  ['2026-10-28T00:01', dubai(2026, 10, 28, 0, 1), 1], ['2026-11-26T23:59', dubai(2026, 11, 26, 23, 59), 30],
+].map(([, date, want], i) => ({ ...E('Spend', 10 ** i, 0), date, cycle: cycleOf(date, S.cycleStart), want }));
+const ed = dailySpend(edge, cyc, S);
+ok(edge.every((e) => e.cycle === cyc), 'the first and last minutes of the cycle belong to it');
+ok(ed[0] === 11 && ed[1] === 100 && ed[30] === 1000, 'late-night and just-after-midnight spends land on the right Dubai day');
+
 // ── top places
 const top = topMerchants(entries, cyc, S, 5);
 ok(top[0].name === 'Carrefour' && top[0].count === 3 && near(top[0].total, 85.5), 'Carrefour spellings group together under the usual spelling');
@@ -59,8 +69,10 @@ six.push({ ...E('Spend', 40, 1), category: '' });
 const tr = categoryTrends(six, cyc, S, 6);
 const g = tr.find((t) => t.id === 'Groceries');
 ok(g.values.length === 6 && g.values[5] === 100 && g.values[2] === 400 && g.values[0] === 0, 'six cycles oldest first, shown cycle last');
-ok(near(g.usual, (400 + 300 + 200) / 3), '“usual” ignores cycles from before the first entry');
-ok(tr.some((t) => t.id === 'Uncategorised' && t.usual === 0), 'blank categories show as needing a category');
+ok(near(g.usual, (300 + 200) / 2), '“usual” skips cycles before the first entry and the part-logged first cycle');
+ok(tr.some((t) => t.id === 'Uncategorised' && t.usual === null), 'blank categories show as needing a category, with no fake “usual 0”');
+ok(near(tr.reduce((a, t) => a + t.values[5], 0), 140), 'the solid bars add up to the cycle’s spending');
+ok('2026-10' < '2026-11' && '2025-12' < '2026-01', 'cycle ids sort by date as text');
 ok(categoryTrends([E('Spend', 5, 0)], cyc, S, 6)[0].usual === null, 'a first-ever cycle has no “usual”');
 
 // ── the real Insights tab
@@ -83,11 +95,26 @@ const shown = await p.evaluate(async () => {
   return { bars, spent: m.summarize(st.state.entries, cyc, st.state.settings).spent };
 });
 ok(near(shown.bars, shown.spent), 'the day bars add up to “Spent” in the donut');
-await p.click('.sb-bar.dy:nth-of-type(3)');
-ok(/AED \d/.test(await p.textContent('.sb-readout')), 'tapping a day shows its amount');
+const placesSum = await p.$$eval('.tm-row .hb-val', (x) => x.reduce((a, v) => a + Number(v.textContent.replace(/,/g, '')), 0));
+ok(Math.abs(placesSum - shown.spent) <= 6, 'top places plus “Everything else” add up to “Spent” (within rounding)');
+const wnotes = await p.$$eval('.sb-wlabels small', (x) => x.map((s) => s.textContent));
+ok(wnotes.length <= 1 && wnotes.every((t) => /^\d days?$/.test(t)), 'a short last week says how many days it has');
+// a finger lands between thin bars: the nearest bar is picked, and sliding scrubs along
+await p.$eval('.spend-bars', (el) => el.scrollIntoView({ block: 'center' }));
+const box = await p.$eval('.sb-plot.sb-days', (el) => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top + r.height - 10, w: r.width }; });
+await p.mouse.move(box.x + box.w * 0.1, box.y); await p.mouse.down();
+const first = await p.textContent('.sb-readout');
+await p.mouse.move(box.x + box.w * 0.6, box.y, { steps: 4 });
+const later = await p.textContent('.sb-readout');
+await p.mouse.up();
+ok(/AED \d/.test(first) && /AED \d/.test(later) && first !== later, 'pressing picks a day and sliding scrubs to another');
+await p.mouse.click(box.x + box.w * 0.6, box.y);
+ok(/Average/.test(await p.textContent('.sb-readout')), 'tapping the picked day again clears it');
+await p.focus('.sb-bar.dy:nth-of-type(3)'); await p.keyboard.press('Enter');
+ok(/AED \d/.test(await p.textContent('.sb-readout')), 'a day can be picked with the keyboard too');
 await p.click('[data-bars="week"]');
 ok(await p.isVisible('.sb-bar.wk') && !(await p.isVisible('.sb-bar.dy')), 'the Week toggle swaps to week bars');
-ok(await p.$$eval('.tm-row', (x) => x.length) === 5, 'top five places are listed');
+ok(await p.$$eval('.tm-row:not(.tm-rest)', (x) => x.length) === 5, 'top five places are listed');
 ok(await p.$$eval('.tr-row .spark i', (x) => x.length) % 6 === 0, 'each category has six trend bars');
 ok(await p.evaluate(() => document.documentElement.scrollWidth) <= 390, 'no sideways scroll on an iPhone-width screen');
 ok(!errors.length, 'no page errors');
