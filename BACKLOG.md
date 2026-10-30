@@ -17,7 +17,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
 - **Chart follow-ups:** tap a place to filter Activity; "on pace for AED X this cycle".
 - **Report for a filtered set; rules from bulk recategorise** (council wave 1, Expansionist).
-- **Performance pass, part 2.** View transition on slow CPUs, the stylesheet size, Activity's 400-entry cap.
+- **Performance pass, part 3.** Insights is the slowest tab left (about 170 ms at 4x CPU, mostly SVG and style). See DECISIONS.md.
 - **Accessibility pass.** VoiceOver labels, contrast, Dynamic Type.
 - **Budget line in the Apple Pay notification** (Code.gs reads Extras). Batch with the next script change.
 - **Use the `features` list** to detect an old script, instead of the "Unknown action" text.

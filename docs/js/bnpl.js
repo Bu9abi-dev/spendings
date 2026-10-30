@@ -12,7 +12,7 @@
 // { entry: '' } means "paid before I started tracking": paid, with no entry to point at.
 // auto: true marks a link the app found by itself. skip lists entries you unlinked from this plan,
 // so the app never links them to it again.
-import { dayKey, toAED, money } from './model.js';
+import { dayKey, toAED, money, entryIds } from './model.js';
 
 export const PROVIDERS = ['Tabby', 'Tamara', 'Postpay', 'Cashew', 'Card plan'];
 export const CADENCES = [{ id: '2w', label: 'Every 2 weeks' }, { id: '1m', label: 'Monthly' }];
@@ -58,7 +58,7 @@ export function dueDates(first, count, cadence = '2w') {
 }
 
 /** Ids of every ledger entry in `entries` (a Set, for quick lookups). */
-const idSet = (entries) => new Set(entries.map((e) => e.id));
+const idSet = entryIds; // cached per entries array (model.js)
 
 /** Is instalment i paid? A link only counts while its entry is still in the ledger. */
 function isPaid(rec, ids) { return !!rec && (rec.entry === '' || ids.has(rec.entry)); }

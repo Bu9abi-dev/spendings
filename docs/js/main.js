@@ -1,5 +1,5 @@
 import {
-  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
+  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV, entryIds,
 } from './model.js';
 import {
   state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
@@ -19,7 +19,7 @@ import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import {
-  renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
+  renderActivity, refreshActivity, hydrateActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
 import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
@@ -348,6 +348,7 @@ function render(reason) {
   const prevVal = prevCap?.querySelector('.cap-value')?.dataset.value;
   const snap = tab === 'home' && view.dataset.tab === 'home' ? snapshotHome() : null;
   view.innerHTML = RENDER[tab]();
+  if (tab === 'activity') hydrateActivity(view);
   if (tab === 'home') afterHomeRender(snap);
   animateFresh();
   view.dataset.tab = tab;
@@ -381,6 +382,8 @@ function render(reason) {
   moveDroplet();
 }
 
+let lastSwapMs = 0;
+const SLOW_SWAP_MS = 80; // milliseconds a tab swap may take before the cross-fade is skipped
 function go(next) {
   if (!TABS.includes(next)) return;
   const t = document.getElementById('toast');
@@ -389,8 +392,11 @@ function go(next) {
   if (tab === 'activity') endSelect(); // leaving Activity drops a half-made selection
   tab = next;
   history.replaceState(null, '', `#${tab}`);
-  const swap = () => { render(); window.scrollTo(0, 0); };
-  if (document.startViewTransition && !reduceMotion()) document.startViewTransition(swap);
+  // The cross-fade photographs the old and new screens, which costs about as much again as drawing them. On a slow
+  // phone, or with a long list, that is the difference between a snappy tab and a stutter, so when the last swap
+  // took longer than a frame budget the next one is a plain swap. Same look otherwise; Reduce Motion never fades.
+  const swap = () => { const t0 = performance.now(); render(); window.scrollTo(0, 0); lastSwapMs = performance.now() - t0; };
+  if (document.startViewTransition && !reduceMotion() && lastSwapMs < SLOW_SWAP_MS) document.startViewTransition(swap);
   else swap();
 }
 
@@ -614,12 +620,12 @@ view.addEventListener('change', async (ev) => {
 });
 
 // entries that appear (Apple Pay sync, a save, an undo) slide into their list instead of popping in
-let knownIds = new Set(state.entries.map((e) => e.id));
+let knownIds = entryIds(state.entries);
 let freshIds = new Set();
 subscribe((reason) => {
   if (reason === 'prefs') return;
   if (reason === 'history') { const slot = view.querySelector('.undo-slot'); if (slot) slot.innerHTML = undoButton(); return; }
-  const ids = new Set(state.entries.map((e) => e.id));
+  const ids = entryIds(state.entries);
   freshIds = new Set([...ids].filter((id) => !knownIds.has(id)));
   knownIds = ids;
   render(reason);
@@ -686,6 +692,7 @@ view.addEventListener('pointermove', (e) => {
     if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { swipeDrag = null; return; }
     if (Math.abs(dx) < 8) return;
     d.on = true;
+    d.row.style.willChange = 'transform'; // own layer only for the row being dragged (a will-change rule in the stylesheet gave all 400 rows one)
     d.row.setPointerCapture?.(e.pointerId);
   }
   let x = Math.min(0, d.base + dx);
