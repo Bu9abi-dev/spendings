@@ -8,7 +8,9 @@ project thread; the loop thread merges it. Move an item to Done with its version
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
 
-| 4 | Savings goals and net worth | `claude/goals` | manual investments, read-only |
+| 4 | Savings goals and net worth (council fixes) | `claude/goals` | real BNPL owed, no double counting |
+| 6 | Money owed and split bills | `claude/owed` | people as accounts, Split on an entry |
+| 7 | First-time setup + Sign in with Google | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
 
 
 ## Next
