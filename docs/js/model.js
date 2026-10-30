@@ -18,7 +18,41 @@ export const PEOPLE_ACCOUNTS = [];
 const PEOPLE = new Set();
 export const isPerson = (id) => !!id && PEOPLE.has(id);
 export const colorHex = (id) => (CARD_COLORS.find((c) => c.id === id) || CARD_COLORS[CARD_COLORS.length - 1]).hex;
+/* ───── Caches ─────
+   The screens ask for the same totals again and again (every redraw, every tab). The answers only change when
+   the entries array is replaced (the store never edits it in place), the settings object is replaced, or the
+   account / people / category lists change. `listsVersion` counts that last case, so each cache below is keyed
+   on: the entries array identity + a short signature of the settings (and plan) + listsVersion. */
+let listsVersion = 0;
+export const listsVer = () => listsVersion;
+const settingsSig = (s) => `${s.usdRate}|${s.cycleStart}|${s.allowance}|${s.allowanceAccount}|${s.emergencyAccount}`;
+const planSig = (plan) => (plan || []).map((p) => `${p.id}:${p.kind}:${p.from}:${p.to}:${p.amount}:${p.day}`).join(',');
+
+/** The entries grouped by cycle, in their original order (a Map of cycle -> entries). Built once per entries array.
+    Invalidated by: the entries array being replaced (a WeakMap, so the old one is simply forgotten). */
+const cycleIndexes = new WeakMap();
+export function entriesByCycle(entries) {
+  let idx = cycleIndexes.get(entries);
+  if (!idx) {
+    idx = new Map();
+    for (const e of entries) { const l = idx.get(e.cycle); if (l) l.push(e); else idx.set(e.cycle, [e]); }
+    cycleIndexes.set(entries, idx);
+  }
+  return idx;
+}
+const NONE = [];
+const inCycleOf = (entries, cycle) => entriesByCycle(entries).get(cycle) || NONE;
+
+/** Set of every entry id. Invalidated by: the entries array being replaced. */
+const idSets = new WeakMap();
+export function entryIds(entries) {
+  let ids = idSets.get(entries);
+  if (!ids) idSets.set(entries, (ids = new Set(entries.map((e) => e.id))));
+  return ids;
+}
+
 function refreshAccountLists() {
+  listsVersion++;
   for (const a of ALL_ACCOUNTS) a.person = PEOPLE.has(a.id);
   ACCOUNTS.splice(0, ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived && !a.person));
   PEOPLE_ACCOUNTS.splice(0, PEOPLE_ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived && a.person));
@@ -72,6 +106,7 @@ export const categoryKey = (id, type = 'Spend') => (type === 'Income' ? `Income:
 
 /** cfg is the `categories` extra: { v: 1, custom: [{ id, type, icon }], hidden: [key], names: { key: label } } */
 export function setCategoryList(cfg) {
+  listsVersion++;
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const hidden = new Set(Array.isArray(c.hidden) ? c.hidden : []);
   const names = c.names && typeof c.names === 'object' ? c.names : {};
@@ -259,8 +294,7 @@ function allowanceCycle(entries, cycle, settings, plan) {
   const acc = settings.allowanceAccount, hub = settings.emergencyAccount;
   const moves = allowanceMoves(plan, settings);
   let spent = 0, refunds = 0, topUps = 0, lent = 0;
-  for (const e of entries) {
-    if (e.cycle !== cycle) continue;
+  for (const e of inCycleOf(entries, cycle)) {
     const v = toAED(e, settings);
     if (e.type === 'Spend' && e.account === acc) spent += v;
     else if (e.type === 'Income' && e.account === acc && e.category === 'Refund') refunds += v;
@@ -287,9 +321,20 @@ export function allowanceOf(entries, cycle, settings, plan) {
   return { ...now, carryIn, pot, left: pot - now.used };
 }
 
-/** Everything the screens need for one cycle. */
+/** Everything the screens need for one cycle. Cached per cycle (Insights asks for six, Home for one, on every redraw).
+    Invalidated by: a new entries array, a change to the settings or plan that matters here, or the account list changing.
+    The result is shared, so callers must not edit it. */
+let summaries = []; // the last three (entries, settings) combinations, newest first: Home's filtered balances and Report vs Insights alternate
 export function summarize(entries, cycle, settings, plan = []) {
-  const inCycle = entries.filter((e) => e.cycle === cycle);
+  const sig = `${settingsSig(settings)}#${planSig(plan)}#${listsVersion}`;
+  let rec = summaries.find((x) => x.entries === entries && x.sig === sig);
+  if (!rec) { rec = { entries, sig, byCycle: new Map() }; summaries = [rec, ...summaries].slice(0, 3); }
+  let r = rec.byCycle.get(cycle);
+  if (!r) rec.byCycle.set(cycle, (r = computeSummary(entries, cycle, settings, plan)));
+  return r;
+}
+function computeSummary(entries, cycle, settings, plan) {
+  const inCycle = inCycleOf(entries, cycle);
   const s = {
     cycle, entries: inCycle, income: 0, spent: 0, allowanceUsed: 0, review: 0,
     byCategory: new Map(), byIncome: new Map(), byAccount: new Map(), daily: new Map(),
@@ -347,8 +392,19 @@ export function toCSV(entries) {
 
 /* ───────────────────────── Balances ───────────────────────── */
 
-/** What each account holds now (AED). matchedAt = last time it was matched to the bank. */
+/** What each account holds now (AED). matchedAt = last time it was matched to the bank.
+    Cached (the last three answers). Invalidated by: a new entries array, a different usdRate, the account list
+    changing. The Map is shared, so callers must not edit it. */
+let balMemo = []; // the last three answers, newest first (Home also asks about a filtered slice of the entries)
 export function balances(entries, settings) {
+  const sig = `${settings.usdRate}#${listsVersion}`;
+  const hit = balMemo.find((x) => x.entries === entries && x.sig === sig);
+  if (hit) return hit.result;
+  const result = computeBalances(entries, settings);
+  balMemo = [{ entries, sig, result }, ...balMemo].slice(0, 3);
+  return result;
+}
+function computeBalances(entries, settings) {
   const out = new Map(ACCOUNTS.map((a) => [a.id, { balance: 0, matchedAt: null }]));
   const get = (id) => out.get(id) || out.set(id, { balance: 0, matchedAt: null }).get(id);
   for (const e of entries) {
@@ -398,7 +454,7 @@ export function dateInCycle(cycle, day, startDay = 27) {
     were already done this cycle: they count as complete, nothing is left of them, and the
     dismissal expires when the cycle ends. */
 export function planStatus(plan, entries, cycle, settings, now = new Date(), dismissed = {}) {
-  const inCycle = entries.filter((e) => e.cycle === cycle);
+  const inCycle = inCycleOf(entries, cycle);
   return plan.map((p) => {
     const tagged = (e) => e.source === `Plan:${p.id}`;
     const due = p.day ? dateInCycle(cycle, p.day, settings.cycleStart) : null;
@@ -432,8 +488,7 @@ export function hubBreakdown(hub, bal, status) {
 /** This cycle's money through the main account: where it came from and where it went. */
 export function hubFlow(entries, cycle, hub, settings) {
   const sources = new Map(), outs = new Map();
-  for (const e of entries) {
-    if (e.cycle !== cycle) continue;
+  for (const e of inCycleOf(entries, cycle)) {
     const v = toAED(e, settings);
     if (e.type === 'Income' && e.account === hub) sources.set(e.category || 'Other', (sources.get(e.category || 'Other') || 0) + v);
     if (e.type === 'Transfer' && e.account === hub && e.toAccount) outs.set(e.toAccount, (outs.get(e.toAccount) || 0) + v);

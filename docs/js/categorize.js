@@ -7,7 +7,7 @@
 //   2. a close name: a one-letter typo or one name starting the other ("carrefour" / "carrefour market"). Both only ever medium,
 //   3. a built-in hint for well-known UAE shops ("ADNOC" → Transport & Fuel). Lowest confidence.
 // Only ever suggests. Nothing here changes an entry by itself.
-import { SPEND_CATEGORIES, allCategories } from './model.js';
+import { SPEND_CATEGORIES, allCategories, listsVer } from './model.js';
 
 // Words that say where or how you paid, not who you paid.
 const NOISE = new Set([
@@ -85,6 +85,16 @@ function likeness(a, b) {
  * Returns Map(cleaned name → { name, counts: Map(category → n), total, last })
  */
 export function learn(entries, remembered = {}) {
+  // the add sheet asks on every keystroke of the shop name. Invalidated by: a new entries array, a different
+  // remembered-merchants object or one with more/fewer names (the store only ever adds to it), or the category list changing.
+  const sig = `${Object.keys(remembered || {}).length}#${listsVer()}`;
+  if (learned && learned.entries === entries && learned.remembered === remembered && learned.sig === sig) return learned.index;
+  const index = computeLearn(entries, remembered);
+  learned = { entries, remembered, sig, index };
+  return index;
+}
+let learned = null;
+function computeLearn(entries, remembered) {
   const index = new Map();
   for (const e of entries) {
     if (e.type !== 'Spend' || !e.merchant || !e.category || e.status === 'Review' || !known(e.category)) continue;

@@ -329,8 +329,8 @@ export function updateEntry(id, fields) {
   // …or when the caller sets the price itself (a split): then the sheet gets that exact price too
   const priced = 'amountAED' in fields && explicitAED({ ...before, ...fields });
   const e = finalize({ ...before, ...fields }, { keepAED: priced || (!repriced && before.amountAED != null && before.amountAED !== '') });
-  state.entries[i] = e;
-  sortEntries(state.entries);
+  // a new array, never an edit in place: the caches in model.js and recurring.js key on the array's identity
+  state.entries = sortEntries(state.entries.map((x, j) => (j === i ? e : x)));
   const sent = { ...fields, cycle: undefined };
   delete sent.cycle; delete sent.status;
   if (priced) sent.amountAED = +fields.amountAED; else delete sent.amountAED;
@@ -344,8 +344,7 @@ export function updateEntry(id, fields) {
 function putBack(before) {
   const i = state.entries.findIndex((x) => x.id === before.id);
   if (i < 0) return;
-  state.entries[i] = { ...before };
-  sortEntries(state.entries);
+  state.entries = sortEntries(state.entries.map((x, j) => (j === i ? { ...before } : x)));
   const fields = Object.fromEntries([...ENTRY_FIELDS, 'amountAED', 'status'].map((k) => [k, before[k]]));
   if (!state.prefs.demo) enqueue({ op: 'update', id: before.id, fields });
   persist(); emit('entries');

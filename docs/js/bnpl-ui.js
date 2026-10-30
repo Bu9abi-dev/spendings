@@ -69,11 +69,16 @@ function unlinkMany(links, label) {
 /* ───── "Sync": link payments already in the ledger ─────
    Runs after every change to entries or extras. autoLink() is pure; it's only saved when it found
    something new, so this settles in one pass. Every new link is announced with an Unlink action. */
+// the last inputs checked: autoLink sorts every Spend, so a redraw that changed none of them (a sync badge, a tab) skips it.
+// Invalidated by: a new entries array, a new plans value in Extras, or new settings.
+let checked = null;
 function linkFound() {
+  const raw = getExtra(KEY, null);
+  if (checked && checked.entries === state.entries && checked.raw === raw && checked.settings === state.settings) return;
   const cur = plans();
   if (!cur.length) return;
   const { plans: next, links } = autoLink(cur, state.entries, state.settings);
-  if (!links.length) return;
+  if (!links.length) { checked = { entries: state.entries, raw, settings: state.settings }; return; }
   // the app did this, not you: it doesn't take a place in the Undo history (the toast's Unlink takes it back)
   saveExtra(KEY, pack(next), 'Linked payments', { undoable: false });
   // demo mode links its own made-up payments on every start: nothing new to tell anyone

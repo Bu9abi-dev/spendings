@@ -79,20 +79,69 @@ function summaryBar(all) {
   return `<div class="act-bar"><span class="act-sum">${bits}</span>${state.entries.length ? '<button type="button" class="text-btn" data-act="select">Select</button>' : ''}</div>`;
 }
 
+/* Long lists draw in pieces. The first screenful goes in straight away, the rest is added as you scroll towards it
+   (an IntersectionObserver on a marker at the end of the list). 400 rows at once made every tab switch to Activity
+   and every letter typed in search rebuild and restyle thousands of elements, most of them far off screen.
+   `more` holds what is still to draw for the list currently on screen; it is reset on every redraw. */
+const FIRST_ROWS = 40, CHUNK_ROWS = 60;
+let more = null, moreObserver = null;
+// How many rows have been drawn for the current search/filter. A redraw (selection, a sync, an edit, a delete) draws at least
+// that many again, so the list keeps its length and you keep your place. Reset when the filter or search changes, or the tab is entered afresh.
+let drawnRows = 0, drawnFor = '';
+export function resetActivityRows() { drawnRows = 0; drawnFor = ''; }
+
+const dayHTML = ([k, items], sel) => {
+  const spent = items.filter((e) => e.type === 'Spend').reduce((a, e) => a + toAED(e, state.settings), 0);
+  return `<div class="group-head day"><h3 class="group-title">${dayLabel(k)}</h3>${spent ? `<span class="day-total num">AED ${fmt(spent, { fixed: true })}</span>` : ''}</div>
+      <section class="group">${items.map((e) => entryRow(e, sel ? { selected: sel.has(e.id) } : undefined)).join('')}</section>`;
+};
+/** Day groups from `from` until about `rows` rows are covered: [html, next index]. */
+function daysHTML(groups, from, rows) {
+  const sel = activitySelect.on ? activitySelect.ids : null;
+  let html = '', n = 0, i = from;
+  while (i < groups.length && n < rows) { html += dayHTML(groups[i], sel); n += groups[i][1].length; i++; }
+  drawnRows = Math.max(drawnRows, (from ? drawnRows : 0) + n); // rows on screen so far
+  return [html, i];
+}
+
 export function activityList(all = matches()) {
+  more = null;
   const list = all.slice(0, SHOW_MAX);
   if (!list.length) {
     const why = activityFilter.q.trim() ? `Nothing matches “${esc(activityFilter.q)}”.` : isFiltered(activityFilter) ? 'Nothing matches these filters.' : 'Nothing here yet.';
     return `<div class="empty">${icon('search', { size: 28 })}<p>${why}</p></div>`;
   }
-  const sel = activitySelect.on ? activitySelect.ids : null;
   const days = new Map();
   for (const e of list) { const k = dayKey(e.date); if (!days.has(k)) days.set(k, []); days.get(k).push(e); }
-  return [...days].map(([k, items]) => {
-    const spent = items.filter((e) => e.type === 'Spend').reduce((a, e) => a + toAED(e, state.settings), 0);
-    return `<div class="group-head day"><h3 class="group-title">${dayLabel(k)}</h3>${spent ? `<span class="day-total num">AED ${fmt(spent, { fixed: true })}</span>` : ''}</div>
-      <section class="group">${items.map((e) => entryRow(e, sel ? { selected: sel.has(e.id) } : undefined)).join('')}</section>`;
-  }).join('') + (all.length > SHOW_MAX ? `<p class="group-foot">Showing the newest ${SHOW_MAX} of ${all.length}. The total above covers all of them.</p>` : '');
+  const groups = [...days];
+  const foot = all.length > SHOW_MAX ? `<p class="group-foot">Showing the newest ${SHOW_MAX} of ${all.length}. The total above covers all of them.</p>` : '';
+  const key = JSON.stringify(activityFilter);
+  if (key !== drawnFor) { drawnFor = key; drawnRows = 0; }
+  const want = Math.max(FIRST_ROWS, drawnRows);
+  drawnRows = 0;
+  const [html, next] = daysHTML(groups, 0, typeof IntersectionObserver === 'function' ? want : Infinity);
+  if (next >= groups.length) return html + foot;
+  more = { groups, next, foot };
+  return `${html}<div class="act-more" aria-hidden="true"></div>`;
+}
+
+/** Call after the list is in the page: starts adding the rest of a long list as it is scrolled towards. */
+export function hydrateActivity(view) {
+  moreObserver?.disconnect();
+  moreObserver = null;
+  const marker = view.querySelector('.act-more');
+  if (!marker || !more) return;
+  const mine = more;
+  const add = () => {
+    if (more !== mine || !marker.isConnected) return;
+    const [html, next] = daysHTML(mine.groups, mine.next, CHUNK_ROWS);
+    mine.next = next;
+    marker.insertAdjacentHTML('beforebegin', html);
+    if (next >= mine.groups.length) { marker.insertAdjacentHTML('beforebegin', mine.foot); marker.remove(); moreObserver?.disconnect(); more = null; return; }
+    moreObserver.unobserve(marker); moreObserver.observe(marker); // asks again: the marker may still be near the screen
+  };
+  moreObserver = new IntersectionObserver((hits) => { if (hits.some((h) => h.isIntersecting)) add(); }, { rootMargin: '1600px 0px' });
+  moreObserver.observe(marker);
 }
 
 function bulkBar() {
@@ -109,7 +158,7 @@ function bulkBar() {
 /** Redraws only the part under the chips, so the search field keeps focus and the page keeps its scroll. */
 export function refreshActivity(view) {
   const body = view.querySelector('.activity-body');
-  if (body) body.innerHTML = activityBody();
+  if (body) { body.innerHTML = activityBody(); hydrateActivity(view); }
   const btn = view.querySelector('.filter-btn');
   if (btn) {
     const n = extraCount(activityFilter);

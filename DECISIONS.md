@@ -300,3 +300,26 @@ Choices made while running the app on my own, newest first, with the reason for 
   subscriptions and pay-later and subscription payments due (a payment due is more concrete than a projection). Tests
   set it aside by marking it seen, never by changing the allowance. The week sheet lists budgets under "Budgets this cycle",
   apart from what's due this week, and says "before refunds" when refunds landed that week.
+- **Performance pass, part 2 (measured first).** `tests/verify-perf.mjs`: `/?demo=1` at 390x844, CPU throttled 4x, a synthetic
+  ledger of 3,000 entries over 3 years. Milliseconds, median of 3, before -> after: Activity tab switch 560 -> 130, typing one
+  letter in Activity search 400 -> 120, Home redraw 80-110 -> 50, Home/Insights/Settings tab switches and the add sheet unchanged
+  within noise (Home 105-180 -> 90-140, Insights 140-230 -> 160-180, Settings 100-145, add sheet 40-140 -> 70). The finding that
+  shaped the pass: the maths was never the cost (balances, summarize, homeNumbers are 0.5-1.5 ms each at 4x even on 3,000 entries,
+  after v13's date work); the cost was DOM. Activity drew 400 rows (about 4,000 elements) on every visit and every keystroke,
+  and style recalculation of that tree was most of the time. So the big win is **Activity draws 40 rows first and adds the rest as you
+  scroll toward them** (an IntersectionObserver on a marker; still capped at 400 with the same footer, "Select all" still covers
+  all 400 because it works on data, not on rows on screen). Smaller changes: (1) memoised model functions, all keyed on the
+  `state.entries` array identity plus a short settings/plan signature plus `listsVer()` (a counter model.js bumps when the account,
+  people or category lists change): `balances`, `summarize` (per cycle, so Insights' six cycles are free on a redraw), an
+  `entriesByCycle` index used by allowance/planStatus/hubFlow, `entryIds`, `learn()`, Home's start-of-cycle balances and inflow,
+  and BNPL `autoLink` (skipped when entries, plans and settings are unchanged). Each cache has a comment saying when it is
+  invalidated. A sync badge or a tab round trip no longer recomputes anything. (2) **`updateEntry` and undo-of-edit now replace the
+  entries array instead of editing it in place**; the caches (and the existing recurring.js memo, which had this latent bug) depend
+  on that. (3) `homeNotice` asks the features in rank order and stops at an overdue BNPL payment or a budget already over; owed is
+  only worked out when nothing else has a notice. Same winner as before. (4) `.swipe .entry { will-change: transform }` gave every
+  row its own compositor layer; it is now set on the row being dragged only. (5) The tab cross-fade is skipped when the previous swap
+  took over 80 ms (a long list on a slow phone); it was already off under Reduce Motion. The look is unchanged on a fast phone.
+  (6) Removed 5 dead CSS rules (`.flow-label`, `.flow-val`, `.acc-tile`, `.acc-figs`, `.card-pick`); no other selector was
+  unused, so the stylesheet is otherwise as small as it gets without restyling. Not done: content-visibility (the row count fix made it
+  unnecessary), Insights (about 170 ms, mostly SVG and style, not maths).
+- **Perf follow-ups (review).** Activity keeps a high-water mark of rows drawn per search/filter, so a redraw (selection, edit, delete, sync) redraws at least as many rows and your place holds; it resets when the search/filter changes or the tab is entered afresh. `balances` and `summarize` keep the last three (entries, settings) combinations instead of one, so Home's filtered balances call and Report/Insights alternating don't evict each other. In `homeNotice`, owed is worked out when the only other candidates are the weekly summary (it ranks above it).

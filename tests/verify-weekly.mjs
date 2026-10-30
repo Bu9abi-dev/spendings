@@ -212,6 +212,26 @@ await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.lens');
 ok(await p.$('[data-weekly="open"]') !== null, 'Monday: the week line is on Home when nothing else outranks it');
 ok(await p.$$eval('.sub-line, .budget-nudge', (x) => x.length) === 1, 'Home still shows just one line');
+// someone owes you, nothing else to say: the owed line ranks above the week summary (viewing an account, so it is not in the "Where your money is" card)
+await p.evaluate(async () => {
+  const st = await import('/js/store.js');
+  st.saveExtra('people', { v: 1, names: ['Ahmed'] }, 'x', { undoable: false });
+  st.addEntry({ type: 'Transfer', amount: 50, account: 'ADCB', toAccount: 'Ahmed', date: new Date().toISOString(), cycle: undefined });
+});
+await p.click('[data-focus="ADCB"]');
+await p.click('.tabbar [data-tab="insights"]');
+await p.click('.tabbar [data-tab="home"]'); // a fresh Home draw, now on the ADCB account
+await p.waitForSelector('.owed-line');
+ok(await p.$('[data-weekly="open"]') === null && await p.$$eval('.sub-line, .budget-nudge', (x) => x.length) === 1, 'Monday with money owed: the owed line wins over the week summary');
+await p.click('[data-focus="all"]');
+await p.evaluate(async () => { // put it back for the checks below
+  const st = await import('/js/store.js');
+  st.deleteEntry(st.state.entries.find((e) => e.toAccount === 'Ahmed').id);
+  st.saveExtra('people', { v: 1, names: [] }, 'x', { undoable: false });
+});
+await p.click('.tabbar [data-tab="insights"]');
+await p.click('.tabbar [data-tab="home"]');
+await p.waitForSelector('[data-weekly="open"]');
 const line = await p.textContent('[data-weekly="open"]');
 ok(/^\s*Last week you spent AED [\d,]+/.test(line), `the line reads "${line.trim()}"`);
 ok((await p.$eval('[data-weekly="open"]', (el) => el.getBoundingClientRect().height)) >= 44, 'the line is at least 44px tall');
