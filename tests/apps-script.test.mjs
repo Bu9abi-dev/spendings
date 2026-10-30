@@ -262,6 +262,15 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   p3({ action: 'add', entry: { id: 'x1', type: 'Spend', amount: 5, account: 'ADCB', category: 'Other' } });
   p3({ action: 'reset' });
   assert.deepEqual(p3({ action: 'list' }).extras.budgets, { 'Food & Drinks': 900 }, 'reset keeps extras');
+  assert.deepEqual(p3({ action: 'list' }).features, ['extras']);
+  // a manual ▶ test of the Shortcut: says it's connected and logs nothing
+  const before = p3({ action: 'list' }).entries.length;
+  r = p3({ source: 'applepay', amount: '', merchant: '', card: '', category: 'Decide later' });
+  assert.ok(r.ok && r.test && /Connected/.test(r.message));
+  assert.equal(p3({ action: 'list' }).entries.length, before, 'a test run logs nothing');
+  // a real payment whose amount couldn't be read is still kept for review
+  r = p3({ source: 'applepay', amount: 'AED ?', merchant: 'Lulu', card: 'ADCB', category: 'Decide later' });
+  assert.equal(r.entry.status, 'Review');
   // the Apple Pay Shortcut's request is unchanged and still works
   assert.equal(p3({ source: 'applepay', amount: 'AED 12.00', merchant: 'Cafe', card: 'ADCB', category: 'Decide later' }).ok, true);
 }

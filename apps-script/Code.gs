@@ -276,6 +276,11 @@ function parseBankAlert_(text) {
 /** Shared by Apple Pay and bank alerts: files one card payment and builds the notification text. */
 function logCardSpend_(s, p) {
   var money = p.money, account = p.account, merchant = p.merchant, category = p.category;
+  // Tapping ▶ on the Shortcut to test it sends no payment details. Say the connection works and log
+  // nothing, instead of an AED 0 entry in Needs review. A real payment always has a merchant.
+  if (!(money.amount > 0) && !merchant) {
+    return { ok: true, test: true, message: 'Connected ✓ The sheet got your Shortcut. Nothing was logged because there was no payment in this test.' };
+  }
   if (!category || /later|skip|review/i.test(category)) category = '';
   if (category && SPEND_CATEGORIES.indexOf(category) < 0) category = matchCategory_(category) || '';
   var remembered = '';
@@ -447,6 +452,8 @@ function listAll_() {
     plan: readPlan_(),
     accounts: readAccounts_(),
     extras: readExtras_(),
+    // what this version of the script can do, so the app can tell an old script from a new one
+    features: ['extras'],
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };

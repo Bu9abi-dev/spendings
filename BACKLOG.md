@@ -7,7 +7,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 0 | Foundation: date-proof tests, module split, rounding + same-account fixes, Extras store | `claude/foundation` | Loop thread. Needs Apps Script redeploy for Extras. |
+| 7 | Script batch: a ▶ test of the Shortcut logs nothing; `features` list | `claude/script-batch` | Loop thread. Script change. |
 
 ## Next (wave 1, parallel threads)
 
@@ -46,10 +46,9 @@ project thread; the loop thread merges it. Move an item to Done with its version
 - **Accessibility pass.** VoiceOver labels, contrast, Dynamic Type.
 - **Budget line in the Apple Pay notification.** Code.gs can read Extras, so the Shortcut's reply could say
   "Food: 87% of budget". Needs a script change; batch with others.
-- **Capability flag for extras** in `list`/`ping`, instead of matching the "Unknown action" error text.
-- **Reject AED 0 Apple Pay test entries** in Code.gs (a manual ▶ run of the Shortcut logs one). Batch with the
-  next script change.
+- **Use the `features` list in the app** to detect an old script, instead of the "Unknown action" text
+  (the script sends it from v13).
 
 ## Done
 
-- (none yet in this loop)
+- v12 · Foundation: date-proof tests, module split, money rows add up, same-account fix, Extras store (PR #6)
