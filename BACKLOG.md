@@ -7,11 +7,11 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 7 | First-time setup + Sign in with Google (council fixes) | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
-| 8 | Weekly summary and pace alert | `claude/weekly` | one Home line, "Your week" sheet |
+| 8 | Weekly summary and pace alert (council fixes) | `claude/weekly` | one pace definition for Home, Insights and the alert |
 
 ## Next
 
+- **Try Sign in with Google for real** once Abdullah adds a client ID: run the guide in Safari, then the home-screen app; fix whatever real Google does differently from the fakes.
 - **Arabic / English toggle.** Touches every string.
 - **Tests: stable under load.** verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
@@ -26,6 +26,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v25 · First-time setup guide; Sign in with Google creates the sheet + script (off until a client ID is set)
 - v24 · Money owed and split bills (people as accounts, Split, Settle up)
 - v23 · Savings goals and net worth (manual investments, BNPL owed subtracted)
 - v22 · Buy now, pay later: plans, auto-linked payments, due before payday, Home notice

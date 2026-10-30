@@ -37,7 +37,18 @@ timeline
         v22 : Buy now, pay later : Payments linked by themselves : Due before payday
         v23 : Savings goals : Net worth : Investments by hand
         v24 : Split a bill : People : Owed to you
+        v25 : Setup guide : Sign in with Google (off until set up) : Never overwrites
 ```
+
+---
+
+## v25: First-time setup guide
+**30 October 2026** · sheet update optional
+
+- **First-time setup guide**: on a new phone the app walks you through your cards and accounts (names, colours, the Apple Wallet card name, which one your pay lands in and which is your allowance card), your allowance, pay-cycle day and salary, then connecting your sheet and the Apple Pay Shortcut. Reopen it any time from Settings → Set up step by step.
+- **Sign in with Google** can create the sheet and its script in your own Google account for you. It's switched off until the one-time Google setup in SETUP.md ("Switch on Sign in with Google") is done. Until then the guide shows the by-hand steps and you paste the web app address and key.
+- The guide never overwrites a sheet that already has your data. It only fills in a sheet it just made, or one that hasn't been touched yet.
+- The sheet part (optional): the script can adopt the app key the guide made, and has a safe "install" step. Existing sheets and the Apple Pay Shortcut work exactly as before.
 
 ---
 

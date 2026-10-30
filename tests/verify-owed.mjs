@@ -457,7 +457,7 @@ ok(!errors.length, `no page errors${errors.length ? ': ' + errors.join(' | ') : 
 /* ───── 6. Not demo: what goes to the sheet (USD split prices, the Settings hint) ───── */
 const p2 = await (await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', hasTouch: true })).newPage();
 p2.on('pageerror', (e) => errors.push(e.message));
-await p2.goto(`${URL}#home`);
+await p2.goto(`${URL}?notour=1#home`); // ?notour: a fresh phone would open the setup guide
 await p2.waitForSelector('.lens');
 const usd = await p2.evaluate(async () => {
   const [s, pu] = await Promise.all([import('/js/store.js'), import('/js/people-ui.js')]);
