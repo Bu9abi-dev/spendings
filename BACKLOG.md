@@ -7,15 +7,12 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-
 | 6 | Money owed and split bills | `claude/owed` | people as accounts, Split on an entry |
 | 7 | First-time setup + Sign in with Google | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
-
 
 ## Next
 
 - **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning, what's due).
-- **Money owed (split expenses).** "Person" accounts so lending is a transfer, never spending. Council design pass first.
 - **Arabic / English toggle.** Touches every string.
 - **Tests: stable under load.** verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.

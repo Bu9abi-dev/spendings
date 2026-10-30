@@ -1,6 +1,6 @@
 # Notes for the next session
 
-Read this first. It says where the app stands, how to work on it, and what's in flight.
+Read this first (and [AI-SYNC-LOG.md](AI-SYNC-LOG.md), the hand-off file for any new AI session; keep both current). It says where the app stands, how to work on it, and what's in flight.
 Kept current by whoever is working on the app (Claude, running the improvement loop).
 
 ## Where things stand (30 Oct 2026)
