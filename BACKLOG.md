@@ -17,14 +17,12 @@ project thread; the loop thread merges it. Move an item to Done with its version
 - **Tests: stable under load.** verify-categorize fails on its first run right after the heavy suites (3 times on 30 Oct),
   passes on rerun. verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
-- **Chart follow-ups:** tap a place to filter Activity; "on pace for AED X this cycle".
 - **Report for a filtered set; rules from bulk recategorise** (council wave 1, Expansionist).
 - **Performance pass, part 3.** Insights is the slowest tab left (about 170 ms at 4x CPU, mostly SVG and style). See DECISIONS.md.
-- **Self-reinforcing categories** (Contrarian): a wrong bulk filing teaches the learner. Consider learning only from
-  entries you filed by hand or confirmed.
 
 ## Done
 
+- v31 · Tap a place to filter Activity, on-pace estimate, learner skips bulk-filed entries
 - v30 · Arabic / English toggle with right-to-left layout (council-reviewed copy and RTL)
 - v29 · Accessibility: axe serious/critical 45 → 0, VoiceOver labels, dialogs, contrast, Larger Text
 - v28 · Budget line in the Apple Pay notification; features-based old-script check

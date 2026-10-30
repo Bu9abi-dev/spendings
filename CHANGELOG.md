@@ -43,7 +43,17 @@ timeline
         v28 : Budget line in the Apple Pay notification : Smarter script check
         v29 : VoiceOver : Contrast : Larger Text
         v30 : Arabic and right to left : Match iPhone
+        v31 : Tap a place : On-pace estimate : Learns only from you
 ```
+
+---
+
+## v31: Small wins
+**30 October 2026** · no sheet update needed
+
+- In Insights, **tap a shop in Top places** to see its payments in Activity for that cycle. A chip shows the filter; tap ✕ to clear it. Bank-style names like "CARREFOUR ABU DHABI AE" now count as the same shop as "Carrefour".
+- The Day by day card shows **"On pace for AED X this cycle"**, an estimate from your daily average so far.
+- **Smarter suggestions stay honest**: payments filed in one go by "File all" no longer teach the category guesser until you confirm or change them yourself, so one wrong bulk filing can't snowball.
 
 ---
 
