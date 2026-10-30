@@ -4,6 +4,16 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **The flaky extras test was a test bug, but it led to a real app race, now fixed.** The test's `settle()`
+  used `waitForFunction` with an `async` check. Playwright treats the Promise the check returns as "true", so
+  settle never waited and the test sometimes looked at the sheet before the last change got there. It now
+  waits until the outbox is really empty. Looking at the outbox also turned up a real way to lose data: the
+  app took a sent change off the queue with `shift()`. If you saved the same extra (or the plan, or accounts)
+  again while the first copy was still on its way, the old copy was already gone from the queue, so `shift()`
+  threw away the *next* change instead, for example a different phone-only extra, which then never reached
+  the sheet. An edit to an entry whose add was still sending was folded into the add after it had already
+  left, so the edit was lost too. Now a sent change is removed by identity, and nothing is folded into the
+  change that's sending. `verify-extras` holds a request mid-flight to check both cases.
 - **BNPL (branch `claude/bnpl`):** a plan (Tabby, Tamara, Postpay, card instalments) lives in Extras under `bnpl`
   and never changes a balance. Money only counts as spent when an instalment is paid: "Mark paid" logs a normal
   Spend ("Tabby · Noon", the plan's category and account) through `addEntry`, so balances, sync and undo work as
