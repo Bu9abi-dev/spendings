@@ -30,7 +30,19 @@ timeline
         v15 : Activity filters : Select and edit many : One undo
         v16 : Category suggestions : File a whole shop at once : Only sure guesses act
         v17 : Monthly report : Save as PDF : Cycle CSV
+        v18 : Your own categories : Rename and hide : Sheet keeps the names
 ```
+
+---
+
+## v18: Your own categories
+**30 October 2026** · sheet update optional
+
+- **Settings → Categories**: add your own categories (Coffee, Car, University…) with an icon, rename any category, or hide ones you don't use. Works for spending and money-in.
+- Renaming only changes what the app shows. Your sheet keeps the original name, so old entries, the Apple Pay Shortcut and remembered shops keep working.
+- Hidden categories leave the pickers but stay on old entries, in Insights, Activity filters and the monthly report. A category of your own can be deleted while no entry uses it.
+- Smart suggestions learn your own categories too, and never suggest a hidden one.
+- The sheet part (optional) lets the Shortcut send your own categories, and the sheet's summary tab lists them. Until the new `apps-script/Code.gs` is deployed, a payment sent with a custom category lands in Needs review, as before.
 
 ---
 
