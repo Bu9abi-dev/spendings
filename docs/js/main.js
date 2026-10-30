@@ -7,7 +7,7 @@ import {
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
 import { icon } from './icons.js';
-import { bindDonut, bindPace } from './charts.js';
+import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
@@ -263,6 +263,7 @@ function render(reason) {
   view.dataset.tab = tab;
   bindDonut(view);
   bindPace(view);
+  bindBars(view);
   observeTitle();
   // the signature move: liquid springs to the new level, numerals roll
   const cap = view.querySelector('.capsule');
