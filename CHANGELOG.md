@@ -32,7 +32,19 @@ timeline
         v17 : Monthly report : Save as PDF : Cycle CSV
         v18 : Your own categories : Rename and hide : Sheet keeps the names
         v19 : Category limits : Progress bars : One quiet nudge
+        v20 : Subscriptions : New ones flagged : One Home line at a time
 ```
+
+---
+
+## v20: Subscriptions
+**30 October 2026** · no sheet update needed
+
+- Insights has a **Subscriptions** card: payments that repeat every week, month or year (Netflix, Spotify, the gym…), with what they cost per month in total and when each is next expected.
+- A subscription that **started charging this month** is flagged, so a free trial that turned into a payment doesn't slip by. "Not a subscription" hides one that isn't.
+- Weekly coffee or grocery runs aren't counted as subscriptions.
+- Home shows **one quiet line at a time**: a category over its limit first, then a new subscription, one due in the next 3 days, then a category close to its limit.
+- The monthly report shows what subscriptions cost per month.
 
 ---
 

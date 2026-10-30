@@ -8,15 +8,13 @@ project thread; the loop thread merges it. Move an item to Done with its version
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
 
-| 2 | Subscriptions (council fixes) | `claude/recurring` | fewer false positives |
 | 3 | BNPL tracking (council fixes) | `claude/bnpl` | Tabby/Tamara, auto-link with visible trail |
 | 4 | Savings goals and net worth | `claude/goals` | manual investments, read-only |
 | 5 | Flaky verify-extras | `claude/extras-flake` | find the race |
 
 ## Next
 
-- **One Home notice at a time.** Budgets, subscriptions and BNPL each expose a pure `…Notice()`; Home picks the most
-  urgent (overdue BNPL > over budget > new subscription > due soon > near budget). Do after the three merge.
+- **BNPL in the one-notice order** (home.js `homeNotice`): overdue BNPL first, BNPL due soon after a new subscription.
 - **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning, what's due).
 - **Money owed (split expenses).** "Person" accounts so lending is a transfer, never spending. Council design pass first.
 - **Arabic / English toggle.** Touches every string.
@@ -33,6 +31,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v20 · Subscriptions: detector, monthly total, new-charge flag; Home shows one notice at a time
 - v19 · Category budgets: monthly limits per category, Insights bars, one Home nudge
 - v18 · Your own categories: add, rename (label only), hide; Shortcut accepts them after the script update
 - v17 · Monthly report: printable per cycle, PDF, cycle CSV, numbers that add up
