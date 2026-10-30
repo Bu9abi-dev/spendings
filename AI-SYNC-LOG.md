@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **30 Oct 2026**, at **v29**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **30 Oct 2026**, at **v30**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -61,16 +61,16 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v29, 30 Oct 2026)
+## 5. Current state (v30, 30 Oct 2026)
 
-**Live on main** (newest first): v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 
 **In flight** (branches pushed, not merged):
-- `claude/arabic`: Arabic / English toggle (i18n module, RTL). Touches every UI string; merge it before other UI work.
-- `claude/test-stability`: condition waits instead of fixed sleeps; run-all.sh exits non-zero on a failure.
+- Nothing merged is pending. `claude/test-stability` was stopped unfinished at wrap-up (tests-only branch; check what
+  it pushed before reusing it, or start fresh from main).
 
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New
@@ -79,7 +79,8 @@ and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
    Apple Pay notification. Until then, feature settings live on the phone only and sync later.
 2. **For Sign in with Google**: create a Google Cloud OAuth client ID (steps in SETUP.md → "Switch on Sign in with Google") and put it in
    `docs/js/config.js`; turn on the Apps Script API at script.google.com/home/usersettings.
-3. Check on a real iPhone: "Save as PDF" in the monthly report from the home-screen app.
+3. Check on a real iPhone: "Save as PDF" in the monthly report from the home-screen app, and the Arabic mode.
+4. Read the Arabic wording (Settings → Language → العربية).
 
 **Known rough edges**: a few browser tests can fail on timing when many run at once (rerun before chasing);
 categories learned from a wrong bulk filing can reinforce themselves (backlog).
@@ -103,7 +104,7 @@ left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated
 
 ## 7. Session log (newest first)
 
-### 30 Oct 2026 · loop session (v15 → v29)
+### 30 Oct 2026 · loop session (v15 → v30)
 - Took over six wave-1 threads that had hit their usage limit. Ran councils over every branch, applied fixes, merged:
   activity filters (v15), smart categories (v16), monthly report (v17), custom categories (v18, asked for by
   Abdullah), budgets (v19), subscriptions + one Home notice (v20), outbox race fix (v21, found while fixing a flaky
@@ -116,3 +117,6 @@ left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated
 - Performance pass (v27): DOM was the cost, not maths; lazy Activity rows + memoised sums; reviewer found and
   the builder fixed a lost-scroll bug and a notice-order trap before merge.
 - Abdullah asked for this file.
+- Later in the session: weekly summary + pace alert (v26), performance (v27), budget line in the Apple Pay
+  notification (v28), accessibility (v29), Arabic + RTL (v30). Abdullah asked to wrap up at ~$10 credit left; the
+  loop stopped there with main deployed.
