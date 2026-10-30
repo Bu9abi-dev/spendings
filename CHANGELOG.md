@@ -35,7 +35,18 @@ timeline
         v20 : Subscriptions : New ones flagged : One Home line at a time
         v21 : Changes never lost on a slow connection
         v22 : Buy now, pay later : Payments linked by themselves : Due before payday
+        v23 : Savings goals : Net worth : Investments by hand
 ```
+
+---
+
+## v23: Savings goals and net worth
+**30 October 2026** · no sheet update needed
+
+- **Savings goals** in Insights: a target, an optional date, and the accounts that hold the money (or an amount you set aside by hand). Each goal shows a ring, what's left to go, and how much to save per pay cycle to make the date.
+- Two goals on the same account never count the same dirham twice; the money goes to goals in order and the card says which goals share it.
+- **Net worth**: all your money, plus investments you type in (read-only, no broker connection), minus what you still owe on buy now, pay later.
+- Renaming an account keeps your goals pointed at it. Manage goals and investments in Settings, or from the cards' "Manage" links.
 
 ---
 
