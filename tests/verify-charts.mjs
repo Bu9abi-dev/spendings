@@ -82,7 +82,7 @@ const b = await chromium.launch();
 const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' })).newPage();
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
-await p.goto('http://localhost:8765/?demo=1#insights');
+await p.goto((process.env.BASE || 'http://localhost:8765/') + '?demo=1#insights');
 await p.waitForSelector('.spend-bars');
 await p.click('[data-cyc="-1"]'); // a full past cycle
 await p.waitForSelector('.spend-bars');

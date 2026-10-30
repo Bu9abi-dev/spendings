@@ -402,6 +402,16 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved, spentBefore };
 }
 
+/** Whole numbers for `values` that add up to `target` (default: their rounded total): round every one
+    down, then give the leftover units to the biggest fractions (largest remainder). */
+export function apportion(values, target = Math.round(values.reduce((a, v) => a + v, 0))) {
+  const shown = values.map((v) => Math.floor(v));
+  let spare = target - shown.reduce((a, v) => a + v, 0);
+  values.map((v, i) => i).sort((a, b) => (values[b] - Math.floor(values[b])) - (values[a] - Math.floor(values[a])))
+    .forEach((i) => { if (spare > 0) { shown[i]++; spare--; } });
+  return shown;
+}
+
 /** "Where your money is": every part of the total, so the numbers visibly add up. */
 export function whereRows(m) {
   const all = [];
@@ -425,14 +435,7 @@ export function whereRows(m) {
     const a = accountMeta(id);
     add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
   }
-  // whole numbers that add up to the rounded total: round each row, then nudge the rows that
-  // rounding moved furthest (by a dirham each) until the rows add up to the total shown
-  // (the rows are every part of the total, so their exact sum is the total)
-  const target = Math.round(m.total);
-  all.forEach((r) => { r.shown = Math.round(r.v); });
-  let diff = target - all.reduce((a, r) => a + r.shown, 0);
-  const byGap = [...all].sort((a, b) => (b.v - b.shown) - (a.v - a.shown)); // most under-rounded first
-  for (let i = 0; diff > 0 && i < byGap.length; i++, diff--) byGap[i].shown++;
-  for (let i = byGap.length - 1; diff < 0 && i >= 0; i--, diff++) byGap[i].shown--;
+  // whole numbers that add up to the rounded total (largest remainder)
+  apportion(all.map((r) => r.v)).forEach((n, i) => { all[i].shown = n; });
   return all.filter((r) => r.shown !== 0);
 }

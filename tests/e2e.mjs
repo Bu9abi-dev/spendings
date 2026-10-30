@@ -24,7 +24,7 @@ const serverEntries = () => JSON.parse(ctx.doPost({ postData: { contents: JSON.s
 async function until(pred, ms = 5000) { const t0 = Date.now(); while (Date.now() - t0 < ms) { if (pred()) return true; await p.waitForTimeout(100); } return pred(); }
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
-await p.goto('http://localhost:8765/#settings');
+await p.goto((process.env.BASE || 'http://localhost:8765/') + '#settings');
 await p.fill('input[name="url"]', URL_);
 await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');
@@ -176,7 +176,7 @@ assert.deepEqual(errors, []);
   // pin the clock to 5 Oct 2026 (Dubai), so Nafis (day 1) is due and the cycle ends on 26 Oct whatever today is
   await d.clock.install({ time: new Date('2026-10-05T10:00:00+04:00') });
   d.on('pageerror', (e) => errors.push(e.message));
-  await d.goto('http://localhost:8765/?demo=1#home');
+  await d.goto((process.env.BASE || 'http://localhost:8765/') + '?demo=1#home');
   await d.waitForSelector('.payday');
   const metaText = () => d.textContent('.lens-meta');
   assert.match(await metaText(), /Nafis \+4,500 due/);

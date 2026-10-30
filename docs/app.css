@@ -1189,6 +1189,7 @@ html.sheet-open body::after { opacity: 0; }
 .report-switch { margin: 2px var(--gutter) 10px; flex: none; }
 .report-scroll { padding: 0 var(--gutter) 12px; }
 .report-paper .rp-page { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06); }
-.report-actions { display: flex; gap: 8px; padding: 10px var(--gutter) 6px; flex: none; }
-.report-actions .btn-primary { flex: 1.4; padding: 0 14px; }
-.report-actions .btn-tinted { padding: 0 14px; }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px var(--gutter) 6px; flex: none; }
+.report-actions .btn-primary { flex: 1 1 100%; padding: 0 14px; }
+.report-actions .btn-tinted { flex: 1; padding: 0 10px; white-space: nowrap; }
+.report-actions .btn-primary { white-space: nowrap; }

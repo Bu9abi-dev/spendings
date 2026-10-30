@@ -3,7 +3,7 @@
 // cycle's entries as CSV. The report is plain HTML with its own light "paper" styles, so the
 // preview, the printout and the shared file all look the same.
 import {
-  categoryMeta, accountMeta, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts,
+  categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts,
 } from './model.js';
 import { state, getExtra } from './store.js';
 import { openSheet, toast, haptic, esc } from './ui.js';
@@ -13,44 +13,68 @@ import { icon } from './icons.js';
 
 // Paper colours: the light-mode chart palette, fixed so a printout never comes out dark.
 const SERIES = ['#8e8e93', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
-const catColor = (id) => SERIES[categoryMeta(id)?.slot || 0];
+// Name and colour come from the category list (custom categories too); unknown ones are grey.
+const catColor = (id) => SERIES[categoryMeta(id)?.slot || 0] || SERIES[0];
+const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.id || id);
 
-/** "CARREFOUR  City Centre" and "Carrefour City Centre" are the same shop. */
-const merchantKey = (m) => String(m || '').trim().replace(/\s+/g, ' ').toLowerCase();
+/** Shop name without store/MCC numbers or the city: "CARREFOUR MCC 5411 ABU DHABI" → "CARREFOUR". */
+// switch to categorize.cleanMerchant once smart-categories lands
+function cleanShop(m) {
+  let t = String(m || '').trim().replace(/\s+/g, ' ');
+  for (let prev = ''; prev !== t;) {
+    prev = t;
+    t = t.replace(/[\s,\-–]*\b(abu\s*dhabi|dubai|sharjah|ae|uae|are)$/i, '').replace(/[\s,\-–]*\bmcc\s*#?\d+$/i, '').replace(/[\s,\-–]*(#|no\.?\s*|store\s*|branch\s*)?\d+$/i, '').trim();
+  }
+  return t;
+}
+const merchantKey = (m) => cleanShop(m).toLowerCase();
+const shopName = (m) => { const t = cleanShop(m); return t && t === t.toUpperCase() ? t.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : t; };
 
-/** A budget saved as 600 or as { limit: 600 }; anything else means no budget. */
-const budgetLimit = (b) => (typeof b === 'number' ? b : +b?.limit || 0);
+/** A budget limit: a positive number of dirhams, otherwise none. */
+const budgetLimit = (b) => (typeof b === 'number' && b > 0 ? b : 0);
 
 /** Everything the report shows for one cycle. Transfers are kept apart: moving money between
     accounts is never spending. Bank matches (Adjustments) only move "Total money". */
-export function cycleReport(entries, cycle, settings, plan = [], budgets = {}, now = new Date()) {
+export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = null, now = new Date()) {
+  const budgets = budgetsExtra?.limits || {}; // saved as { v: 1, limits: { <categoryId>: <AED> } }
   const s = settings;
   const sum = summarize(entries, cycle, s, plan);
   const prev = summarize(entries, shiftCycle(cycle, -1), s, plan);
   const { start, end } = cycleBounds(cycle, s.cycleStart);
   const isCurrent = cycle === cycleOf(now, s.cycleStart);
 
-  // money in, refunds shown on their own (a refund gives money back, it isn't earnings)
+  // Same rules as Insights: Spent is gross (a refund is income, not netted off). Money in includes
+  // refunds; "refunds" is shown on its own as the part of it that was money back.
   const refunds = sum.byIncome.get('Refund') || 0;
-  const income = sum.income - refunds;
-  const netSpent = sum.spent - refunds;
+  const income = sum.income;
+  const spent = sum.spent;
 
-  // categories, biggest first, with last cycle alongside
-  const categories = [...sum.byCategory].map(([id, v]) => ({ id, value: v, prev: prev.byCategory.get(id) || 0, share: sum.spent ? v / sum.spent : 0 }))
+  // whole dirhams that add up: Money in − Spent = Kept, and every list sums to Spent
+  const whole = { income: Math.round(income), spent: Math.round(spent), refunds: Math.round(refunds) };
+  whole.kept = whole.income - whole.spent;
+  const rowsOf = (items, top, restLabel) => {
+    const head = items.slice(0, top), restV = items.slice(top).reduce((a, x) => a + x.value, 0);
+    const rows = items.length > top ? [...head, { id: restLabel, name: 'Everything else', value: restV, rest: true }] : head;
+    const shown = apportion(rows.map((x) => x.value), whole.spent), pct = apportion(rows.map((x) => (spent ? (x.value / spent) * 100 : 0)), spent ? 100 : 0);
+    return rows.map((x, i) => ({ ...x, shown: shown[i], pct: pct[i] }));
+  };
+
+  const cats = [...sum.byCategory].map(([id, v]) => ({ id, name: catName(id), value: v, prev: prev.byCategory.get(id) || 0 }))
     .sort((a, b) => b.value - a.value);
+  const categories = rowsOf(cats, 8, '_rest');
 
-  // shops, grouped by name whatever the capitals or spacing
+  // shops, grouped by one shared name cleaner
   const shops = new Map();
   let moved = 0, moves = 0;
   for (const e of sum.entries) {
     if (e.type === 'Transfer') { moved += toAED(e, s); moves++; continue; }
     if (e.type !== 'Spend') continue;
     const k = merchantKey(e.merchant) || '(no merchant)';
-    const g = shops.get(k) || shops.set(k, { name: e.merchant?.trim() || 'No merchant', value: 0, count: 0, category: e.category }).get(k);
+    const g = shops.get(k) || shops.set(k, { id: k, name: shopName(e.merchant) || 'No merchant', value: 0, count: 0, category: e.category }).get(k);
     g.value += toAED(e, s);
     g.count++;
   }
-  const merchants = [...shops.values()].sort((a, b) => b.value - a.value).slice(0, 8);
+  const merchants = rowsOf([...shops.values()].sort((a, b) => b.value - a.value), 8, '_rest');
   const biggest = sum.entries.filter((e) => e.type === 'Spend').sort((a, b) => toAED(b, s) - toAED(a, s)).slice(0, 5);
 
   // total money when the cycle ended (or now, for the cycle we're in)
@@ -58,12 +82,12 @@ export function cycleReport(entries, cycle, settings, plan = [], budgets = {}, n
   const bals = balances(entries.filter((e) => new Date(e.date) < asOf), s);
   const totalMoney = [...bals.values()].reduce((a, b) => a + b.balance, 0);
 
-  const budgetRows = Object.entries(budgets || {}).map(([id, b]) => ({ id, limit: budgetLimit(b), spent: sum.byCategory.get(id) || 0 }))
+  const budgetRows = Object.entries(budgets).map(([id, b]) => ({ id, name: catName(id), limit: budgetLimit(b), spent: sum.byCategory.get(id) || 0 }))
     .filter((b) => b.limit > 0).sort((a, b) => b.spent / b.limit - a.spent / a.limit);
 
   return {
     cycle, isCurrent, start, end, asOf,
-    income, refunds, spent: sum.spent, netSpent, saved: income - netSpent, prevSpent: prev.spent - (prev.byIncome.get('Refund') || 0),
+    income, refunds, spent, whole, saved: income - spent, prevSpent: prev.spent,
     byIncome: [...sum.byIncome].filter(([k]) => k !== 'Refund').sort((a, b) => b[1] - a[1]),
     byAccount: [...sum.byAccount].map(([id, a]) => ({ id, spent: a.spent })).filter((a) => a.spent > 0).sort((a, b) => b.spent - a.spent),
     categories, merchants, biggest, moved, moves,
@@ -98,6 +122,7 @@ export function reportHTML(r, settings) {
   const section = (title, body) => `<section class="rp-sec"><h2>${title}</h2>${body}</section>`;
   const empty = (t) => `<p class="rp-muted">${t}</p>`;
   const maxCat = Math.max(1, ...r.categories.map((c) => c.value));
+  const dot = (c) => (c.rest ? '#c7c7cc' : catColor(c.id));
   const maxShop = Math.max(1, ...r.merchants.map((m) => m.value));
 
   return `<article class="rp-page">
@@ -107,13 +132,14 @@ export function reportHTML(r, settings) {
     </header>
 
     <div class="rp-tiles">
-      ${tile('Money in', r.income, 'rp-in')}
-      ${tile('Spent', r.netSpent)}
-      ${tile(r.saved >= 0 ? 'Kept' : 'Overspent', Math.abs(r.saved), r.saved >= 0 ? 'rp-in' : 'rp-neg')}
+      ${tile('Money in', r.whole.income, 'rp-in')}
+      ${tile('Spent', r.whole.spent)}
+      ${tile(r.whole.kept >= 0 ? 'Kept' : 'Overspent', Math.abs(r.whole.kept), r.whole.kept >= 0 ? 'rp-in' : 'rp-neg')}
+      ${tile('Refunds (money back)', r.whole.refunds)}
       ${tile(r.isCurrent ? 'Total money now' : 'Total money at the end', r.totalMoney)}
     </div>
     <p class="rp-note">${r.count} ${r.count === 1 ? 'entry' : 'entries'}.
-      ${r.refunds ? `Spent is after ${aed(r.refunds)} of refunds. ` : ''}${r.prevSpent > 0 ? `Last cycle you spent ${aed(r.prevSpent)}.` : ''}
+      Spent is everything paid out; refunds count as money in, not taken off Spent.${r.prevSpent > 0 ? `Last cycle you spent ${aed(r.prevSpent)}.` : ''}
       ${r.review ? `<b>${r.review} still need a category.</b>` : ''}</p>
 
     ${section(`Allowance · ${esc(a.account)}`, `
@@ -123,20 +149,20 @@ export function reportHTML(r, settings) {
       </div>`)}
 
     ${section('Where it went', r.categories.length ? `<table class="rp-table">${r.categories.map((c) => `<tr>
-        <td class="rp-name"><i class="rp-dot" style="background:${catColor(c.id)}"></i>${c.id === 'Uncategorised' ? 'Needs category' : esc(c.id)}</td>
-        <td class="rp-wide">${bar(c.value / maxCat, catColor(c.id))}</td>
-        <td class="rp-num">${fmt(c.value, { whole: true })}${change(c.value, c.prev)}</td>
-        <td class="rp-pct">${Math.round(c.share * 100)}%</td></tr>`).join('')}</table>` : empty('No spending in this cycle.'))}
+        <td class="rp-name"><i class="rp-dot" style="background:${dot(c)}"></i>${esc(c.name)}</td>
+        <td class="rp-wide">${bar(c.value / maxCat, dot(c))}</td>
+        <td class="rp-num">${fmt(c.shown)}${c.rest ? '' : change(c.value, c.prev)}</td>
+        <td class="rp-pct">${c.pct}%</td></tr>`).join('')}</table>` : empty('No spending in this cycle.'))}
 
     ${r.budgets.length ? section('Budgets', `<table class="rp-table">${r.budgets.map((b) => `<tr>
-        <td class="rp-name">${esc(b.id)}</td>
+        <td class="rp-name">${esc(b.name)}</td>
         <td class="rp-wide">${bar(b.spent / b.limit, b.spent > b.limit ? '#c4332b' : b.spent >= b.limit * 0.8 ? '#b5530f' : '#2d7a45')}</td>
         <td class="rp-num">${fmt(b.spent, { whole: true })} / ${fmt(b.limit, { whole: true })}</td></tr>`).join('')}</table>`) : ''}
 
     ${section('Top shops', r.merchants.length ? `<table class="rp-table">${r.merchants.map((m) => `<tr>
-        <td class="rp-name">${esc(m.name)}<small>${m.count}×</small></td>
-        <td class="rp-wide">${bar(m.value / maxShop, catColor(m.category))}</td>
-        <td class="rp-num">${fmt(m.value, { whole: true })}</td></tr>`).join('')}</table>` : empty('No shops yet.'))}
+        <td class="rp-name">${esc(m.name)}${m.count ? `<small>${m.count}×</small>` : ''}</td>
+        <td class="rp-wide">${bar(m.value / maxShop, m.rest ? '#c7c7cc' : catColor(m.category))}</td>
+        <td class="rp-num">${fmt(m.shown)}</td></tr>`).join('')}</table>` : empty('No shops yet.'))}
 
     ${r.biggest.length ? section('Biggest payments', `<table class="rp-table">${r.biggest.map((e) => `<tr>
         <td class="rp-name">${esc(e.merchant || e.category || 'Payment')}<small>${day(e.date)} · ${esc(e.account)}</small></td>
@@ -212,11 +238,28 @@ async function deliver(name, text, type) {
 }
 
 /** The report as a stand-alone web page, for sharing. */
-const standalone = (r, html) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spendings · ${cycleName(r.cycle, true)} ${r.cycle.slice(0, 4)}</title><style>body{margin:0;background:#fff}${REPORT_CSS}</style></head><body>${html}</body></html>`;
+const standalone = (r, html, hint = false) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spendings · ${cycleName(r.cycle, true)} ${r.cycle.slice(0, 4)}</title><style>body{margin:0;background:#fff}${REPORT_CSS}</style></head><body>${hint ? '<p style="font:14px -apple-system,Arial,sans-serif;color:#6e6e73;text-align:center;margin:12px 16px">To save a PDF: tap Share → Print, then pinch out on the preview.</p>' : ''}${html}</body></html>`;
 
-/** Print just the report: iPhone's print sheet has "Save to Files" as PDF (or pinch the preview). */
-function printReport(html) {
+/** Is this the Home Screen app, where the print sheet often doesn't open? */
+const standaloneApp = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
+
+/** Open the report as its own page in a new tab, where Share → Print (pinch out) makes a PDF. */
+function openPrintView(r, html) {
+  const url = URL.createObjectURL(new Blob([standalone(r, html, true)], { type: 'text/html' }));
+  const w = window.open(url, '_blank');
+  setTimeout(() => URL.revokeObjectURL(url), 120_000);
+  return !!w;
+}
+
+/** Print just the report: iPhone's print sheet has "Save to Files" as PDF (or pinch the preview).
+    From a Home Screen app, or where printing isn't there, open the report page instead. */
+function printReport(r, html) {
+  if (typeof window.print !== 'function' || standaloneApp()) {
+    const opened = openPrintView(r, html);
+    toast(opened ? 'Use Share → Print → pinch out to save a PDF' : 'Couldn’t open the report. Try Share report instead', { icon: icon('warn', { size: 18 }), tone: opened ? undefined : 'warn' });
+    return;
+  }
   const root = document.createElement('div');
   root.id = 'print-root';
   root.innerHTML = html;
@@ -246,7 +289,7 @@ export function openReport(cycle) {
   ensureStyles();
   const current = () => cycleOf(new Date(), state.settings.cycleStart);
   let cyc = cycle && cycle <= current() ? cycle : current();
-  const build = () => cycleReport(state.entries, cyc, state.settings, state.plan, getExtra('budgets', {}) || {});
+  const build = () => cycleReport(state.entries, cyc, state.settings, state.plan, getExtra('budgets', null));
   let r = build();
 
   openSheet({
@@ -260,8 +303,8 @@ export function openReport(cycle) {
       <div class="sheet-scroll report-scroll"><div class="report-paper"></div></div>
       <div class="report-actions">
         <button type="button" class="btn-primary" data-act="pdf">${icon('download', { size: 18 })}Save as PDF</button>
-        <button type="button" class="btn-tinted" data-act="share-report">${icon('link', { size: 18 })}Share</button>
-        <button type="button" class="btn-tinted" data-act="csv">${icon('sheet', { size: 18 })}CSV</button>
+        <button type="button" class="btn-tinted" data-act="share-report">${icon('link', { size: 18 })}Share report</button>
+        <button type="button" class="btn-tinted" data-act="csv">${icon('sheet', { size: 18 })}Export CSV</button>
       </div>`,
     onMount(sheet, close) {
       const paint = () => {
@@ -278,7 +321,7 @@ export function openReport(cycle) {
         const step = ev.target.closest('[data-rcyc]');
         if (step) { cyc = shiftCycle(cyc, +step.dataset.rcyc); if (cyc > current()) cyc = current(); haptic(); return paint(); }
         const act = ev.target.closest('[data-act]')?.dataset.act;
-        if (act === 'pdf') { haptic(); printReport(reportHTML(r, state.settings)); }
+        if (act === 'pdf') { haptic(); printReport(r, reportHTML(r, state.settings)); }
         if (act === 'share-report') { haptic(); deliver(fileName(cyc, 'html'), standalone(r, reportHTML(r, state.settings)), 'text/html'); }
         if (act === 'csv') {
           haptic();

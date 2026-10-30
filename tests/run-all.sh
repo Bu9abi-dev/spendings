@@ -5,7 +5,7 @@ set -eo pipefail
 cd "$(dirname "$0")/.."
 export NODE_PATH="${NODE_PATH:-$(npm root -g)}"
 export PLAYWRIGHT="${PLAYWRIGHT:-$NODE_PATH/playwright}"
-if ! curl -s -o /dev/null http://localhost:8765/; then
+if [ -z "$BASE" ] && ! curl -s -o /dev/null http://localhost:8765/; then
   (cd docs && python3 -m http.server 8765 >/dev/null 2>&1 &)
   sleep 1
 fi
