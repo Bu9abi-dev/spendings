@@ -27,7 +27,17 @@ timeline
         v12 : Money rows always add up : Extras tab for new features : Sheet update needed
         v13 : Testing the Shortcut logs nothing : Arabic digits read right : Faster screens
         v14 : Day-by-day and weekly spending : Top places : Categories over six cycles
+        v15 : Activity filters : Select and edit many : One undo
 ```
+
+---
+
+## v15: Activity filters and bulk edit
+**30 October 2026** · no sheet update needed
+
+- Activity has **filters**: account, category, a cycle or your own dates, and an amount range. The total of what's showing sits on top, with spending, refunds and money in shown separately.
+- **Select** lets you pick several entries and change their category or delete them in one go. Before deleting, it lists what will go. One Undo puts them all back.
+- Selecting never includes entries you can't see on screen. If more entries match than the list shows, it says so.
 
 ---
 
