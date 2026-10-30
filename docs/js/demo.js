@@ -41,7 +41,7 @@ export const DEMO_PLAN = [
 // (as the Apple Pay Shortcut would log them), so the app links them on its own: that's the "sync".
 // [id, provider, merchant, item, total, count, cadence, first due (days from today), account, paid (days from today)]
 const DEMO_BNPL = [
-  ['tabby', 'Tabby', 'Noon', 'AirPods Pro', 899, 4, '2w', -38, 'ADCB', [-38, -23, -10]], // the last one is due in 4 days, so Home shows it
+  ['tabby', 'Tabby', 'Noon', 'AirPods Pro', 899, 4, '2w', -30, 'ADCB', [-30, -15, -2]], // next due in 12 days: no Home line, so the other notices show
   ['tamara', 'Tamara', 'Namshi', 'Trainers', 600, 3, '1m', -20, 'BOTIM', [-19]],
 ];
 
@@ -104,6 +104,19 @@ export function demoEntries(settings) {
     }
     if (back === 1) out.push({ ...base, id: `d-usd-${cycle}`, date: new Date(start.getTime() + 12 * day).toISOString(), type: 'Spend', amount: 19.99, currency: 'USD', account: 'ADIB', category: 'Bills & Subscriptions', merchant: 'Apple iCloud+', source: 'Apple Pay' });
     if (back === 0) out.push({ ...base, id: `d-refund-${cycle}`, date: new Date(start.getTime() + 4 * day).toISOString(), type: 'Income', amount: 89, account: 'ADCB', category: 'Refund', merchant: 'Noon', note: 'Returned headphones', source: 'App' });
+  }
+
+  // payments that repeat, so the Subscriptions card has something to show. Dated back from today, every
+  // 30 days: [merchant, amount, days since the latest charge, how many charges, the newest n charges after a price rise of 30]
+  for (const [merchant, amount, ago, times, rose] of [
+    ['Netflix', 56, 11, 5], ['Spotify', 21.99, 4, 5], ['Fitness First', 249, 20, 5, 2],
+    ['Disney+', 29.99, 3, 2],               // started charging a month ago: flagged as new
+    ['Shahid VIP', 25, 52, 3],              // stopped two months ago: shown as maybe cancelled
+  ]) {
+    for (let k = 0; k < times; k++) {
+      const price = k < (rose || 0) ? amount + 30 : amount;
+      out.push({ ...base, id: `d-sub-${merchant}-${k}`, date: new Date(now.getTime() - (ago + 30 * k) * day).toISOString(), type: 'Spend', amount: price, account: 'ADIB', category: 'Bills & Subscriptions', merchant, source: 'Apple Pay' });
+    }
   }
 
   // the owner checks their banks now and then: recent exact matches

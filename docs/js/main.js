@@ -12,13 +12,14 @@ import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
+import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import {
   renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
-import { renderInsights, shiftInsights, insightsShown } from './insights.js';
+import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
@@ -113,6 +114,9 @@ function renderSettings() {
     <h3 class="group-title" id="bnpl">Buy now, pay later</h3>
     <section class="group">${bnplSettingsBlock()}</section>
     <p class="group-foot">What you still owe Tabby, Tamara and the like. It’s not spending until an instalment is paid.</p>
+    <h3 class="group-title" id="budgets">Category limits</h3>
+    <section class="group">${budgetsSettingsBlock()}</section>
+    <p class="group-foot">A spending limit for a category in each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
@@ -418,10 +422,13 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || bnplClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
-    haptic(); go(goBtn.dataset.go);
+    haptic();
+    if (goBtn.dataset.anchor === 'subs') showCurrentInsights();
+    if (goBtn.dataset.resetInsights) resetInsights();
+    go(goBtn.dataset.go);
     if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
     return;
   }
@@ -449,6 +456,7 @@ document.addEventListener('click', async (ev) => {
   }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
+  if (subsClick(t)) { haptic(); return; }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
   const mode = t.closest('[data-theme-mode]');

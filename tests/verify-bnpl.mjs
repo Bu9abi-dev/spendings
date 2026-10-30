@@ -160,7 +160,7 @@ const p = await (await b.newContext({ viewport: { width: 390, height: 844 }, red
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 await p.goto(`${BASE}/?demo=1#home`);
-await p.waitForSelector('.bnpl-row');
+await p.waitForSelector('.lens');
 const app = (fn, arg) => p.evaluate(async ([src, a]) => {
   const [st, m, bn] = await Promise.all([import('/js/store.js'), import('/js/model.js'), import('/js/bnpl.js')]);
   return new Function('st', 'm', 'bn', 'a', `return (${src})(st, m, bn, a)`)(st, m, bn, a);
@@ -177,25 +177,45 @@ const dueOf = (pl, i) => dueDates(pl.first, pl.count, pl.cadence)[i];
 const at = (key) => new Date(`${key}T10:00:00+04:00`).toISOString();
 const toastText = () => p.textContent('#toast');
 const sheet = (sel) => `.sheet:last-of-type ${sel}`;
+const m0 = (v) => `AED ${v.toLocaleString('en-US', { minimumFractionDigits: Number.isInteger(v) ? 0 : 2, maximumFractionDigits: 2 })}`;
 
 let a = await snap();
 ok(a.plans.length === 2 && a.plans.every((pl) => pl.paid.some((x) => x?.auto)), 'demo: the plans’ Apple Pay payments were linked by themselves');
 ok(!(await p.isVisible('#toast')) || !/Linked/.test(await toastText()), 'demo’s own made-up payments are linked quietly (no toast on every start)');
-const homeText = (await p.textContent('.bnpl-row')).replace(/\s+/g, ' ');
-ok(homeText.includes(`Buy now, pay later: AED ${a.owed.toLocaleString('en-US', { minimumFractionDigits: 2 })} still to pay`) && /next AED [\d.,]+ (on|today|tomorrow)/.test(homeText), 'Home: “Buy now, pay later: AED X still to pay · next AED Y on <date>” (a payment is due within 7 days)');
-ok(!/BNPL|instalment/i.test(homeText), 'no “BNPL” or “instalment” jargon on Home');
-const notice = await app((st, m, bn) => { const cs = st.state.settings.cycleStart; return bn.bnplNotice(st.getExtra('bnpl').plans, st.state.entries, m.dayKey(new Date()), m.dayKey(m.cycleBounds(m.cycleOf(new Date(), cs), cs).end)); });
-ok(!notice.beforePayday || homeText.includes('due before payday'), 'with “AED X due before payday” next to it');
-const homeSafe = await p.textContent('.lens');
 ok(await app((st) => !st.canUndo()), 'linking found payments takes no place in the Undo history');
+ok(!(await p.$('.bnpl-row')), 'the demo’s plans have nothing due within 7 days: no Home line');
+// Home shows one notice at a time: set the demo's subscriptions aside (as verify-budgets does), add a plan due in 3 days
+await app(async (st) => {
+  const r = await import('/js/recurring.js');
+  st.saveExtra('recurring', { v: 1, ignored: [...new Set(st.state.entries.map((e) => r.recurringKey(e.merchant)).filter(Boolean))] }, 'x', { undoable: false });
+  const soon = { id: 'soon', provider: 'Cashew', merchant: 'Ikea', item: '', category: 'Shopping', total: 400, count: 2, cadence: '2w', first: new Date(Date.now() + 3 * 864e5 + 4 * 3600e3).toISOString().slice(0, 10), account: 'ADCB', paid: [null, null], skip: [] };
+  st.saveExtra('bnpl', { v: 1, plans: [...st.getExtra('bnpl').plans, soon] }, 'x', { undoable: false });
+});
+await p.waitForSelector('.bnpl-row');
+const owedNow = (await snap()).owed;
+const homeText = (await p.textContent('.bnpl-row')).replace(/\s+/g, ' ').trim();
+ok(homeText.startsWith(`Buy now, pay later: ${m0(owedNow)} still to pay · next AED 200 on `), 'Home: “Buy now, pay later: AED X still to pay · next AED Y on <date>” when a payment is due within 7 days');
+ok(!/BNPL|instalment/i.test(homeText), 'no “BNPL” or “instalment” jargon on Home');
+ok((await p.$$('.lens ~ .sub-line, .lens ~ .budget-nudge')).length === 1, 'it is Home’s one notice line, not an extra one');
+const homeSafe = await p.textContent('.lens');
 await p.click('.key-acc[data-focus="ADCB"]');
 await p.waitForSelector('.key-acc[data-focus="ADCB"].on');
 ok(await p.isVisible('.bnpl-row'), 'the line shows on every Home view, not only All accounts');
 await p.click('.key-acc[data-focus="all"]');
 await p.waitForSelector('.key-acc[data-focus="all"].on');
 ok((await p.textContent('.lens')) === homeSafe, 'and it changes no number on the balance card');
-
 await p.click('.bnpl-row');
+await p.waitForSelector('.bn-plan');
+const bp = await app((st, m, bn) => { const cs = st.state.settings.cycleStart; return bn.dueBeforePayday(st.getExtra('bnpl').plans, st.state.entries, m.dayKey(m.cycleBounds(m.cycleOf(new Date(), cs), cs).end)); });
+ok(!bp || (await p.textContent('.bn-total')).includes(`${m0(bp)} due before payday`), 'the sheet says how much is due before payday (information only)');
+await p.click('[data-bn-act="done"]');
+// back to the demo's own plans and subscriptions
+await app((st) => {
+  st.saveExtra('bnpl', { v: 1, plans: st.getExtra('bnpl').plans.filter((x) => x.id !== 'soon') }, 'x', { undoable: false });
+  st.saveExtra('recurring', null, 'x', { undoable: false });
+});
+await p.waitForFunction(() => !document.querySelector('.bnpl-row') && !document.querySelector('.sheet'));
+await p.evaluate(async () => (await import('/js/bnpl-ui.js')).openBnpl());
 await p.waitForSelector('.bn-plan');
 const tabbyCard = () => p.textContent('.bn-plan[data-plan="d-tabby"]');
 ok(/3 of 4 paid/.test(await tabbyCard()), 'the sheet shows each plan’s progress (3 of 4 paid)');
@@ -341,6 +361,7 @@ await app((st) => {
 });
 await p.waitForSelector('.bnpl-row.overdue');
 ok(/Buy now, pay later: AED 200 overdue since/.test(await p.textContent('.bnpl-row')), 'Home warns when a payment is overdue');
+ok((await p.$$('.lens ~ .sub-line, .lens ~ .budget-nudge')).length === 1, 'overdue outranks every other Home notice (subscriptions are back on)');
 ok(await p.evaluate(() => document.documentElement.scrollWidth) <= 390, 'no sideways scroll on an iPhone-width screen');
 
 // Settings and Insights

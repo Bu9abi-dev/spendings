@@ -10,7 +10,7 @@ import { openSheet, haptic, toast, esc } from './ui.js';
 import { icon } from './icons.js';
 import { doUndo } from './views.js';
 import {
-  PROVIDERS, CADENCES, readBnpl, bnplSummary, bnplNotice, planState, dueBetween, instalmentAmounts, dueDates, paymentEntry,
+  PROVIDERS, CADENCES, readBnpl, bnplSummary, bnplNotice, dueBeforePayday, planState, dueBetween, instalmentAmounts, dueDates, paymentEntry,
   withPaid, withUnlinked, autoLink, likelyPayment, linkCandidates, normalizePlan, shortDay, daysBetween,
 } from './bnpl.js';
 
@@ -104,18 +104,22 @@ queueMicrotask(linkFound);
 
 /* ───── Home ───── */
 
-/** "Buy now, pay later: AED 624.75 still to pay · next AED 200 on 9 Nov", only when a payment is due within
-    7 days or overdue (see bnplNotice). "AED X due before payday" is information only: it's never taken off a
-    balance or Safe to spend. */
-export function bnplHomeRow() {
-  const n = bnplNotice(plans(), state.entries, today(), payday());
-  if (!n) return '';
+/** Home's notice from this feature, for home.js's homeNotice() (which shows only the most urgent one):
+    { rank: 'bnpl:overdue' | 'bnpl:due', html } or null. Only when a payment is overdue or due within 7 days
+    (see bnplNotice): "Buy now, pay later: AED 624.75 still to pay · next AED 200 on 9 Nov". */
+export function bnplHomeNotice() {
+  const n = bnplNotice(plans(), state.entries, today());
+  if (!n) return null;
   const late = n.priority === 'overdue';
-  return `<button type="button" class="bnpl-row${late ? ' overdue' : ''}" data-bnpl="open">
-    <span class="row-icon" style="--tint:${late ? 'var(--warn)' : 'var(--tint-text)'}">${icon(late ? 'warn' : 'calendar', { size: 20 })}</span>
-    <span class="row-main"><span class="row-title num${late ? ' warn-text' : ''}">${esc(n.text)}</span>${n.sub ? `<span class="row-sub num">${esc(n.sub)}</span>` : ''}</span>
-    ${icon('chevR', { size: 18, cls: 'chev' })}</button>`;
+  return {
+    rank: `bnpl:${n.priority}`,
+    html: `<button type="button" class="sub-line bnpl-row${late ? ' warn overdue' : ''}" data-bnpl="open">${icon(late ? 'warn' : 'calendar', { size: 16 })}<span class="num">${esc(n.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>`,
+  };
 }
+
+/** "AED 449.50 due before payday": unpaid payments due before the next cycle starts. Information only, shown in
+    the plans sheet and Insights; never taken off a balance or Safe to spend. */
+const beforePaydayText = () => { const v = dueBeforePayday(plans(), state.entries, payday(), today()); return v ? `${aed(v)} due before payday` : ''; };
 
 /** Clicks that open these screens (from Home or Settings). Returns true when handled. */
 export function bnplClick(t) {
@@ -151,7 +155,7 @@ export function bnplInsightsPanel(cyc, isCurrent) {
   const dueTotal = due.reduce((a, x) => a + x.amount, 0), paidTotal = due.filter((x) => x.paid).reduce((a, x) => a + x.amount, 0);
   return `<section class="panel bnpl-panel">
     <h3 class="panel-title">Buy now, pay later</h3>
-    <p class="panel-sub">${isCurrent ? `<b>${aed(s.owed)}</b> still to pay. It isn’t spending until a payment is made, so it’s not in your balances. ` : ''}${due.length ? `${aed(dueTotal)} due ${isCurrent ? 'this cycle' : 'in this cycle'}, ${aed(paidTotal)} paid.` : `Nothing due ${isCurrent ? 'this cycle' : 'in this cycle'}.`}</p>
+    <p class="panel-sub">${isCurrent ? `<b>${aed(s.owed)}</b> still to pay${beforePaydayText() ? `, ${beforePaydayText()}` : ''}. It isn’t spending until a payment is made, so it’s not in your balances. ` : ''}${due.length ? `${aed(dueTotal)} due ${isCurrent ? 'this cycle' : 'in this cycle'}, ${aed(paidTotal)} paid.` : `Nothing due ${isCurrent ? 'this cycle' : 'in this cycle'}.`}</p>
     ${due.length ? `<div class="bn-due">${due.map((x) => `<div class="bn-due-row">
         <span class="bn-when num">${shortDay(x.due)}</span>
         <span class="bn-what"><b>${esc(title(x.plan))}</b><small>${x.i + 1} of ${x.plan.count}</small></span>
@@ -199,7 +203,8 @@ function sheetBody() {
   const s = bnplSummary(list, state.entries, today());
   // plans still running first (earliest next payment first), finished ones at the end
   const order = [...s.states].sort((a, b) => (a.done - b.done) || ((a.next?.due || '') < (b.next?.due || '') ? -1 : (a.next?.due || '') > (b.next?.due || '') ? 1 : 0));
-  return `<div class="bn-total"><span>Still to pay</span><b class="num">${aed(s.owed)}</b>${s.next ? `<small>Next ${aed(s.next.amount)} ${whenText(s.next.due)}</small>` : ''}</div>
+  const bp = beforePaydayText();
+  return `<div class="bn-total"><span>Still to pay</span><b class="num">${aed(s.owed)}</b>${s.next ? `<small>Next ${aed(s.next.amount)} ${whenText(s.next.due)}</small>` : ''}${bp ? `<small class="bn-payday">${bp}</small>` : ''}</div>
     ${order.map(planCard).join('')}`;
 }
 
