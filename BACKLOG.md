@@ -29,7 +29,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 5. **Activity filters and bulk edit** · `claude/activity-filters`
    Filter by account, category, cycle or date range, and amount; show the filtered total; select several
    entries to recategorise or delete, with one undo. `activity.js` + its click handlers.
-6. **Monthly report** · `claude/monthly-report`
+6. **Monthly report** · `claude/monthly-report` (built, PR open; opens from Insights and Settings)
    A printable report per cycle (income, spending, categories, top merchants, allowance, budgets if set),
    saved as PDF from the iPhone share sheet, plus CSV export per cycle. New `docs/js/report.js`.
 

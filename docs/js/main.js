@@ -1,9 +1,10 @@
 import {
-  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
+  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
 } from './store.js';
+import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
 import { icon } from './icons.js';
@@ -12,9 +13,14 @@ import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
 import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
+import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
-import { renderActivity, activityList, activityFilter } from './activity.js';
-import { renderInsights, shiftInsights } from './insights.js';
+import {
+  renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
+  startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
+} from './activity.js';
+import { renderInsights, shiftInsights, insightsShown, resetInsights } from './insights.js';
+import { openReport } from './report.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -96,13 +102,17 @@ function renderSettings() {
     <section class="group">${accountsSettingsBlock()}</section>
     <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
 
+    <h3 class="group-title" id="categories">Categories</h3>
+    <section class="group">${categoriesSettingsBlock()}</section>
+    <p class="group-foot">Add your own, rename any, or hide ones you don’t use. Old entries always keep their category.</p>
+
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
     <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
 
-    <h3 class="group-title" id="budgets">Budgets</h3>
+    <h3 class="group-title" id="budgets">Category limits</h3>
     <section class="group">${budgetsSettingsBlock()}</section>
-    <p class="group-foot">A limit per category for each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
+    <p class="group-foot">A spending limit for a category in each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
@@ -124,6 +134,7 @@ function renderSettings() {
     <section class="group">
       <button type="button" class="row link-row" data-act="reset"><span class="row-icon" style="--tint:var(--neg)">${icon('trash', { size: 20 })}</span><span class="row-main"><span class="row-title danger-text">Reset sheet</span><span class="row-sub">Erase every entry and start fresh</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <button type="button" class="row link-row" data-act="export"><span class="row-icon" style="--tint:var(--tint-text)">${icon('download', { size: 20 })}</span><span class="row-main"><span class="row-title">Export CSV</span><span class="row-sub">Every entry, for backup</span></span></button>
+      <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span><span class="row-main"><span class="row-title">Monthly report</span><span class="row-sub">Any cycle as a PDF or CSV</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <label class="row toggle-row"><span class="row-icon" style="--tint:var(--series-7)">${icon('sparkle', { size: 20 })}</span>
         <span class="row-main"><span class="row-title">Demo data</span><span class="row-sub">Look around with made-up numbers</span></span>
         <input type="checkbox" switch class="switch" name="demo" ${isDemo() ? 'checked' : ''}></label>
@@ -171,33 +182,89 @@ function relTime(t) {
 
 function openReview() {
   const items = () => state.entries.filter((e) => e.status === 'Review');
+  // the best guess for each waiting payment, from what you've filed before (categorize.js)
+  const guesses = () => {
+    const index = learn(state.entries, state.merchants);
+    return new Map(items().map((e) => [e.id, e.type === 'Spend' ? suggestFor(e.merchant, index) : null]));
+  };
+  // other waiting payments from the same shop as e
+  const twins = (e, list) => list.filter((x) => x.id !== e.id && x.type === e.type && sameMerchant(x.merchant, e.merchant));
+  // only a high-confidence guess is ever filed without you tapping it
+  const confident = (g) => !!g && g.confidence === 'high';
+
   const body = () => {
     const list = items();
     if (!list.length) return `<div class="empty">${icon('check', { size: 30 })}<p>All sorted.</p></div>`;
-    return list.map((e) => `<article class="review-card" data-id="${esc(e.id)}">
+    const guess = guesses();
+    const sure = list.filter((e) => confident(guess.get(e.id)));
+    const all = sure.length >= 2
+      ? `<button type="button" class="rc-accept-all" data-act="accept-all">${icon('sparkle', { size: 18 })}File ${sure.length} with their suggestions</button>` : '';
+    return all + list.map((e) => {
+      const g = guess.get(e.id);
+      const n = twins(e, list).length + 1;
+      const group = g && g.confidence === 'high' && n > 1; // "file all" only when sure
+      const why = !g ? '' : g.confidence === 'low' ? 'Guess from the shop name' : `${g.confidence === 'medium' ? 'Maybe like' : 'Like'} ${esc(g.like)}${g.times > 1 ? ` · ${g.times} times` : ''}`;
+      const meta = g && categoryMeta(g.category);
+      const sug = g ? `<button type="button" class="rc-suggest" data-cat="${esc(g.category)}"${group ? ' data-all="1"' : ''} style="--cat:${seriesColor(meta.slot)}">
+          <span class="rs-icon">${icon(meta.icon, { size: 18 })}</span>
+          <span class="rs-text"><b>${group ? `File all ${n} as ${esc(meta.short)}` : `File as ${esc(g.category)}`}</b><span>${why}</span></span>
+        </button>` : n > 1 ? `<p class="rc-hint">${n} payments from this shop. Pick a category and you can file them all.</p>` : '';
+      return `<article class="review-card" data-id="${esc(e.id)}">
       <div class="rc-head"><div><b>${esc(e.merchant || 'Unknown merchant')}</b><span>${esc(accountMeta(e.account).name)} · ${dayLabel(dayKey(e.date))}, ${timeLabel(e.date)}</span></div>
       <span class="num rc-amt">${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount, { fixed: true })}</span></div>
-      <div class="rc-cats">${(e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES).map((c) => `<button type="button" class="rc-cat" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${c.short}</button>`).join('')}</div>
-    </article>`).join('');
+      ${sug}
+      <div class="rc-cats">${pickerCategories(e.type, e.category).map((c) => `<button type="button" class="rc-cat${g && g.category === c.id ? ' sug' : ''}" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${esc(c.short)}</button>`).join('')}</div>
+    </article>`;
+    }).join('');
   };
+
   openSheet({
     label: 'Needs review',
     html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">Needs review</h2><button class="text-btn strong" data-act="done" type="button">Done</button></header>
-      <p class="sheet-lede">Tap a category to file each payment. Next time the same merchant is filed automatically.</p>
+      <p class="sheet-lede">Tap a category to file each payment. The app learns from what you file, even when the bank spells the shop differently.</p>
       <div class="sheet-scroll review-list">${body()}</div>`,
     onMount(sheet, close) {
+      const redraw = () => { const l = sheet.querySelector('.review-list'); if (l) l.innerHTML = body(); };
+      // file several at once, undone together in one step
+      const fileMany = (pairs, label) => {
+        batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })));
+        toast(`${esc(label)}. Undo puts ${pairs.length > 1 ? `these ${pairs.length}` : 'it'} back.`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { doUndo(); redraw(); } });
+      };
       sheet.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-act="done"]')) return close();
-        const b = ev.target.closest('.rc-cat');
+        if (ev.target.closest('[data-act="accept-all"]')) {
+          haptic();
+          const guess = guesses();
+          const pairs = items().filter((e) => confident(guess.get(e.id))).map((e) => [e.id, guess.get(e.id).category]);
+          fileMany(pairs, `Filed ${pairs.length} payments`);
+          return redraw();
+        }
+        const b = ev.target.closest('.rc-cat, .rc-suggest');
         if (!b) return;
         const card = b.closest('.review-card');
+        const e = state.entries.find((x) => x.id === card.dataset.id);
+        if (!e) return redraw();
+        const cat = b.dataset.cat;
+        const others = twins(e, items());
         haptic();
-        updateEntry(card.dataset.id, { category: b.dataset.cat });
+        // "File all N" on the suggestion: this one and its twins together
+        if (b.dataset.all && others.length) {
+          fileMany([e, ...others].map((x) => [x.id, cat]), `Filed ${others.length + 1} from ${e.merchant} as ${categoryMeta(cat)?.short || cat}`);
+          return redraw();
+        }
+        updateEntry(e.id, { category: cat });
         b.classList.add('on');
+        // picked by hand and the same shop has more waiting: offer to file those too
+        if (others.length) {
+          // this toast's button files the others (its own undo step); the header Undo still undoes the one you just picked
+          toast(`Filed as ${esc(categoryMeta(cat, e.type)?.short || cat)}`, {
+            icon: icon('check', { size: 18 }), tone: 'good', action: `File ${others.length} more`,
+            onAction: () => { fileMany(others.map((x) => [x.id, cat]), `Filed ${others.length} more from ${e.merchant}`); redraw(); },
+          });
+        }
         const h = card.offsetHeight;
-        const done = () => { sheet.querySelector('.review-list').innerHTML = body(); };
-        if (reduceMotion()) return done();
-        card.animate([{ opacity: 1, height: `${h}px`, transform: 'none' }, { opacity: 0, height: '0px', marginBlock: '0', paddingBlock: '0', transform: 'translateX(40px)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = done;
+        if (reduceMotion()) return redraw();
+        card.animate([{ opacity: 1, height: `${h}px`, transform: 'none' }, { opacity: 0, height: '0px', marginBlock: '0', paddingBlock: '0', transform: 'translateX(40px)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = redraw;
       });
     },
   });
@@ -255,7 +322,7 @@ function render(reason) {
     return;
   }
   if (reason && tab === 'activity' && document.activeElement?.matches('.search input')) {
-    view.querySelector('.activity-list').innerHTML = activityList();
+    refreshActivity(view);
     return;
   }
   const prevCap = view.querySelector('.capsule');
@@ -266,6 +333,7 @@ function render(reason) {
   if (tab === 'home') afterHomeRender(snap);
   animateFresh();
   view.dataset.tab = tab;
+  syncSelectingClass(tab === 'activity');
   bindDonut(view);
   bindPace(view);
   bindBars(view);
@@ -300,6 +368,7 @@ function go(next) {
   const t = document.getElementById('toast');
   if (!t.hidden) { t.classList.remove('show'); setTimeout(() => { t.hidden = true; }, 250); }
   if (next === tab) { window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
+  if (tab === 'activity') endSelect(); // leaving Activity drops a half-made selection
   tab = next;
   history.replaceState(null, '', `#${tab}`);
   const swap = () => { render(); window.scrollTo(0, 0); };
@@ -349,16 +418,19 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || budgetsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
-    haptic(); go(goBtn.dataset.go);
+    haptic();
+    if (goBtn.dataset.resetInsights) resetInsights();
+    go(goBtn.dataset.go);
     if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
     return;
   }
   const tabBtn = t.closest('.tabbar [data-tab]');
   if (tabBtn) { haptic(); return go(tabBtn.dataset.tab); }
   if (t.closest('.fab')) { haptic(); return openEntry(); }
+  if (tab === 'activity' && view.contains(t) && activityClick(t)) return;
   const quick = t.closest('[data-quick]');
   if (quick) {
     const e = state.entries.find((x) => x.id === quick.dataset.quick);
@@ -378,7 +450,7 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   const kind = t.closest('[data-kind]');
-  if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
+  if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
   const mode = t.closest('[data-theme-mode]');
@@ -394,10 +466,34 @@ document.addEventListener('click', async (ev) => {
   if (act === 'demo') { setDemo(true); toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) }); }
   if (act === 'exit-demo') { setDemo(false); render(); }
   if (act === 'export') exportCSV();
+  if (act === 'report') openReport(tab === 'insights' ? insightsShown() : undefined);
   if (act === 'undo') doUndo();
   if (act === 'reset') openReset();
   if (act === 'connect') connect(t.closest('[data-act]'));
 });
+
+/* Activity: Select mode, the Filter sheet and filter pills. Returns true when it handled the tap. */
+function activityClick(t) {
+  const redraw = () => refreshActivity(view);
+  if (activitySelect.on) {
+    const row = t.closest('.entry[data-id]');
+    if (row) { haptic(); toggleSelected(row.dataset.id); redraw(); return true; }
+  }
+  const clear = t.closest('[data-clear]');
+  if (clear) { haptic(); clearFilter(clear.dataset.clear); redraw(); return true; }
+  const act = t.closest('[data-act]')?.dataset.act;
+  if (act === 'filters') { haptic(); openFilters(redraw); return true; }
+  if (act === 'select') { haptic(); closeSwipe(); startSelect(); redraw(); return true; }
+  if (act === 'select-done') { haptic(); endSelect(); redraw(); return true; }
+  if (act === 'select-all') { haptic(); selectAll(); redraw(); return true; }
+  if (act === 'bulk-cat') { haptic(); openBulkCategory(redraw); return true; }
+  if (act === 'bulk-del') { haptic(); openBulkDelete(redraw); return true; }
+  return false;
+}
+function refreshActivityChips(on) {
+  view.querySelectorAll('.filter-chips [data-kind]').forEach((b) => { b.classList.toggle('on', b === on); b.setAttribute('aria-selected', b === on); });
+  refreshActivity(view);
+}
 
 async function connect(btn) {
   const url = view.querySelector('input[name="url"]').value.trim();
@@ -473,7 +569,7 @@ function exportCSV() {
 }
 
 view.addEventListener('input', (ev) => {
-  if (ev.target.matches('.search input')) { activityFilter.q = ev.target.value; view.querySelector('.activity-list').innerHTML = activityList(); }
+  if (ev.target.matches('.search input')) { activityFilter.q = ev.target.value; refreshActivity(view); }
 });
 
 view.addEventListener('change', async (ev) => {
@@ -542,7 +638,7 @@ function swipeDelete(wrap) {
 }
 view.addEventListener('pointerdown', (e) => {
   const wrap = e.target.closest('.swipe');
-  if (!wrap || e.target.closest('.swipe-del')) return;
+  if (!wrap || e.target.closest('.swipe-del') || (tab === 'activity' && activitySelect.on)) return;
   if (openSwipe && openSwipe !== wrap) closeSwipe();
   swipeDrag = { wrap, row: wrap.querySelector('.entry'), x0: e.clientX, y0: e.clientY, base: wrap === openSwipe ? -REVEAL : 0, on: false, id: e.pointerId, last: [e.timeStamp, e.clientX], v: 0 };
 });
