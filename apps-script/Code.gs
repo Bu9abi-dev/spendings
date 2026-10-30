@@ -12,6 +12,7 @@
  *   Merchants  — remembered merchant → category pairs (auto-categorises Apple Pay).
  *   Accounts   — your accounts: name, note, colour, and which Apple Wallet card they are.
  *   Plan       — payday plan: salary, Nafis, money you move between accounts, and responsibilities.
+ *   Extras     — app features' own saved data (budgets, goals and so on), one JSON value per row.
  *   "Oct 2026" — one tab per pay cycle (27th → 26th), named after the month it ends in.
  */
 
@@ -22,6 +23,7 @@ var SETTINGS = 'Settings';
 var MERCHANTS = 'Merchants';
 var PLAN = 'Plan';
 var ACCOUNTS_TAB = 'Accounts';
+var EXTRAS = 'Extras';
 
 var COLS = ['ID', 'Date', 'Cycle', 'Type', 'Amount', 'Currency', 'Amount (AED)', 'Account',
   'To account', 'Category', 'Merchant', 'Note', 'Source', 'Status', 'Created', 'Updated'];
@@ -196,6 +198,7 @@ function doPost(e) {
       case 'accounts': return json_(saveAccounts_(body.accounts || []));
       case 'renameAccount': return json_(renameAccount_(body.from, body.to));
       case 'reset': return json_(resetSheet_());
+      case 'extras': return json_(saveExtra_(body.key, body.value));
       default: return json_({ ok: false, error: 'Unknown action: ' + action });
     }
   } catch (err) {
@@ -443,6 +446,7 @@ function listAll_() {
     merchants: merchantMap_(),
     plan: readPlan_(),
     accounts: readAccounts_(),
+    extras: readExtras_(),
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };
@@ -605,6 +609,49 @@ function savePlan_(items) {
   if (n > 0) sh.getRange(2, 1, n, PLAN_COLS.length).clearContent();
   if (rows.length) sh.getRange(2, 1, rows.length, PLAN_COLS.length).setValues(rows);
   return { ok: true, plan: readPlan_() };
+}
+
+/* ───────────────────────── Extras ─────────────────────────
+   Newer features (category budgets, savings goals, …) keep their settings here, one row per
+   feature: the key, its value as JSON, and when it last changed. Adding a feature never needs
+   a new tab or column, and the Ledger is never touched. */
+
+function ensureExtras_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(EXTRAS);
+  if (sh) return sh;
+  sh = ensureSheet_(EXTRAS);
+  sh.getRange(1, 1, 1, 3).setValues([['Key', 'Value (JSON)', 'Updated']]);
+  styleHeader_(sh, 3);
+  sh.setFrozenRows(1);
+  return sh;
+}
+
+/** Every saved extra as { key: value }. A row that isn't valid JSON is skipped, not fatal. */
+function readExtras_() {
+  var sh = SpreadsheetApp.getActive().getSheetByName(EXTRAS);
+  var out = {};
+  if (!sh || sh.getLastRow() < 2) return out;
+  sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) {
+    var k = String(r[0] || '').trim();
+    if (!k) return;
+    try { out[k] = JSON.parse(String(r[1])); } catch (err) { /* hand-edited cell; ignore it */ }
+  });
+  return out;
+}
+
+/** Save one extra. Updates its row, or adds one. A null value clears the row's value. */
+function saveExtra_(key, value) {
+  key = String(key || '').trim();
+  if (!/^[a-zA-Z][\w.-]{0,40}$/.test(key)) return { ok: false, error: 'That isn’t a valid extras key.' };
+  var text = JSON.stringify(value === undefined ? null : value);
+  if (text.length > 45000) return { ok: false, error: 'That is too much to save in one cell.' };
+  var sh = ensureExtras_();
+  var n = sh.getLastRow() - 1;
+  var keys = n > 0 ? sh.getRange(2, 1, n, 1).getValues().map(function (r) { return String(r[0]).trim(); }) : [];
+  var row = keys.indexOf(key) + 2;
+  if (row < 2) row = sh.getLastRow() + 1;
+  sh.getRange(row, 1, 1, 3).setValues([[key, text, new Date()]]);
+  return { ok: true, key: key };
 }
 
 /* ───────────────────────── Reset ───────────────────────── */
