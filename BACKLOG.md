@@ -44,6 +44,9 @@ project thread; the loop thread merges it. Move an item to Done with its version
 - **Arabic / English toggle.** Touches every string, so do it after wave 1 merges.
 - **Performance pass.** First load on iPhone, CSS size, render cost on big ledgers (Activity caps at 400).
 - **Accessibility pass.** VoiceOver labels, contrast, Dynamic Type.
+- **Budget line in the Apple Pay notification.** Code.gs can read Extras, so the Shortcut's reply could say
+  "Food: 87% of budget". Needs a script change; batch with others.
+- **Capability flag for extras** in `list`/`ping`, instead of matching the "Unknown action" error text.
 - **Reject AED 0 Apple Pay test entries** in Code.gs (a manual ▶ run of the Shortcut logs one). Batch with the
   next script change.
 

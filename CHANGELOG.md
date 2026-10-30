@@ -23,7 +23,21 @@ timeline
         v10 : Dismiss payday prompts : Back next cycle
     section 8 October 2026
         v11 : Calmer syncing : No red error on a slow connection : Fewer sheet reads
+    section 30 October 2026
+        v12 : Money rows always add up : Extras tab for new features : Sheet update needed
 ```
+
+---
+
+## v12: Groundwork for new features
+**30 October 2026** · sheet update needed
+
+- The rows under "Where your money is" are whole numbers that now always add up to the total shown. Before, each row was rounded on its own and could be a dirham or two off.
+- If the allowance card and the main account are set to the same account, Safe to spend is counted once, and it can't be more than that account's free money.
+- The sheet gets a new **Extras** tab. Upcoming features like category budgets and savings goals save their settings there, one row each, so the Ledger is never touched.
+- Until the new script is in Apps Script, those settings stay on your phone, and Settings says so. They're saved to the sheet straight after the update.
+- Behind the scenes: tests that only passed on some dates now pass on any date, and the code is split into smaller files so several features can be built at once.
+- The sheet part needs the new `apps-script/Code.gs` pasted into Apps Script and a new version of the deployment published. The Apple Pay and bank Shortcuts don't change.
 
 ---
 

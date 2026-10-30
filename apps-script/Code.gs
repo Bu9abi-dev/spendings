@@ -634,16 +634,19 @@ function readExtras_() {
   sh.getRange(2, 1, sh.getLastRow() - 1, 2).getValues().forEach(function (r) {
     var k = String(r[0] || '').trim();
     if (!k) return;
+    if (r[1] === '' || r[1] == null) return; // cleared
     try { out[k] = JSON.parse(String(r[1])); } catch (err) { /* hand-edited cell; ignore it */ }
+    if (out[k] === null) delete out[k];
   });
   return out;
 }
 
-/** Save one extra. Updates its row, or adds one. A null value clears the row's value. */
+/** Save one extra. Updates its row, or adds one. A null value clears the row's value.
+    Runs inside doPost's script lock, so two saves can't race for the same row. */
 function saveExtra_(key, value) {
   key = String(key || '').trim();
   if (!/^[a-zA-Z][\w.-]{0,40}$/.test(key)) return { ok: false, error: 'That isn’t a valid extras key.' };
-  var text = JSON.stringify(value === undefined ? null : value);
+  var text = value == null ? '' : JSON.stringify(value);
   if (text.length > 45000) return { ok: false, error: 'That is too much to save in one cell.' };
   var sh = ensureExtras_();
   var n = sh.getLastRow() - 1;

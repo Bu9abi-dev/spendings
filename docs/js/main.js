@@ -2,7 +2,7 @@ import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly,
 } from './store.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
@@ -60,6 +60,11 @@ function renderSettings() {
         <span class="row-main"><span class="row-title">${isConnected() ? 'Connected' : 'Not connected'}</span>
           <span class="row-sub">${isConnected() ? (state.sync.status === 'error' ? `<span class="warn-text">${esc(state.sync.error)}</span>` : `Last synced ${syncedAgo}${state.outbox.length ? ` · ${state.outbox.length} waiting` : ''}`) : 'Paste the Web app URL and app key from your sheet'}</span></span>
       </div>
+      ${isConnected() && extrasOnPhoneOnly() ? `<div class="row status-row">
+        <span class="row-icon" style="--tint:var(--warn)">${icon('warn', { size: 20 })}</span>
+        <span class="row-main"><span class="row-title">Some settings are only on this phone</span>
+          <span class="row-sub">Paste the new script into Apps Script and deploy a new version. They’ll be saved to your sheet straight after.</span></span>
+      </div>` : ''}
       ${isConnected() ? '<details class="conn-details"><summary class="row link-row"><span class="row-main"><span class="row-title">Connection details</span></span>' + icon('chevD', { size: 16, cls: 'chev' }) + '</summary>' : ''}
       <label class="row input-row"><span>Web app URL</span><input name="url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <label class="row input-row"><span>App key</span><input name="token" type="text" placeholder="From Spendings → Show my app key" value="${esc(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>

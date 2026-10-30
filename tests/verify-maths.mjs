@@ -137,6 +137,24 @@ console.log('\n── 3d. allowance account == main account (selectable in Setti
   const m = homeModel(L, [], S2, D('2026-10-07T12:00:00+04:00'));
   const rows = whereRows(m);
   ok(near(rowSum(rows), m.total), `same account: rows add up to the total (${rowSum(rows)} = ${m.total})`);
+  // overspent (Safe to spend negative) and Safe to spend bigger than the free money: still adds up
+  const over = homeModel([E('Adjustment', 5000, 'ADIB', '2026-09-20T10:00:00+04:00'), E('Spend', 3400, 'ADIB', '2026-10-01T10:00:00+04:00')], [], S2, D('2026-10-07T12:00:00+04:00'));
+  const ro = whereRows(over);
+  console.log('      overspent rows:', ro.map((r) => `${r.label}=${r.shown}`).join(' | '), `| total=${over.total}`);
+  ok(over.safe < 0 && near(rowSum(ro), over.total) && shownSum(ro) === Math.round(over.total), 'same account, overspent: rows still add up to the total');
+  const tight = homeModel([E('Adjustment', 1000, 'ADIB', '2026-09-20T10:00:00+04:00')], [], S2, D('2026-10-07T12:00:00+04:00'));
+  const rt = whereRows(tight);
+  console.log('      tight rows:', rt.map((r) => `${r.label}=${r.shown}`).join(' | '), `| total=${tight.total}`);
+  ok(tight.safe === 1000 && near(rowSum(rt), tight.total) && !rt.some((r) => r.shown < 0), 'same account with only 1,000 in it: Safe to spend is capped at 1,000, no negative rows, rows add up');
+}
+// a tiny negative and several fractions: the whole numbers shown still add up to the total shown
+{
+  setAccountList(DEFAULT_ACCOUNTS);
+  const L = [E('Adjustment', 1000.6, 'ADCB', '2026-09-20T10:00:00+04:00'), E('Adjustment', -0.3, 'BOTIM', '2026-09-20T10:00:00+04:00'), E('Adjustment', 20.45, 'Cash', '2026-09-20T10:00:00+04:00'), E('Adjustment', 7.45, 'ADIB', '2026-09-20T10:00:00+04:00')];
+  const m = homeModel(L, [], S, D('2026-10-07T12:00:00+04:00'));
+  const rows = whereRows(m);
+  console.log('      rows:', rows.map((r) => `${r.label}=${r.shown}`).join(' | '), `| total=${fmt(m.total, { whole: true })}`);
+  ok(shownSum(rows) === Math.round(m.total) && !rows.some((r) => r.shown < 0 && r.v > -0.5), 'fractions and a tiny negative: rows add up, and −0.30 is not shown as −1');
 }
 
 console.log('\n── 4. Cycle end: carry-over, reset, unmoved allowance, top-ups ──');

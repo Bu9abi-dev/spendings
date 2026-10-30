@@ -52,9 +52,18 @@ const budgets = getExtra('budgets', {});        // read, with a default
 saveExtra('budgets', { ...budgets, Groceries: 600 }, 'Changed the Groceries budget'); // save + undo label
 ```
 
-Keys are short names (`budgets`, `goals`, …). Values are JSON, under ~45 KB each.
+Keys are short names (`budgets`, `goals`, …): a letter, then letters, digits, `.`, `-` or `_`. Values are
+JSON, under ~45 KB each. Make the value an object with a version, e.g. `{ v: 1, limits: {…} }`, so a later
+change can migrate it. `saveExtra(key, null)` clears a key. Until Abdullah redeploys the script, extras stay
+on the phone (`extrasOnPhoneOnly()`), Settings says so, and they're sent up on the first sync afterwards.
 
 ## Merging
 
 Feature branches don't bump `VERSION` or edit CHANGELOG.md (that would make every parallel branch conflict).
 The thread running the loop does both when it merges, one version per merge.
+
+## Wave 1 threads (started 30 Oct 2026)
+
+Briefs: `/mnt/project-files/loop/wave1-briefs.md`. Each thread messages the loop thread when its PR is ready.
+1 smart-categories, 2 category-budgets, 3 spend-charts, 4 recurring, 5 activity-filters, 6 monthly-report
+(branches `claude/<name>`). Foundation PR: #6.

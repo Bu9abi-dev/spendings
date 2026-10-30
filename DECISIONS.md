@@ -4,6 +4,14 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Council on the foundation PR, lighter format.** Five advisors ran; they agreed so closely that I wrote the
+  synthesis myself instead of spending six more agents on peer review and a chairman. Full council (with
+  peer review) stays the rule for wave-1 features. Transcript: council/council-transcript-2026-10-30-foundation.md.
+- **Phone-only extras win over the sheet** when the updated script first answers. They were saved later than
+  anything the old script could have stored. Tracked per key, not with one flag.
+- **Same account for allowance and main: Safe to spend is capped at that account's free money.** Otherwise
+  Safe to spend could exceed the money that exists. Abdullah uses two accounts, so this changes nothing for him.
+
 - **Review step uses the council skill.** The `council:council` skill is installed, so major features
   go through it before merging. Smaller fixes get an Opus code-review subagent instead.
 - **Feature branches don't bump the version or the changelog.** Several threads build features at the

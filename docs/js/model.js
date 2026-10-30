@@ -388,7 +388,9 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   if (spentBefore) sum = { ...sum, allowanceUsed: sum.allowanceUsed + spentBefore, allowanceLeft: sum.allowanceLeft - spentBefore, spentBefore };
   const allowLeft = sum.allowanceLeft;
   const allowMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && !p.complete) || null;
-  const safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
+  let safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
+  // one account doing both jobs: you can't safely spend more than its free money
+  if (allowAcc === hub) safe = Math.min(safe, Math.max(0, hubB.free));
   const { start, end } = cycleBounds(cyc, s.cycleStart);
   const len = (end - start) / 864e5;
   const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
@@ -421,11 +423,14 @@ export function whereRows(m) {
     const a = accountMeta(id);
     add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
   }
-  // whole numbers that add up to the rounded total: round every row down, then give the
-  // leftover dirhams to the rows with the biggest fractions (largest remainder)
-  const target = Math.round(all.reduce((a, r) => a + r.v, 0));
-  all.forEach((r) => { r.shown = Math.floor(r.v); });
-  let spare = target - all.reduce((a, r) => a + r.shown, 0);
-  [...all].sort((a, b) => (b.v - Math.floor(b.v)) - (a.v - Math.floor(a.v))).forEach((r) => { if (spare > 0) { r.shown++; spare--; } });
+  // whole numbers that add up to the rounded total: round each row, then nudge the rows that
+  // rounding moved furthest (by a dirham each) until the rows add up to the total shown
+  // (the rows are every part of the total, so their exact sum is the total)
+  const target = Math.round(m.total);
+  all.forEach((r) => { r.shown = Math.round(r.v); });
+  let diff = target - all.reduce((a, r) => a + r.shown, 0);
+  const byGap = [...all].sort((a, b) => (b.v - b.shown) - (a.v - a.shown)); // most under-rounded first
+  for (let i = 0; diff > 0 && i < byGap.length; i++, diff--) byGap[i].shown++;
+  for (let i = byGap.length - 1; diff < 0 && i >= 0; i--, diff++) byGap[i].shown--;
   return all.filter((r) => r.shown !== 0);
 }

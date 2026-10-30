@@ -42,21 +42,27 @@ let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };
 
 // 1. old script: kept on the phone, queue not blocked
+server({ action: 'extras', key: 'budgets', value: { Groceries: 100 } }); // an older value already in the sheet
 await app((st) => st.saveExtra('budgets', { Groceries: 600 }));
+await app((st) => st.saveExtra('goals', [{ id: 'g0', name: 'Laptop' }]));
 await app((st) => st.addEntry({ type: 'Spend', amount: 12, account: 'ADCB', category: 'Groceries', merchant: 'Lulu' }));
 await settle();
 ok(server({ action: 'list' }).entries.some((e) => e.merchant === 'Lulu'), 'old script: an entry saved after an extra still reaches the sheet');
-ok(await app((st) => st.state.extrasLocalOnly && st.getExtra('budgets').Groceries === 600), 'old script: the budget stays on the phone');
+ok(await app((st) => st.extrasOnPhoneOnly() && st.getExtra('budgets').Groceries === 600), 'old script: the budget stays on the phone');
 await app((st) => st.sync());
 ok(await app((st) => st.getExtra('budgets')?.Groceries === 600), 'old script: a full sync does not wipe the phone-only budget');
 
-// 2. script updated: phone-only extras are sent up on the next sync
+// 2. script updated: the first thing saved goes through, and the other phone-only keys still follow
 oldScript = false;
+await app((st) => st.saveExtra('theme', { v: 1 }));
+await settle();
+await p.waitForTimeout(31000); // past the "list was just read" window, so the next sync reads the sheet
 await app((st) => st.sync());
 await settle();
-await app((st) => st.sync());
-ok(server({ action: 'list' }).extras.budgets?.Groceries === 600, 'updated script: the phone-only budget reaches the Extras tab');
-ok(await app((st) => !st.state.extrasLocalOnly), 'updated script: no longer phone-only');
+ok(server({ action: 'list' }).extras.budgets?.Groceries === 600, 'updated script: the phone-only budget reaches the Extras tab and beats the older sheet value');
+ok(server({ action: 'list' }).extras.goals?.[0]?.name === 'Laptop', 'updated script: every other phone-only key is sent up too');
+ok(await app((st) => st.getExtra('budgets')?.Groceries === 600), 'the phone keeps its newer value');
+ok(await app((st) => !st.extrasOnPhoneOnly()), 'updated script: no longer phone-only');
 
 // 3. normal saves, undo, and a change made in the sheet showing up
 await app((st) => st.saveExtra('budgets', { Groceries: 700 }));
@@ -69,6 +75,13 @@ server({ action: 'extras', key: 'goals', value: [{ id: 'g', name: 'Car' }] });
 await p.waitForTimeout(31000); // past the "list was just read" window
 await app((st) => st.sync());
 ok(await app((st) => st.getExtra('goals')?.[0]?.name === 'Car'), 'a value saved in the sheet shows up in the app');
+
+// undo of a brand-new key clears it everywhere, no leftover value
+await app((st) => st.saveExtra('fresh', { a: 1 }));
+await settle();
+await app((st) => st.undo());
+await settle();
+ok(!('fresh' in server({ action: 'list' }).extras) && await app((st) => st.getExtra('fresh', 'none') === 'none'), 'undoing a new key clears it in the sheet and the app');
 
 // 4. survives a reload (cached)
 await p.reload();
