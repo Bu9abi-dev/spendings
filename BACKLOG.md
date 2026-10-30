@@ -7,7 +7,6 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 7 | Script batch: a ▶ test of the Shortcut logs nothing; `features` list | `claude/script-batch` | Loop thread. Script change. |
 
 ## Next (wave 1, parallel threads)
 
@@ -42,7 +41,8 @@ project thread; the loop thread merges it. Move an item to Done with its version
   with a manual, read-only investments value.
 - **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning).
 - **Arabic / English toggle.** Touches every string, so do it after wave 1 merges.
-- **Performance pass.** First load on iPhone, CSS size, render cost on big ledgers (Activity caps at 400).
+- **Performance pass, part 2.** Date maths fixed in v13. Still to look at: 0.8s tab switches on a slowed CPU
+  (view transition), the 61 KB stylesheet, and Activity's 400-entry cap.
 - **Accessibility pass.** VoiceOver labels, contrast, Dynamic Type.
 - **Budget line in the Apple Pay notification.** Code.gs can read Extras, so the Shortcut's reply could say
   "Food: 87% of budget". Needs a script change; batch with others.
@@ -51,4 +51,5 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v13 · ▶ test logs nothing, Arabic digits in amounts, `features` list, 3x faster date maths
 - v12 · Foundation: date-proof tests, module split, money rows add up, same-account fix, Extras store (PR #6)
