@@ -29,7 +29,17 @@ timeline
         v14 : Day-by-day and weekly spending : Top places : Categories over six cycles
         v15 : Activity filters : Select and edit many : One undo
         v16 : Category suggestions : File a whole shop at once : Only sure guesses act
+        v17 : Monthly report : Save as PDF : Cycle CSV
 ```
+
+---
+
+## v17: Monthly report
+**30 October 2026** · no sheet update needed
+
+- Insights has a **Monthly report** for any pay cycle: money in, spent, refunds and what you kept, where it went by category, your top shops, the allowance, and budgets once you set them. Every list adds up to the totals at the top.
+- **Save as PDF** prints the page. From the home-screen app it opens the report in Safari with a hint: Share → Print, then pinch out to save the PDF.
+- **Share report** sends the page, and **Export CSV** gives you just that cycle's entries.
 
 ---
 
