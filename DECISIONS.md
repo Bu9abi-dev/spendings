@@ -4,6 +4,8 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Savings goals and net worth:** goals and investments live in Extras (`goals` = `{ v: 1, goals }`, `investments` = `{ v: 1, items }`); anything without `v: 1` reads as empty, so the array `goals` that `verify-extras` writes is harmless. A goal follows the balance of the accounts it names (summed, shown capped at 100%; a missing or renamed account counts as 0), or a typed "set aside" amount when none is named. "Save AED Y per cycle" counts the current cycle through the one holding the target date (a date this cycle is 1), rounded up; a date already past just says so. Net worth = total money (the Home figure) + typed-in investments − unpaid BNPL instalments read defensively from extra `bnpl` `{ v: 1, plans }` (instalment lists with `paid`, or a `remaining` number; unknown shapes count as 0). No broker connection and no keys, by design. Both cards sit on Insights; Home is left alone.
+
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
   current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the

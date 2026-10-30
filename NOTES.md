@@ -42,6 +42,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
 | `docs/js/charts.js` | SVG charts. |
 | `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
+| `docs/js/goals.js` | Pure maths for savings goals, investments, net worth and BNPL owed (per-cycle saving needed). Tested by `tests/verify-goals.mjs`. |
+| `docs/js/goals-ui.js` | Insights Goals and Net worth cards, the Settings block, and the goal and investment sheets. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature

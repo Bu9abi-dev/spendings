@@ -8,6 +8,7 @@ import { icon } from './icons.js';
 import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
 import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
+import { goalsCard, netWorthCard } from './goals-ui.js';
 
 let insightsCycle = null;
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
@@ -101,6 +102,9 @@ export function renderInsights() {
       <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span>
         <span class="row-main"><span class="row-title">${cycleName(cyc, true)} report</span><span class="row-sub">Save it as a PDF or CSV</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
     </section>
+
+    ${netWorthCard()}
+    ${goalsCard()}
 
     <section class="panel">
       <h3 class="panel-title">Where it went</h3>

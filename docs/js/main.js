@@ -12,6 +12,7 @@ import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
+import { goalsSettingsBlock, goalsClick } from './goals-ui.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import {
   renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
@@ -99,6 +100,8 @@ function renderSettings() {
     <h3 class="group-title" id="accounts">Accounts</h3>
     <section class="group">${accountsSettingsBlock()}</section>
     <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
+
+    ${goalsSettingsBlock()}
 
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
@@ -408,7 +411,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic(); go(goBtn.dataset.go);
