@@ -7,7 +7,7 @@
 //   2. a close name: a one-letter typo or one name starting the other ("carrefour" / "carrefour market"). Both only ever medium,
 //   3. a built-in hint for well-known UAE shops ("ADNOC" → Transport & Fuel). Lowest confidence.
 // Only ever suggests. Nothing here changes an entry by itself.
-import { SPEND_CATEGORIES } from './model.js';
+import { SPEND_CATEGORIES, allCategories } from './model.js';
 
 // Words that say where or how you paid, not who you paid.
 const NOISE = new Set([
@@ -50,7 +50,10 @@ const HINTS = [
   ['Entertainment', /\b(vox|cinema|cinemas|reel|novo|steam|playstation|xbox|nintendo|roblox|ferrari world|warner|seaworld|bowling)\b/],
   ['Shopping', /\b(amazon|noon|namshi|shein|ikea|zara|h and m|hm|centrepoint|max|sharaf|virgin|jumbo|ounass|nike|adidas|decathlon)\b/],
 ];
-const VALID = new Set(SPEND_CATEGORIES.map((c) => c.id));
+// Looked up on each call, because your own categories can change at any time (Settings → Categories).
+// A category is learnable if it exists at all, hidden or not; it's only suggested while it's shown.
+const known = (id) => allCategories('Spend').some((c) => c.id === id);
+const offered = (id) => SPEND_CATEGORIES.some((c) => c.id === id);
 
 /** Typo check: are a and b at most one letter apart? (insert, delete or swap one letter) */
 function oneApart(a, b) {
@@ -84,7 +87,8 @@ function likeness(a, b) {
 export function learn(entries, remembered = {}) {
   const index = new Map();
   for (const e of entries) {
-    if (e.type !== 'Spend' || !e.merchant || !e.category || e.status === 'Review' || !VALID.has(e.category)) continue;
+    if (e.type !== 'Spend' || !e.merchant || !e.category || e.status === 'Review' || !known(e.category)) continue;
+    if (e.source === 'BNPL') continue; // a plan's payment carries the plan's category, not one you chose for that name
     const key = cleanMerchant(e.merchant);
     if (!key) continue;
     let g = index.get(key);
@@ -97,7 +101,7 @@ export function learn(entries, remembered = {}) {
   }
   for (const [raw, cat] of Object.entries(remembered || {})) {
     const key = cleanMerchant(raw);
-    if (!key || index.has(key) || !VALID.has(cat)) continue;
+    if (!key || index.has(key) || !known(cat)) continue;
     index.set(key, { name: raw, counts: new Map([[cat, 1]]), total: 1, last: '', lastCat: cat });
   }
   return index;
@@ -131,9 +135,10 @@ export function suggestFor(merchant, index) {
   if (g) {
     const { category, share } = topCategory(g);
     const confidence = score === 1 && share >= 0.75 && g.total >= 2 ? 'high' : 'medium';
-    return { category, confidence, like: g.name, times: g.total, key };
+    // a category you've hidden is never suggested; fall back to the built-in hints instead
+    if (offered(category)) return { category, confidence, like: g.name, times: g.total, key };
   }
-  const hint = HINTS.find(([, re]) => re.test(key));
+  const hint = HINTS.find(([cat, re]) => offered(cat) && re.test(key));
   return hint ? { category: hint[0], confidence: 'low', like: '', times: 0, key } : null;
 }
 

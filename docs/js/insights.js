@@ -1,17 +1,68 @@
 // Insights tab: where the money went, allowance pace, accounts, income and the last six cycles.
 import {
-  ACCOUNTS, SPEND_CATEGORIES, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
+  ACCOUNTS, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
 } from './model.js';
-import { state } from './store.js';
+import { state, getExtra, saveExtra } from './store.js';
 import { esc } from './ui.js';
 import { icon } from './icons.js';
 import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
 import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
 import { goalsCard, netWorthCard } from './goals-ui.js';
+import { bnplInsightsPanel } from './bnpl-ui.js';
+import { detectRecurring, monthlyTotal, daysUntil } from './recurring.js';
+import { budgetRows, budgetsCard } from './budgets.js';
+import { currentLimits } from './budgets-settings.js';
 
 let insightsCycle = null;
+
+/* ───── Subscriptions ───── */
+const ignoredSubs = () => getExtra('recurring', { v: 1, ignored: [] }).ignored || [];
+const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const niceDay = (key) => { const [, m, d] = key.split('-').map(Number); return `${d} ${MON_SHORT[m - 1]}`; };
+
+/** The "Subscriptions" card: payments that repeat, with what they cost per month. */
+function subscriptionsCard() {
+  if (insightsCycle && insightsCycle !== currentCycle()) return ''; // only for the cycle we're in
+  const ignored = ignoredSubs();
+  const subs = detectRecurring(state.entries, state.settings, { ignored });
+  if (!subs.length && !ignored.length) return '';
+  const row = (s) => {
+    const left = -daysUntil(s.next); // days since the expected date
+    const when = s.isLate ? `No charge since ${niceDay(s.last)}, maybe cancelled`
+      : `${s.cadenceLabel} · ${left > 0 ? `was due ${niceDay(s.next)}` : `expected ${niceDay(s.next)}`}`;
+    return `<details class="sub-row${s.isLate ? ' late' : ''}">
+      <summary>
+        <span class="lg-icon" style="--tint:var(--series-other)">${icon('calendar', { size: 16 })}</span>
+        <span class="tr-name"><b>${esc(s.name)}</b><small>${esc(when)}</small></span>
+        <span class="sub-amt num"><b>${fmt(s.amount)}</b><small>${s.cadence === 'monthly' ? 'a month' : s.cadence === 'weekly' ? 'a week' : 'a year'}</small></span>
+      </summary>
+      <div class="sub-more">
+        ${s.isNew ? '<span class="sub-flag">New this month</span>' : ''}
+        ${s.was ? `<span class="sub-flag">Price changed: AED ${fmt(s.was)} to ${fmt(s.amount)}</span>` : ''}
+        <p>${s.count} payments so far · about AED ${fmt(s.monthly, { whole: true })} a month</p>
+        <button type="button" class="btn-plain" data-sub-ignore="${esc(s.key)}">Not a subscription</button>
+      </div></details>`;
+  };
+  return `<section class="panel" id="subs">
+      <h3 class="panel-title">Subscriptions</h3>
+      ${subs.length ? `<p class="panel-sub"><b>About AED ${fmt(monthlyTotal(subs), { whole: true })} a month</b> across ${subs.filter((s) => !s.isLate).length} repeating ${subs.filter((s) => !s.isLate).length === 1 ? 'payment' : 'payments'}. Tap one for details.</p>
+        <div class="sub-list">${subs.map(row).join('')}</div>` : '<p class="muted center">Nothing repeating right now.</p>'}
+      ${ignored.length ? `<button type="button" class="btn-plain sub-restore" data-sub-restore="1">${ignored.length} hidden · Show again</button>` : ''}
+    </section>`;
+}
+
+/** Taps inside the Subscriptions card. Returns true when it handled the tap. */
+export function subsClick(t) {
+  const hide = t.closest('[data-sub-ignore]');
+  if (hide) { saveExtra('recurring', { v: 1, ignored: [...new Set([...ignoredSubs(), hide.dataset.subIgnore])] }, `Hid ${hide.closest('.sub-row').querySelector('b').textContent} from Subscriptions`); return true; }
+  if (t.closest('[data-sub-restore]')) { saveExtra('recurring', { v: 1, ignored: [] }, 'Showed hidden subscriptions again'); return true; }
+  return false;
+}
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
+
+/** Back to the cycle we're in (the Home subscription line leads to a card that only shows there). */
+export const showCurrentInsights = () => { insightsCycle = null; };
 
 /** The cycle Insights is showing (the monthly report opens on it). */
 export const insightsShown = () => insightsCycle || currentCycle();
@@ -22,18 +73,21 @@ export function shiftInsights(delta) {
   if (insightsCycle >= currentCycle()) insightsCycle = null;
 }
 
+/** Back to the current cycle (Home's limit notice opens Insights on it, not on whatever cycle was last browsed). */
+export function resetInsights() { insightsCycle = null; }
+
 export function renderInsights() {
   const s = state.settings;
   const cyc = insightsCycle || currentCycle();
   const isCurrent = cyc === currentCycle();
   const sum = summarize(state.entries, cyc, s, state.plan);
 
-  const main = SPEND_CATEGORIES.filter((c) => c.slot);
-  const otherTotal = ['Family & Gifts', 'Other', 'Uncategorised'].reduce((a, k) => a + (sum.byCategory.get(k) || 0), 0)
-    + [...sum.byCategory].filter(([k]) => !SPEND_CATEGORIES.some((c) => c.id === k) && k !== 'Uncategorised').reduce((a, [, v]) => a + v, 0);
+  const main = allCategories('Spend').filter((c) => c.slot); // hidden built-ins keep their colour, so the donut matches the legend
+  // everything without its own colour: Family, Other, your own and hidden categories, and Needs category
+  const otherTotal = [...sum.byCategory].filter(([k]) => !main.some((c) => c.id === k)).reduce((a, [, v]) => a + v, 0);
   const slices = [...main.map((c) => ({ label: c.short, value: sum.byCategory.get(c.id) || 0, color: seriesColor(c.slot) })), { label: 'Other', value: otherTotal, color: 'var(--series-other)' }];
 
-  const legendRows = [...SPEND_CATEGORIES, { id: 'Uncategorised', short: 'Needs category', icon: 'tray', slot: 0 }]
+  const legendRows = [...allCategories('Spend'), { id: 'Uncategorised', short: 'Needs category', icon: 'tray', slot: 0 }]
     .map((c) => ({ c, v: sum.byCategory.get(c.id) || 0 }))
     .filter((r) => r.v > 0)
     .sort((a, b) => b.v - a.v);
@@ -83,7 +137,7 @@ export function renderInsights() {
   const restOfSpend = sum.spent - merchants.reduce((a, m) => a + m.total, 0);
 
   const trends = categoryTrends(state.entries, cyc, s, 6);
-  const catOf = (id) => SPEND_CATEGORIES.find((c) => c.id === id)
+  const catOf = (id) => categoryMeta(id)
     || (id === 'Uncategorised' ? { id, short: 'Needs category', icon: 'tray', slot: 0, warn: true } : { id, icon: 'dots', slot: 0 });
   const trendNote = (t) => (t.usual == null ? 'Nothing before this' : `Usual AED ${fmt(t.usual, { whole: true })}`);
 
@@ -112,13 +166,15 @@ export function renderInsights() {
       <div class="legend">
         ${legendRows.length ? legendRows.map(({ c, v }) => `<div class="lg-row">
           <span class="lg-icon" style="--tint:${c.id === 'Uncategorised' ? 'var(--warn)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}</span>
-          <span class="lg-name">${c.id === 'Uncategorised' ? 'Needs category' : c.id}</span>
+          <span class="lg-name">${c.id === 'Uncategorised' ? 'Needs category' : esc(c.label || c.id)}</span>
           <span class="lg-bar"><i style="--w:${(v / Math.max(1, sum.spent)) * 100}%; --tint:${c.id === 'Uncategorised' ? 'var(--warn)' : seriesColor(c.slot)}"></i></span>
           <span class="lg-val num">${fmt(v, { whole: true })}</span>
           <span class="lg-pct num">${Math.round((v / Math.max(1, sum.spent)) * 100)}%</span>
         </div>`).join('') : '<p class="muted center">No spending in this cycle.</p>'}
       </div>
     </section>
+
+    ${budgetsCard(budgetRows(sum.byCategory, currentLimits()), { isCurrent })}
 
     <section class="panel">
       <h3 class="panel-title">Day by day</h3>
@@ -135,6 +191,8 @@ export function renderInsights() {
           ${restOfSpend >= 0.5 ? `<div class="tm-row tm-rest"><span class="tm-name"><b>Everything else</b></span><span></span><span class="hb-val num">${fmt(restOfSpend, { whole: true })}</span></div>` : ''}</div>` : '<p class="muted center">No places logged in this cycle.</p>'}
     </section>
 
+    ${subscriptionsCard()}
+
     <section class="panel">
       <h3 class="panel-title">Allowance pace</h3>
       <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(sum.allowancePot, { whole: true })}.
@@ -142,6 +200,8 @@ export function renderInsights() {
       <div class="series-legend"><span><i class="sw spend"></i>Spent so far</span><span><i class="sw pace"></i>Even pace</span></div>
       ${paceLine({ days: len, cumulative, pace, todayIndex: today, labels })}
     </section>
+
+    ${bnplInsightsPanel(cyc, isCurrent)}
 
     <section class="panel">
       <h3 class="panel-title">By account</h3>

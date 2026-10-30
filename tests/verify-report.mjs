@@ -8,7 +8,7 @@ import { createRequire } from 'node:module';
 
 const require = createRequire(import.meta.url);
 const { chromium } = require(process.env.PLAYWRIGHT || 'playwright');
-const BASE = process.env.BASE || 'http://localhost:8765/';
+const BASE = (process.env.BASE || 'http://localhost:8765').replace(/\/?$/, '/');
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };

@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { chromium, devices } = require(process.env.PLAYWRIGHT || 'playwright');
 const OUT = process.argv[2] || '/tmp/verify-iphone';
 fs.mkdirSync(OUT, { recursive: true });
-const BASE = process.env.BASE || 'http://localhost:8765/';
+const BASE = (process.env.BASE || 'http://localhost:8765').replace(/\/?$/, '/');
 let fails = 0, findings = 0;
 const ok = (c, m, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}${x ? '  ' + x : ''}`); if (!c) fails++; };
 const finding = (m) => { console.log(`FINDING ${m}`); findings++; };
@@ -189,7 +189,7 @@ for (const ph of PHONES) {
       const m = M.homeNumbers(state.entries, state.plan, state.settings);
       const { total, safe, allowBal } = m;
       const sum = m.sum;
-      const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: Math.round(x.v) }));
+      const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: x.shown }));  // the whole numbers shown, after largest-remainder rounding
       await new Promise((r) => setTimeout(r, 300));
       if (!document.querySelector('.where-row.total')) return { missing: location.hash + ' ' + document.querySelector('.lens-detail')?.innerHTML.slice(0, 200) };
       const rows = [...document.querySelectorAll('.where-row:not(.total)')].map((x) => ({ label: x.querySelector('b').textContent, v: +x.querySelector('.num').textContent.replace(/[,−]/g, (c) => (c === '−' ? '-' : '')) }));

@@ -3,6 +3,7 @@
 // cycle's entries as CSV. The report is plain HTML with its own light "paper" styles, so the
 // preview, the printout and the shared file all look the same.
 import { cleanMerchant } from './categorize.js';
+import { detectRecurring, monthlyTotal } from './recurring.js';
 import {
   categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts,
 } from './model.js';
@@ -16,7 +17,7 @@ import { icon } from './icons.js';
 const SERIES = ['#8e8e93', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
 // Name and colour come from the category list (custom categories too); unknown ones are grey.
 const catColor = (id) => SERIES[categoryMeta(id)?.slot || 0] || SERIES[0];
-const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.id || id);
+const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.label || id);
 
 /** Shop name without store/MCC numbers or the city: "CARREFOUR MCC 5411 ABU DHABI" → "CARREFOUR". */
 // tidies a bank-style name for display; grouping uses categorize.cleanMerchant, shared with Needs review
@@ -36,7 +37,7 @@ const budgetLimit = (b) => (typeof b === 'number' && b > 0 ? b : 0);
 
 /** Everything the report shows for one cycle. Transfers are kept apart: moving money between
     accounts is never spending. Bank matches (Adjustments) only move "Total money". */
-export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = null, now = new Date()) {
+export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = null, now = new Date(), ignoredSubs = []) {
   const budgets = budgetsExtra?.limits || {}; // saved as { v: 1, limits: { <categoryId>: <AED> } }
   const s = settings;
   const sum = summarize(entries, cycle, s, plan);
@@ -86,7 +87,13 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
   const budgetRows = Object.entries(budgets).map(([id, b]) => ({ id, name: catName(id), limit: budgetLimit(b), spent: sum.byCategory.get(id) || 0 }))
     .filter((b) => b.limit > 0).sort((a, b) => b.spent / b.limit - a.spent / a.limit);
 
+  // subscriptions as they stood when the cycle ended (or now): charges up to then, same detector as Insights
+  const subsAt = detectRecurring(entries.filter((e) => new Date(e.date) < asOf), s, { now: asOf, ignored: ignoredSubs });
+  const subsMonthly = monthlyTotal(subsAt);
+  const subsCount = subsAt.filter((x) => !x.isLate).length;
+
   return {
+    subsMonthly, subsCount,
     cycle, isCurrent, start, end, asOf,
     income, refunds, spent, whole, saved: income - spent, prevSpent: prev.spent,
     byIncome: [...sum.byIncome].filter(([k]) => k !== 'Refund').sort((a, b) => b[1] - a[1]),
@@ -149,6 +156,7 @@ export function reportHTML(r, settings) {
         ${a.topUps || a.carryIn ? `<p class="rp-muted">Allowance ${aed(a.base)}${a.topUps ? ` + top-ups ${aed(a.topUps)}` : ''}${a.carryIn ? ` + ${aed(a.carryIn)} carried in` : ''}</p>` : ''}
       </div>`)}
 
+    ${r.subsCount ? `<p class="rp-note">Subscriptions ${aed(r.subsMonthly)}/month across ${r.subsCount}.</p>` : ''}
     ${section('Where it went', r.categories.length ? `<table class="rp-table">${r.categories.map((c) => `<tr>
         <td class="rp-name"><i class="rp-dot" style="background:${dot(c)}"></i>${esc(c.name)}</td>
         <td class="rp-wide">${bar(c.value / maxCat, dot(c))}</td>
@@ -290,7 +298,7 @@ export function openReport(cycle) {
   ensureStyles();
   const current = () => cycleOf(new Date(), state.settings.cycleStart);
   let cyc = cycle && cycle <= current() ? cycle : current();
-  const build = () => cycleReport(state.entries, cyc, state.settings, state.plan, getExtra('budgets', null));
+  const build = () => cycleReport(state.entries, cyc, state.settings, state.plan, getExtra('budgets', null), new Date(), getExtra('recurring', { v: 1, ignored: [] }).ignored || []);
   let r = build();
 
   openSheet({

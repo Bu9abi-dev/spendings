@@ -2,12 +2,16 @@
 // Tap or drag along the bar to focus an account: the number morphs, the details slide in
 // from the side you moved towards. Below: the payday plan and where this cycle's money went.
 import {
-  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, accountMeta, cycleName, cycleRange, daysLeft,
+  ACCOUNTS, cycleOf, SPEND_CATEGORIES, INCOME_CATEGORIES, pickerCategories, accountMeta, cycleName, cycleRange, daysLeft,
   balances, homeNumbers, whereRows, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
-import { state, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
+import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
+import { bnplHomeNotice } from './bnpl-ui.js';
+import { detectRecurring, subscriptionNotice } from './recurring.js';
+import { budgetRows, budgetNudge, budgetNotice } from './budgets.js';
+import { currentLimits } from './budgets-settings.js';
 
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
 export const dirham = (cls = '') => `<svg class="dh ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15h3.2c4.6 0 7.8-3.1 7.8-7.5S14.8 4.5 10.2 4.5H7z"/><path d="M3.2 10.2h17.3M3.2 13.8h17.3"/></svg>`;
@@ -170,7 +174,25 @@ export function renderHome(h) {
       </div>
     </section>
     ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
+    ${homeNotice(m)}
     <div class="lens-detail">${detail(m, focus)}</div>`;
+}
+
+/** At most one quiet line on Home, the most urgent of: an overdue buy-now-pay-later payment, a category over its limit, a subscription that just
+    started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit. Each feature decides whether it has
+    something to say (…Notice); Home only picks one, so notices never stack up. */
+const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'budget:near'];
+function homeNotice(m) {
+  const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
+  const found = [];
+  const b = budgetNotice(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent });
+  if (b) found.push({ rank: `budget:${b.priority}`, html: budgetNudge(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent }) });
+  const s = subscriptionNotice(detectRecurring(state.entries, state.settings, { ignored: getExtra('recurring', { v: 1, ignored: [] }).ignored || [] }));
+  if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
+  const bn = bnplHomeNotice(); // a buy-now-pay-later payment overdue, or due within 7 days
+  if (bn) found.push(bn);
+  found.sort((x, y) => NOTICE_ORDER.indexOf(x.rank) - NOTICE_ORDER.indexOf(y.rank));
+  return found[0]?.html || '';
 }
 
 function detail(m, f) {
@@ -663,7 +685,7 @@ export function planSettingsBlock() {
 export function openPlanItem(existing, preset = {}) {
   const p = existing ? { ...existing } : { id: 'p-' + uid().slice(2, 10), name: '', kind: 'Responsibility', amount: 0, day: null, from: state.settings.emergencyAccount, to: '', category: 'Transport & Fuel', ...preset };
   const accOpts = (sel) => ACCOUNTS.map((a) => `<option ${a.id === sel ? 'selected' : ''}>${a.id}</option>`).join('');
-  const catOpts = (list, sel) => list.map((c) => `<option ${c.id === sel ? 'selected' : ''}>${esc(c.id)}</option>`).join('');
+  const catOpts = (type, sel) => pickerCategories(type, sel).map((c) => `<option value="${esc(c.id)}" ${c.id === sel ? 'selected' : ''}>${esc(c.label || c.id)}</option>`).join('');
   openSheet({
     label: 'Plan item', tall: false,
     html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">Cancel</button><h2 class="sheet-title">${existing ? esc(p.name) : 'New plan item'}</h2><button class="text-btn strong" data-act="save" type="button">Save</button></header>
@@ -675,8 +697,8 @@ export function openPlanItem(existing, preset = {}) {
           <label class="row input-row"><span>Day of month</span><select id="pf-day" name="day"><option value="">Any day</option>${Array.from({ length: 31 }, (_, i) => i + 1).map((d) => `<option ${d === p.day ? 'selected' : ''}>${d}</option>`).join('')}</select></label>
           <label class="row input-row f-from"><span>From</span><select id="pf-from" name="from">${accOpts(p.from || state.settings.emergencyAccount)}</select></label>
           <label class="row input-row f-to"><span>Into</span><select id="pf-to" name="to">${accOpts(p.to || state.settings.emergencyAccount)}</select></label>
-          <label class="row input-row f-cat-spend"><span>Category</span><select id="pf-cat-s" name="catSpend">${catOpts(SPEND_CATEGORIES, p.category)}</select></label>
-          <label class="row input-row f-cat-income"><span>Category</span><select id="pf-cat-i" name="catIncome">${catOpts(INCOME_CATEGORIES, p.category)}</select></label>
+          <label class="row input-row f-cat-spend"><span>Category</span><select id="pf-cat-s" name="catSpend">${catOpts('Spend', p.category)}</select></label>
+          <label class="row input-row f-cat-income"><span>Category</span><select id="pf-cat-i" name="catIncome">${catOpts('Income', p.category)}</select></label>
         </section>
         <p class="group-foot plan-hint"></p>
         ${existing ? '<button type="button" class="dup-btn danger-btn" data-act="delete">Remove from plan</button>' : ''}

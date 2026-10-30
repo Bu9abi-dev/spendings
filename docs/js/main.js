@@ -1,5 +1,5 @@
 import {
-  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
+  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
   state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
@@ -13,13 +13,16 @@ import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
 import { goalsSettingsBlock, goalsClick } from './goals-ui.js';
+import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
+import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import {
   renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
-import { renderInsights, shiftInsights, insightsShown } from './insights.js';
+import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
+import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -102,10 +105,20 @@ function renderSettings() {
     <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
 
     ${goalsSettingsBlock()}
+    <h3 class="group-title" id="categories">Categories</h3>
+    <section class="group">${categoriesSettingsBlock()}</section>
+    <p class="group-foot">Add your own, rename any, or hide ones you don’t use. Old entries always keep their category.</p>
 
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
     <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
+
+    <h3 class="group-title" id="bnpl">Buy now, pay later</h3>
+    <section class="group">${bnplSettingsBlock()}</section>
+    <p class="group-foot">What you still owe Tabby, Tamara and the like. It’s not spending until an instalment is paid.</p>
+    <h3 class="group-title" id="budgets">Category limits</h3>
+    <section class="group">${budgetsSettingsBlock()}</section>
+    <p class="group-foot">A spending limit for a category in each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
@@ -206,7 +219,7 @@ function openReview() {
       <div class="rc-head"><div><b>${esc(e.merchant || 'Unknown merchant')}</b><span>${esc(accountMeta(e.account).name)} · ${dayLabel(dayKey(e.date))}, ${timeLabel(e.date)}</span></div>
       <span class="num rc-amt">${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount, { fixed: true })}</span></div>
       ${sug}
-      <div class="rc-cats">${(e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES).map((c) => `<button type="button" class="rc-cat${g && g.category === c.id ? ' sug' : ''}" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${c.short}</button>`).join('')}</div>
+      <div class="rc-cats">${pickerCategories(e.type, e.category).map((c) => `<button type="button" class="rc-cat${g && g.category === c.id ? ' sug' : ''}" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${esc(c.short)}</button>`).join('')}</div>
     </article>`;
     }).join('');
   };
@@ -242,7 +255,7 @@ function openReview() {
         haptic();
         // "File all N" on the suggestion: this one and its twins together
         if (b.dataset.all && others.length) {
-          fileMany([e, ...others].map((x) => [x.id, cat]), `Filed ${others.length + 1} from ${e.merchant} as ${categoryMeta(cat).short}`);
+          fileMany([e, ...others].map((x) => [x.id, cat]), `Filed ${others.length + 1} from ${e.merchant} as ${categoryMeta(cat)?.short || cat}`);
           return redraw();
         }
         updateEntry(e.id, { category: cat });
@@ -250,7 +263,7 @@ function openReview() {
         // picked by hand and the same shop has more waiting: offer to file those too
         if (others.length) {
           // this toast's button files the others (its own undo step); the header Undo still undoes the one you just picked
-          toast(`Filed as ${esc(categoryMeta(cat, e.type).short)}`, {
+          toast(`Filed as ${esc(categoryMeta(cat, e.type)?.short || cat)}`, {
             icon: icon('check', { size: 18 }), tone: 'good', action: `File ${others.length} more`,
             onAction: () => { fileMany(others.map((x) => [x.id, cat]), `Filed ${others.length} more from ${e.merchant}`); redraw(); },
           });
@@ -411,10 +424,13 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || goalsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
-    haptic(); go(goBtn.dataset.go);
+    haptic();
+    if (goBtn.dataset.anchor === 'subs') showCurrentInsights();
+    if (goBtn.dataset.resetInsights) resetInsights();
+    go(goBtn.dataset.go);
     if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
     return;
   }
@@ -442,6 +458,7 @@ document.addEventListener('click', async (ev) => {
   }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
+  if (subsClick(t)) { haptic(); return; }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
   const mode = t.closest('[data-theme-mode]');

@@ -1,5 +1,5 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
-import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
+import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
 import { state, addEntry, updateEntry, deleteEntry, setPrefs, undo } from './store.js';
 import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
@@ -157,16 +157,17 @@ export function openEntry(existing = null, preset = {}) {
       }
 
       function renderCategories() {
-        const list = e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES;
+        const list = pickerCategories(e.type, e.category);
         if (e.category && !list.some((c) => c.id === e.category)) e.category = '';
         const grid = $('.cat-grid');
         // build the buttons once per type; after that only flip classes, so a tap in progress isn't lost
-        if (grid.dataset.type !== e.type) {
-          grid.dataset.type = e.type;
+        const key = `${e.type}|${list.map((c) => c.id).join('|')}`;
+        if (grid.dataset.key !== key) {
+          grid.dataset.key = key;
           grid.innerHTML = list.map((c) => {
             const color = e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot);
             return `<button type="button" class="cat" role="radio" aria-checked="false" data-cat="${esc(c.id)}" style="--cat:${color}">
-            <span class="cat-icon">${icon(c.icon, { size: 22 })}</span><span class="cat-name">${c.short}</span></button>`;
+            <span class="cat-icon">${icon(c.icon, { size: 22 })}</span><span class="cat-name">${esc(c.short)}</span></button>`;
           }).join('');
         }
         for (const b of grid.children) {
@@ -220,7 +221,7 @@ export function openEntry(existing = null, preset = {}) {
           // medium or low: only a guess, so ring it and let you pick
           if (autoPicked) { e.category = ''; autoPicked = false; }
           hinted = g.category;
-          tag.hidden = false; tag.textContent = `· maybe ${categoryMeta(g.category).short}?`;
+          tag.hidden = false; tag.textContent = `· maybe ${categoryMeta(g.category)?.short || g.category}?`;
         } else if (!g) {
           if (autoPicked) { e.category = ''; autoPicked = false; }
           tag.hidden = true;

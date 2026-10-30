@@ -5,6 +5,97 @@ Choices made while running the app on my own, newest first, with the reason for 
 ## 30 Oct 2026
 
 - **Savings goals and net worth:** goals and investments live in Extras (`goals` = `{ v: 1, goals }`, `investments` = `{ v: 1, items }`); anything without `v: 1` reads as empty, so the array `goals` that `verify-extras` writes is harmless. A goal follows the balance of the accounts it names (summed, shown capped at 100%; a missing or renamed account counts as 0), or a typed "set aside" amount when none is named. "Save AED Y per cycle" counts the current cycle through the one holding the target date (a date this cycle is 1), rounded up; a date already past just says so. Net worth = total money (the Home figure) + typed-in investments − unpaid BNPL instalments read defensively from extra `bnpl` `{ v: 1, plans }` (instalment lists with `paid`, or a `remaining` number; unknown shapes count as 0). No broker connection and no keys, by design. Both cards sit on Insights; Home is left alone.
+- **The flaky extras test was a test bug, but it led to a real app race, now fixed.** The test's `settle()`
+  used `waitForFunction` with an `async` check. Playwright treats the Promise the check returns as "true", so
+  settle never waited and the test sometimes looked at the sheet before the last change got there. It now
+  waits until the outbox is really empty. Looking at the outbox also turned up a real way to lose data: the
+  app took a sent change off the queue with `shift()`. If you saved the same extra (or the plan, or accounts)
+  again while the first copy was still on its way, the old copy was already gone from the queue, so `shift()`
+  threw away the *next* change instead, for example a different phone-only extra, which then never reached
+  the sheet. An edit to an entry whose add was still sending was folded into the add after it had already
+  left, so the edit was lost too. Now a sent change is removed by identity, and nothing is folded into the
+  change that's sending. `verify-extras` holds a request mid-flight to check both cases.
+- **BNPL (branch `claude/bnpl`):** a plan (Tabby, Tamara, Postpay, card instalments) lives in Extras under `bnpl`
+  and never changes a balance. Money only counts as spent when an instalment is paid: "Mark paid" logs a normal
+  Spend ("Tabby · Noon", the plan's category and account) through `addEntry`, so balances, sync and undo work as
+  for any payment. Choices made along the way:
+  - **Paid is derived, not stored as a flag.** An instalment points at the ledger entry that paid it and counts as
+    paid only while that entry exists. Deleting or undoing the payment makes it unpaid again without a second
+    write, and nothing can be "paid" twice.
+  - **One Undo for Mark paid.** It's two changes (an entry and the plan), folded into one step with main's
+    `batch(label, fn)` (an earlier `together()` was removed: one grouping system).
+  - **Council fixes (30 Oct):** Mark paid first looks for a payment already in Activity that's probably this one
+    and asks "Link this payment" or "Log a new payment", so nothing is counted twice. Every new auto-link shows a
+    toast with Unlink, and paid rows show the payment they're matched to. Auto-link takes entries oldest first and
+    gives each to the earliest unpaid payment it fits (a late payment pays the overdue one, up to 5 days after the
+    next one is due), and when two plans fit equally it links neither. Plan changes save with their own undo
+    (`saveExtra(…, { reverse })`) that touches only that change, read fresh at undo time, so undoing an edit never
+    wipes links found since; the editor merges with the plan as it is at Save, and once a payment is paid the total
+    and count are locked. Toast Undo uses `topUndoId()`. Plan payments are `source: 'BNPL'` and are never learned
+    as merchants (categorize.js, the store and `Code.gs`; the script part needs the redeploy, harmless until then).
+    On screen it's "Buy now, pay later" and "payment". Home gets one notice through `homeNotice` (`bnpl:overdue`
+    first of all, `bnpl:due` within 7 days after `sub:new`); "AED X due before payday" is information in the
+    sheet and Insights, never taken off a balance or Safe to spend.
+  - **"Sync" matches every unpaid instalment, not just the next one** (merchant contains the provider name, within
+    AED 1 and ±5 days of that instalment's own due day; closest day wins; one entry pays one instalment). A plan
+    added halfway through picks up all its past payments at once. It runs after each change to entries or extras,
+    saves only when it found something new, and isn't an Undo step (`saveExtra(…, { undoable: false })`): the app
+    did it, not Abdullah. "Unlink" remembers the entry so it's never auto-linked to that plan again.
+  - **The editor is a form, not the keypad sheet.** A plan has nine fields; the payday-plan form pattern fits them
+    on one screen, with a live preview ("2 × AED 333.33, then AED 333.34 … last on 27 Nov").
+  - **"Already paid" for a new plan** marks the first instalments paid with no entry (the first one is usually
+    taken at the till, before tracking), so no fake spending is logged.
+  - **Deleting a plan keeps its payments** in Activity: they were real spending.
+  - Demo mode gets two plans whose instalments are already in the demo ledger as Apple Pay payments, so the
+    linking is visible straight away.
+  - Fixed a date-dependent check in `verify-iphone.mjs`: it compared the Where rows on screen with unrounded
+    numbers instead of the largest-remainder whole numbers the card actually shows, so it failed whenever the
+    demo numbers needed a nudge.
+- **Subscriptions (`recurring.js`, Insights card + one Home notice):** a place counts when its charges repeat weekly
+  (6-8 days, needs 4 charges), monthly (26-35) or yearly (350-380), amounts within 15% of the previous charge, so a
+  small price rise stays one subscription ("was X"). Two monthly or yearly charges are enough only if they match
+  within 5%. Groceries and Food & Drinks are never detected (a weekly shop or coffee is a habit), and Transport &
+  Fuel / Health need three charges, unless the name is a known subscription brand. Names are grouped by the shared
+  `merchantKey` from `categorize.js`; "Not a subscription" stores that same key in the Extras key `recurring`
+  (with undo and "Show again"). "New this month" = the current run started in the last 35 days (run start, not the
+  place's first ever charge). "Maybe cancelled" = next payment over 7 days late, left out of the total. Detection is
+  remembered per `state.entries` array. The card only shows on the current cycle. Home shows one notice, only when
+  actionable: a new subscription charged in the last 7 days, else one due within 3 days (`subscriptionNotice`,
+  returns `{ priority: 'new'|'due', text }` so Home can cap notices later). The notice opens the current cycle's
+  Insights card, where "Not a subscription" lives. The monthly report adds "Subscriptions AED X/month".
+- **Category budgets, after the council and the v18 merge:** Settings already had "Budget" (the allowance), so the
+  Settings block is "Category limits" and the Insights card is "Category budgets". Names and icons come from
+  `allCategories('Spend')`/`categoryMeta` (never the shown-only list), so a limit on a hidden, renamed or custom
+  category keeps its look, and the label is what's shown everywhere. Settings lists only categories that have a
+  limit plus an "Add a limit" row that opens a chooser of shown categories. Home's decision is the pure
+  `budgetNotice(rows, { isCurrent })` returning `{ priority: 'over'|'near', text }` (or null), so Home can later cap
+  itself at one notice; it only appears for the current cycle and tapping it resets Insights' sticky cycle
+  (`resetInsights()`). A row under 1 AED over shows cents, exactly at the limit says "At the limit". The sheet's
+  only footer is "Refunds aren't taken off; they count as money in." Deleting a custom category in Settings →
+  Categories also clears its limit, as one undo step (`store.batch` around the two `saveExtra` calls).
+- **Category budgets (branch `claude/category-budgets`):** limits are saved as `{ v: 1, limits: { <categoryId>: AED } }`
+  under the `budgets` extra, one limit for every cycle (no per-month overrides yet). "Spent" is exactly Insights'
+  `summarize().byCategory`: every account, transfers excluded, refunds not netted off (a refund doesn't free up budget).
+  80% is "near", 100% is "over" (exactly at the limit counts as over). Percent is shown rounded down so "99%" never sits
+  beside a red "over". Home shows at most one line, for the fullest budget, with "and N more" if several are flagged;
+  it isn't a real dismiss, it just disappears when nothing is at 80%, and tapping it opens Insights. Insights shows the
+  card for whichever cycle is being viewed, against the same limits; with no budgets it shows a "Set a budget" prompt that
+  jumps to Settings. Settings has a Budgets section (one row per category, tap for a sheet with a number field, Save, and
+  Remove); the keypad wasn't used, matching the payday plan's amount field. Unknown category ids (a category removed
+  later) still get a row, called by their id. Maths and HTML are in `budgets.js` (no store import, so it runs in Node
+  tests); the store wiring and sheet are in `budgets-settings.js`.
+- **Custom categories keep the sheet's names fixed.** A category's id is what the Ledger stores, so renaming one
+  (built-in or yours) only changes the label the app shows, and hiding only takes it out of the pickers. Past entries,
+  the Apple Pay Shortcut's menu and remembered merchants keep working, and no Ledger cell is ever rewritten. Your
+  own categories share the grey "other" colour, because the eight-colour palette is the checked colour-blind-safe set.
+  Saved in the `categories` extra. A category can only be deleted while no entry uses it; otherwise hide it.
+- **Apps Script accepts your own categories from the Shortcut** (`spendCategories_()` reads the Extras tab), and a
+  renamed label maps back to its id. Needs the script redeploy, like v12's Extras; until then a custom category sent
+  by the Shortcut lands in Needs review, which is the old behaviour.
+- **Ran one council over three branches** (smart-categories, activity-filters, monthly-report): five Sonnet advisors,
+  each reviewing all three, synthesis by the loop thread. Transcript: council/council-transcript-2026-10-30-wave1.md.
+- **Took over the wave-1 threads that hit their limit.** Budgets, subscriptions and BNPL were rebuilt by subagents
+  on their own branches from main.
 
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
