@@ -7,7 +7,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 1 | Category budgets (council fixes) | `claude/category-budgets` | "Category limits" in Settings |
+
 | 2 | Subscriptions (council fixes) | `claude/recurring` | fewer false positives |
 | 3 | BNPL tracking (council fixes) | `claude/bnpl` | Tabby/Tamara, auto-link with visible trail |
 | 4 | Savings goals and net worth | `claude/goals` | manual investments, read-only |
@@ -33,6 +33,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v19 · Category budgets: monthly limits per category, Insights bars, one Home nudge
 - v18 · Your own categories: add, rename (label only), hide; Shortcut accepts them after the script update
 - v17 · Monthly report: printable per cycle, PDF, cycle CSV, numbers that add up
 - v16 · Smarter categories: learn from past entries, bank-style names, only sure guesses act (PR #8)
