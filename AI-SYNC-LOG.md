@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **30 Oct 2026**, at **v24**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **30 Oct 2026**, at **v25**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -57,25 +57,26 @@ sections at the end of every session (newest first).
 | Offline | `docs/sw.js` + `store.js` outbox | Bump `VERSION` whenever app files change; new files go in `SHELL`. |
 | Tests | `tests/` | `bash tests/run-all.sh`, or each `node tests/<name>.mjs` with `NODE_PATH=$(npm root -g)`; browser tests read `BASE`. |
 
-Code map, extras keys and conventions: see NOTES.md. Extras keys in use: `budgets`, `recurring`, `categories`,
+Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` must stay byte-identical to
+`apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v24, 30 Oct 2026)
+## 5. Current state (v25, 30 Oct 2026)
 
-**Live on main** (newest first): v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 
 **In flight** (branches pushed, not merged):
-- `claude/setup-wizard`: first-time setup tutorial + **Sign in with Google** that creates his Sheet and the Apps
-  Script (Sheets/Drive/Apps Script APIs, Google Identity Services token flow). Needs a council review after it lands.
+- `claude/weekly`: weekly summary + allowance pace alert; council asked for one shared pace definition (Home, Insights
+  and the alert must agree), no alert from one lumpy purchase, dismissible, lower rank. Fixes in progress.
 
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New
    version). Covers v12 Extras tab, v13 Shortcut fixes, v18 custom categories from the Shortcut, v22 BNPL guard,
    and (once merged) the people/split guards. Until then, feature settings live on the phone only and sync later.
-2. **For Sign in with Google**: create a Google Cloud OAuth client ID (steps will be in SETUP.md) and put it in
+2. **For Sign in with Google**: create a Google Cloud OAuth client ID (steps in SETUP.md → "Switch on Sign in with Google") and put it in
    `docs/js/config.js`; turn on the Apps Script API at script.google.com/home/usersettings.
 3. Check on a real iPhone: "Save as PDF" in the monthly report from the home-screen app.
 
@@ -97,12 +98,13 @@ for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** not
 
 ## 7. Session log (newest first)
 
-### 30 Oct 2026 · loop session (v15 → v24)
+### 30 Oct 2026 · loop session (v15 → v25)
 - Took over six wave-1 threads that had hit their usage limit. Ran councils over every branch, applied fixes, merged:
   activity filters (v15), smart categories (v16), monthly report (v17), custom categories (v18, asked for by
   Abdullah), budgets (v19), subscriptions + one Home notice (v20), outbox race fix (v21, found while fixing a flaky
   test), BNPL tracking (v22, asked for by Abdullah as "BNPL sync"), savings goals + net worth (v23).
 - Design council chose "people as accounts" for money owed; built, reviewed, fixed and merged as v24.
 - Abdullah asked for a first-time setup tutorial with Sign in with Google that creates the sheet and script:
-  building on `claude/setup-wizard`.
+  built, security-reviewed (key race, never-overwrite), merged as v25 with Google off until a client ID is set.
+- Weekly summary + pace alert built; council sent the pace alert back.
 - Abdullah asked for this file.
