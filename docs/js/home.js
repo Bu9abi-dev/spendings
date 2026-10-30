@@ -5,10 +5,11 @@ import {
   ACCOUNTS, cycleOf, SPEND_CATEGORIES, INCOME_CATEGORIES, pickerCategories, accountMeta, cycleName, cycleRange, daysLeft,
   balances, homeNumbers, whereRows, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
-import { state, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
+import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
-import { budgetRows, budgetNudge } from './budgets.js';
+import { detectRecurring, subscriptionNotice } from './recurring.js';
+import { budgetRows, budgetNudge, budgetNotice } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
 
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
@@ -172,7 +173,23 @@ export function renderHome(h) {
       </div>
     </section>
     ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
+    ${homeNotice(m)}
     <div class="lens-detail">${detail(m, focus)}</div>`;
+}
+
+/** At most one quiet line on Home, the most urgent of: a category over its limit, a subscription that just
+    started charging, one due within 3 days, a category close to its limit. Each feature decides whether it has
+    something to say (…Notice); Home only picks one, so notices never stack up. */
+const NOTICE_ORDER = ['budget:over', 'sub:new', 'sub:due', 'budget:near'];
+function homeNotice(m) {
+  const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
+  const found = [];
+  const b = budgetNotice(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent });
+  if (b) found.push({ rank: `budget:${b.priority}`, html: budgetNudge(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent }) });
+  const s = subscriptionNotice(detectRecurring(state.entries, state.settings, { ignored: getExtra('recurring', { v: 1, ignored: [] }).ignored || [] }));
+  if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
+  found.sort((x, y) => NOTICE_ORDER.indexOf(x.rank) - NOTICE_ORDER.indexOf(y.rank));
+  return found[0]?.html || '';
 }
 
 function detail(m, f) {
@@ -185,7 +202,6 @@ function detailAll(m) {
   return `
     ${paydayCard(m)}
     ${allowanceCard(m, true)}
-    ${budgetNudge(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent: m.cyc === cycleOf(new Date(), m.s.cycleStart) })}
     ${whereCard(m)}
     ${review.length ? `<button class="review-row" type="button" data-act="review">
         <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>

@@ -4,6 +4,18 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Subscriptions (`recurring.js`, Insights card + one Home notice):** a place counts when its charges repeat weekly
+  (6-8 days, needs 4 charges), monthly (26-35) or yearly (350-380), amounts within 15% of the previous charge, so a
+  small price rise stays one subscription ("was X"). Two monthly or yearly charges are enough only if they match
+  within 5%. Groceries and Food & Drinks are never detected (a weekly shop or coffee is a habit), and Transport &
+  Fuel / Health need three charges, unless the name is a known subscription brand. Names are grouped by the shared
+  `merchantKey` from `categorize.js`; "Not a subscription" stores that same key in the Extras key `recurring`
+  (with undo and "Show again"). "New this month" = the current run started in the last 35 days (run start, not the
+  place's first ever charge). "Maybe cancelled" = next payment over 7 days late, left out of the total. Detection is
+  remembered per `state.entries` array. The card only shows on the current cycle. Home shows one notice, only when
+  actionable: a new subscription charged in the last 7 days, else one due within 3 days (`subscriptionNotice`,
+  returns `{ priority: 'new'|'due', text }` so Home can cap notices later). The notice opens the current cycle's
+  Insights card, where "Not a subscription" lives. The monthly report adds "Subscriptions AED X/month".
 - **Category budgets, after the council and the v18 merge:** Settings already had "Budget" (the allowance), so the
   Settings block is "Category limits" and the Insights card is "Category budgets". Names and icons come from
   `allCategories('Spend')`/`categoryMeta` (never the shown-only list), so a limit on a hidden, renamed or custom

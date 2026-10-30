@@ -2,17 +2,65 @@
 import {
   ACCOUNTS, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
 } from './model.js';
-import { state } from './store.js';
+import { state, getExtra, saveExtra } from './store.js';
 import { esc } from './ui.js';
 import { icon } from './icons.js';
 import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
 import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
+import { detectRecurring, monthlyTotal, daysUntil } from './recurring.js';
 import { budgetRows, budgetsCard } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
 
 let insightsCycle = null;
+
+/* ───── Subscriptions ───── */
+const ignoredSubs = () => getExtra('recurring', { v: 1, ignored: [] }).ignored || [];
+const MON_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const niceDay = (key) => { const [, m, d] = key.split('-').map(Number); return `${d} ${MON_SHORT[m - 1]}`; };
+
+/** The "Subscriptions" card: payments that repeat, with what they cost per month. */
+function subscriptionsCard() {
+  if (insightsCycle && insightsCycle !== currentCycle()) return ''; // only for the cycle we're in
+  const ignored = ignoredSubs();
+  const subs = detectRecurring(state.entries, state.settings, { ignored });
+  if (!subs.length && !ignored.length) return '';
+  const row = (s) => {
+    const left = -daysUntil(s.next); // days since the expected date
+    const when = s.isLate ? `No charge since ${niceDay(s.last)}, maybe cancelled`
+      : `${s.cadenceLabel} · ${left > 0 ? `was due ${niceDay(s.next)}` : `expected ${niceDay(s.next)}`}`;
+    return `<details class="sub-row${s.isLate ? ' late' : ''}">
+      <summary>
+        <span class="lg-icon" style="--tint:var(--series-other)">${icon('calendar', { size: 16 })}</span>
+        <span class="tr-name"><b>${esc(s.name)}</b><small>${esc(when)}</small></span>
+        <span class="sub-amt num"><b>${fmt(s.amount)}</b><small>${s.cadence === 'monthly' ? 'a month' : s.cadence === 'weekly' ? 'a week' : 'a year'}</small></span>
+      </summary>
+      <div class="sub-more">
+        ${s.isNew ? '<span class="sub-flag">New this month</span>' : ''}
+        ${s.was ? `<span class="sub-flag">Price changed: AED ${fmt(s.was)} to ${fmt(s.amount)}</span>` : ''}
+        <p>${s.count} payments so far · about AED ${fmt(s.monthly, { whole: true })} a month</p>
+        <button type="button" class="btn-plain" data-sub-ignore="${esc(s.key)}">Not a subscription</button>
+      </div></details>`;
+  };
+  return `<section class="panel" id="subs">
+      <h3 class="panel-title">Subscriptions</h3>
+      ${subs.length ? `<p class="panel-sub"><b>About AED ${fmt(monthlyTotal(subs), { whole: true })} a month</b> across ${subs.filter((s) => !s.isLate).length} repeating ${subs.filter((s) => !s.isLate).length === 1 ? 'payment' : 'payments'}. Tap one for details.</p>
+        <div class="sub-list">${subs.map(row).join('')}</div>` : '<p class="muted center">Nothing repeating right now.</p>'}
+      ${ignored.length ? `<button type="button" class="btn-plain sub-restore" data-sub-restore="1">${ignored.length} hidden · Show again</button>` : ''}
+    </section>`;
+}
+
+/** Taps inside the Subscriptions card. Returns true when it handled the tap. */
+export function subsClick(t) {
+  const hide = t.closest('[data-sub-ignore]');
+  if (hide) { saveExtra('recurring', { v: 1, ignored: [...new Set([...ignoredSubs(), hide.dataset.subIgnore])] }, `Hid ${hide.closest('.sub-row').querySelector('b').textContent} from Subscriptions`); return true; }
+  if (t.closest('[data-sub-restore]')) { saveExtra('recurring', { v: 1, ignored: [] }, 'Showed hidden subscriptions again'); return true; }
+  return false;
+}
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
+
+/** Back to the cycle we're in (the Home subscription line leads to a card that only shows there). */
+export const showCurrentInsights = () => { insightsCycle = null; };
 
 /** The cycle Insights is showing (the monthly report opens on it). */
 export const insightsShown = () => insightsCycle || currentCycle();
@@ -137,6 +185,8 @@ export function renderInsights() {
           <span class="hb-val num">${fmt(m.total, { whole: true })}</span></div>`).join('')}
           ${restOfSpend >= 0.5 ? `<div class="tm-row tm-rest"><span class="tm-name"><b>Everything else</b></span><span></span><span class="hb-val num">${fmt(restOfSpend, { whole: true })}</span></div>` : ''}</div>` : '<p class="muted center">No places logged in this cycle.</p>'}
     </section>
+
+    ${subscriptionsCard()}
 
     <section class="panel">
       <h3 class="panel-title">Allowance pace</h3>

@@ -19,7 +19,7 @@ import {
   renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
-import { renderInsights, shiftInsights, insightsShown, resetInsights } from './insights.js';
+import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
@@ -422,6 +422,7 @@ document.addEventListener('click', async (ev) => {
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();
+    if (goBtn.dataset.anchor === 'subs') showCurrentInsights();
     if (goBtn.dataset.resetInsights) resetInsights();
     go(goBtn.dataset.go);
     if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
@@ -451,6 +452,7 @@ document.addEventListener('click', async (ev) => {
   }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
+  if (subsClick(t)) { haptic(); return; }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
   const mode = t.closest('[data-theme-mode]');

@@ -38,7 +38,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/home.js` | Home tab (balance bar, account lenses, payday plan, match with bank). |
 | `docs/js/activity.js` | Activity tab (search, chips, Filter sheet, filtered total, Select mode for bulk recategorise/delete). |
 | `docs/js/filters.js` | Pure Activity filter matching and totals (tested in Node by `tests/verify-activity.mjs`). |
-| `docs/js/insights.js` | Insights tab (donut, allowance pace, accounts, income, six cycles). |
+| `docs/js/insights.js` | Insights tab (donut, allowance pace, accounts, income, six cycles, Subscriptions card). |
+| `docs/js/recurring.js` | Pure: finds repeating payments (subscriptions), monthly cost, next date, new/late flags, Home notice. |
 | `docs/js/views.js` | Shared bits: entry row, sync badge, large title + undo button, demo banner. |
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
 | `docs/js/charts.js` | SVG charts. |
