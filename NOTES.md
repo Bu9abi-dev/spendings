@@ -59,6 +59,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/people-ui.js` | Settings → People, add/rename/remove a person (`people` extra + account, one undo step), Home "Owed to you" line (in "Where your money is", or the lowest-rank notice), People sheet with Settle up, split sheet, "half of a split" question. |
 | `docs/js/goals.js` | Pure maths for savings goals, investments, net worth and BNPL owed (per-cycle saving needed). Tested by `tests/verify-goals.mjs`. |
 | `docs/js/goals-ui.js` | Insights Goals and Net worth cards, the Settings block, and the goal and investment sheets. |
+| `docs/js/weekly.js` | Pure weekly maths: last full Mon–Sun week (Dubai days), spent (Spend only, gross like Insights), usual week (median of the 6 weeks before, needs 3 with data), top 3 categories, biggest payment, "coming up" (reuses recurring.js, bnpl.js, budgets.js), and the words for the allowance pace alert (`paceAlert`, `paceSeen`; the maths is `allowancePace` in model.js). Tested by `tests/verify-weekly.mjs`. |
+| `docs/js/weekly-ui.js` | Home lines (`pace:out`, `week:summary`), the "Your week" sheet, the Insights "Last week" card. "Seen" is the `weekly` extra `{ v: 1, seen: '<Monday of the week>', pace: { cycle, outDay } }`, saved with `undoable: false`. Pace itself (on track / over, the "runs out" day) is `allowancePace` in model.js, shared with Home and Insights. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature

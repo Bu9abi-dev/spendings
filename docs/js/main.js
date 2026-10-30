@@ -25,6 +25,7 @@ import {
 import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
+import { weeklyClick } from './weekly-ui.js';
 import { openSetup, shouldAutoOpen } from './setup.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
@@ -436,7 +437,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || goalsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || weeklyClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();
