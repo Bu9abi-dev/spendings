@@ -150,39 +150,47 @@ const overlay = (e, op) => (op && op.op === 'update' ? { ...e, ...op.fields } : 
 const sortEntries = (list) => list.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
 
 /** Sends every queued change in order. Returns how many went through. */
+let sending = null; // the queued change that's on its way to the sheet right now
 async function flushOutbox() {
   let sent = 0;
-  while (state.outbox.length) {
-    const op = state.outbox[0];
-    if (op.op === 'add') await call({ action: 'add', entry: op.entry });
-    else if (op.op === 'update') await call({ action: 'update', id: op.id, fields: op.fields });
-    else if (op.op === 'delete') await call({ action: 'delete', id: op.id });
-    else if (op.op === 'settings') await call({ action: 'settings', settings: op.settings });
-    else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
-    else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
-    else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
-    else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
-    else if (op.op === 'extra') {
-      try {
-        await call({ action: 'extras', key: op.key, value: op.value });
-        state.extrasUnsent = state.extrasUnsent.filter((k) => k !== op.key);
-      } catch (e) {
-        // the sheet's script predates extras: keep the value on this phone and don't block the queue
-        if (!/Unknown action/i.test(e.message)) throw e;
-        if (!state.extrasUnsent.includes(op.key)) state.extrasUnsent = [...state.extrasUnsent, op.key];
+  try {
+    while (state.outbox.length) {
+      const op = sending = state.outbox[0];
+      if (op.op === 'add') await call({ action: 'add', entry: op.entry });
+      else if (op.op === 'update') await call({ action: 'update', id: op.id, fields: op.fields });
+      else if (op.op === 'delete') await call({ action: 'delete', id: op.id });
+      else if (op.op === 'settings') await call({ action: 'settings', settings: op.settings });
+      else if (op.op === 'plan') await call({ action: 'plan', plan: op.plan });
+      else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
+      else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
+      else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
+      else if (op.op === 'extra') {
+        try {
+          await call({ action: 'extras', key: op.key, value: op.value });
+          state.extrasUnsent = state.extrasUnsent.filter((k) => k !== op.key);
+        } catch (e) {
+          // the sheet's script predates extras: keep the value on this phone and don't block the queue
+          if (!/Unknown action/i.test(e.message)) throw e;
+          if (!state.extrasUnsent.includes(op.key)) state.extrasUnsent = [...state.extrasUnsent, op.key];
+        }
       }
+      // remove this change by identity, not shift(): while it was sending, a newer save of the same
+      // key, plan or accounts may have dropped it from the queue, and shift() would then throw away
+      // the next change instead (a phone-only extra that never reached the sheet)
+      const i = state.outbox.indexOf(op);
+      if (i >= 0) state.outbox.splice(i, 1);
+      sent++;
+      persist();
     }
-    state.outbox.shift();
-    sent++;
-    persist();
-  }
+  } finally { sending = null; }
   return sent;
 }
 
 function enqueue(op) {
   // collapse edits to something that hasn't left the phone yet
   const i = state.outbox.findIndex((o) => o.id === op.id && op.id);
-  if (i >= 0) {
+  // never fold into the change that's already sending: it has left with its old contents
+  if (i >= 0 && state.outbox[i] !== sending) {
     const prev = state.outbox[i];
     if (op.op === 'delete' && prev.op === 'add') { state.outbox.splice(i, 1); persist(); return; }
     if (op.op === 'update' && prev.op === 'add') { prev.entry = { ...prev.entry, ...op.fields }; persist(); return; }
