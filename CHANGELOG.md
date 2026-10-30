@@ -39,7 +39,16 @@ timeline
         v24 : Split a bill : People : Owed to you
         v25 : Setup guide : Sign in with Google (off until set up) : Never overwrites
         v26 : Your week : Allowance pace alert : One pace rule
+        v27 : Faster Activity and search : Same numbers
 ```
+
+---
+
+## v27: Faster with lots of history
+**30 October 2026** · no sheet update needed
+
+- **Faster with lots of history.** With three years of entries, the Activity tab opens about four times faster and search answers each letter about three times faster. Activity draws the newest rows first and adds more as you scroll, and keeps your place when something changes.
+- Home and the other screens reuse their sums instead of recounting everything on every redraw. The numbers are exactly the same.
 
 ---
 

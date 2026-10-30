@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **30 Oct 2026**, at **v26**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **30 Oct 2026**, at **v27**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -61,15 +61,15 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v26, 30 Oct 2026)
+## 5. Current state (v27, 30 Oct 2026)
 
-**Live on main** (newest first): v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 
 **In flight** (branches pushed, not merged):
-- `claude/perf2`: performance pass (memoise per-render maths, view transition on slow CPUs, Activity cap).
+- `claude/a11y`: accessibility pass (axe audit, VoiceOver labels, dialogs, contrast, zoom).
 
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New
@@ -91,13 +91,14 @@ categories learned from a wrong bulk filing can reinforce themselves (backlog).
    `curl -s https://api.github.com/repos/Bu9abi-dev/spendings/commits/main/status` shows "Vercel success".
 5. Update DECISIONS.md, BACKLOG.md, NOTES.md, and this file's sections 5 and 7.
 
-Gotchas: feature branches never bump VERSION or edit CHANGELOG (conflicts); when merging, keep **main's** `SHELL`
+Gotchas: **never edit `state.entries` or an entry in place** — replace the array (sums are cached on its identity,
+see model.js); feature branches never bump VERSION or edit CHANGELOG (conflicts); when merging, keep **main's** `SHELL`
 and test list and add the branch's files; `categoryMeta(id)?.label` for names, `pickerCategories`/`allCategories`
 for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** notice (`homeNotice` in home.js).
 
 ## 7. Session log (newest first)
 
-### 30 Oct 2026 · loop session (v15 → v26)
+### 30 Oct 2026 · loop session (v15 → v27)
 - Took over six wave-1 threads that had hit their usage limit. Ran councils over every branch, applied fixes, merged:
   activity filters (v15), smart categories (v16), monthly report (v17), custom categories (v18, asked for by
   Abdullah), budgets (v19), subscriptions + one Home notice (v20), outbox race fix (v21, found while fixing a flaky
@@ -107,4 +108,6 @@ for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** not
   built, security-reviewed (key race, never-overwrite), merged as v25 with Google off until a client ID is set.
 - Weekly summary + pace alert: council sent the pace alert back (three pace rules disagreed); one shared
   `allowancePace` in model.js now; merged as v26.
+- Performance pass (v27): DOM was the cost, not maths; lazy Activity rows + memoised sums; reviewer found and
+  the builder fixed a lost-scroll bug and a notice-order trap before merge.
 - Abdullah asked for this file.
