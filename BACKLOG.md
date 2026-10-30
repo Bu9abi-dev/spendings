@@ -8,13 +8,11 @@ project thread; the loop thread merges it. Move an item to Done with its version
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
 
-| 3 | BNPL tracking (council fixes) | `claude/bnpl` | Tabby/Tamara, auto-link with visible trail |
 | 4 | Savings goals and net worth | `claude/goals` | manual investments, read-only |
 
 
 ## Next
 
-- **BNPL in the one-notice order** (home.js `homeNotice`): overdue BNPL first, BNPL due soon after a new subscription.
 - **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning, what's due).
 - **Money owed (split expenses).** "Person" accounts so lending is a transfer, never spending. Council design pass first.
 - **Arabic / English toggle.** Touches every string.
@@ -31,6 +29,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v22 · Buy now, pay later: plans, auto-linked payments, due before payday, Home notice
 - v21 · Safer syncing: a change saved while another is sending is never dropped
 - v20 · Subscriptions: detector, monthly total, new-charge flag; Home shows one notice at a time
 - v19 · Category budgets: monthly limits per category, Insights bars, one Home nudge
