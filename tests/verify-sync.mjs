@@ -34,7 +34,7 @@ async function until(fn, ms) { const t0 = Date.now(); while (Date.now() - t0 < m
 let failed = 0;
 async function check(name, fn) { try { await fn(); console.log(`PASS  ${name}`); } catch (e) { failed++; console.log(`FAIL  ${name}: ${e.message}`); } }
 
-await p.goto('http://localhost:8765/#settings');
+await p.goto((process.env.BASE || 'http://localhost:8765/') + '#settings');
 await p.fill('input[name="url"]', URL_);
 await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');

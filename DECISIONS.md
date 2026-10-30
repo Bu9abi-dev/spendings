@@ -4,15 +4,31 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
-- **Subscriptions (`recurring.js`, Insights card + one Home line):** a place counts when its charges repeat
-  weekly (6-8 days), monthly (26-35) or yearly (350-380) with amounts within 15% of the previous charge, so a
-  small price rise stays one subscription (it shows "was X"). Weekly needs 3 charges, because two weekly shop
-  visits are a coincidence; two monthly or yearly charges are enough, but with only two they must match within
-  5% (otherwise two similar grocery trips would show up). Only Spend counts. Names are matched ignoring case,
-  digits, a trailing city and a "PAYPAL *" prefix. "New" = first charge from that place in the last 40 days;
-  "maybe cancelled" = next payment over 7 days overdue, left out of the monthly total. "Not a subscription"
-  saves the place in the Extras key `recurring` (`{ v: 1, ignored: [...] }`), with undo and a "Show again".
-  Home shows at most one line: a new subscription that charged this week, else one due in 3 days.
+- **Subscriptions (`recurring.js`, Insights card + one Home notice):** a place counts when its charges repeat weekly
+  (6-8 days, needs 4 charges), monthly (26-35) or yearly (350-380), amounts within 15% of the previous charge, so a
+  small price rise stays one subscription ("was X"). Two monthly or yearly charges are enough only if they match
+  within 5%. Groceries and Food & Drinks are never detected (a weekly shop or coffee is a habit), and Transport &
+  Fuel / Health need three charges, unless the name is a known subscription brand. Names are grouped by the shared
+  `merchantKey` from `categorize.js`; "Not a subscription" stores that same key in the Extras key `recurring`
+  (with undo and "Show again"). "New this month" = the current run started in the last 35 days (run start, not the
+  place's first ever charge). "Maybe cancelled" = next payment over 7 days late, left out of the total. Detection is
+  remembered per `state.entries` array. The card only shows on the current cycle. Home shows one notice, only when
+  actionable: a new subscription charged in the last 7 days, else one due within 3 days (`subscriptionNotice`,
+  returns `{ priority: 'new'|'due', text }` so Home can cap notices later). The notice opens the current cycle's
+  Insights card, where "Not a subscription" lives. The monthly report adds "Subscriptions AED X/month".
+- **Custom categories keep the sheet's names fixed.** A category's id is what the Ledger stores, so renaming one
+  (built-in or yours) only changes the label the app shows, and hiding only takes it out of the pickers. Past entries,
+  the Apple Pay Shortcut's menu and remembered merchants keep working, and no Ledger cell is ever rewritten. Your
+  own categories share the grey "other" colour, because the eight-colour palette is the checked colour-blind-safe set.
+  Saved in the `categories` extra. A category can only be deleted while no entry uses it; otherwise hide it.
+- **Apps Script accepts your own categories from the Shortcut** (`spendCategories_()` reads the Extras tab), and a
+  renamed label maps back to its id. Needs the script redeploy, like v12's Extras; until then a custom category sent
+  by the Shortcut lands in Needs review, which is the old behaviour.
+- **Ran one council over three branches** (smart-categories, activity-filters, monthly-report): five Sonnet advisors,
+  each reviewing all three, synthesis by the loop thread. Transcript: council/council-transcript-2026-10-30-wave1.md.
+- **Took over the wave-1 threads that hit their limit.** Budgets, subscriptions and BNPL were rebuilt by subagents
+  on their own branches from main.
+
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
   current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the
@@ -22,6 +38,18 @@ Choices made while running the app on my own, newest first, with the reason for 
 - **Release bumps after a thread's PR go straight to main** as a version + changelog commit, so I don't push to
   another thread's branch while it may still be working on it.
 
+- **Bulk edits are one undo step.** `batch(label, fn)` in store.js groups the changes: one undo entry, one
+  save, one redraw and one sync at the end. Undo replays the reversals backwards. Each entry still goes to
+  the sheet as its own add/update/delete, so Code.gs didn't change (a bulk delete of 50 is 50 quick calls).
+- **Activity filter totals count spending and income only.** Transfers and bank matches move money, they
+  aren't spending (money rule). Refunds show under "In", as they are income entries.
+- **Amount filters compare AED value**, so a USD entry is filtered by what it cost in dirhams.
+- **A transfer matches the account filter on either side**, so "ADCB" shows the allowance landing.
+- **Bulk category change only touches spending and income entries.** Transfers and bank matches have no
+  category; the sheet says how many stay as they are. Spending and income get their own category rows.
+- **Select mode hides the tab bar and + button** and puts Category and Delete in their place (like Photos).
+  Leaving the Activity tab drops the selection. Filters stay until cleared, so coming back keeps the view.
+
 - **Council on the foundation PR, lighter format.** Five advisors ran; they agreed so closely that I wrote the
   synthesis myself instead of spending six more agents on peer review and a chairman. Full council (with
   peer review) stays the rule for wave-1 features. Transcript: council/council-transcript-2026-10-30-foundation.md.
@@ -29,6 +57,16 @@ Choices made while running the app on my own, newest first, with the reason for 
   anything the old script could have stored. Tracked per key, not with one flag.
 - **Same account for allowance and main: Safe to spend is capped at that account's free money.** Otherwise
   Safe to spend could exceed the money that exists. Abdullah uses two accounts, so this changes nothing for him.
+
+- **Monthly report is one HTML page with its own light "paper" styles**, not a PDF library. iPhone Safari
+  turns any page into a PDF from the print sheet, so "Save as PDF" prints just the report (the app is hidden
+  while printing). Because print can be unreliable from a Home Screen app, **Share** also hands the report
+  over as a stand-alone web page file (Save to Files, AirDrop, or Print from there). No new dependency, works offline.
+- **The report counts money like the rest of the app**: transfers listed apart and never as spending,
+  refunds shown separately and taken off "Spent", bank matches only change "Total money". "Total money
+  at the end" uses only entries dated before the cycle ended. Budgets are read from Extras `budgets` as
+  `{ Category: 600 }` or `{ Category: { limit: 600 } }`, so it works with either shape the budgets branch picks.
+- **Per-cycle CSV uses the same columns as the full export**, so the two files line up in a spreadsheet.
 
 - **Review step uses the council skill.** The `council:council` skill is installed, so major features
   go through it before merging. Smaller fixes get an Opus code-review subagent instead.

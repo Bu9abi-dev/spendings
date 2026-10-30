@@ -27,7 +27,50 @@ timeline
         v12 : Money rows always add up : Extras tab for new features : Sheet update needed
         v13 : Testing the Shortcut logs nothing : Arabic digits read right : Faster screens
         v14 : Day-by-day and weekly spending : Top places : Categories over six cycles
+        v15 : Activity filters : Select and edit many : One undo
+        v16 : Category suggestions : File a whole shop at once : Only sure guesses act
+        v17 : Monthly report : Save as PDF : Cycle CSV
+        v18 : Your own categories : Rename and hide : Sheet keeps the names
 ```
+
+---
+
+## v18: Your own categories
+**30 October 2026** · sheet update optional
+
+- **Settings → Categories**: add your own categories (Coffee, Car, University…) with an icon, rename any category, or hide ones you don't use. Works for spending and money-in.
+- Renaming only changes what the app shows. Your sheet keeps the original name, so old entries, the Apple Pay Shortcut and remembered shops keep working.
+- Hidden categories leave the pickers but stay on old entries, in Insights, Activity filters and the monthly report. A category of your own can be deleted while no entry uses it.
+- Smart suggestions learn your own categories too, and never suggest a hidden one.
+- The sheet part (optional) lets the Shortcut send your own categories, and the sheet's summary tab lists them. Until the new `apps-script/Code.gs` is deployed, a payment sent with a custom category lands in Needs review, as before.
+
+---
+
+## v17: Monthly report
+**30 October 2026** · no sheet update needed
+
+- Insights has a **Monthly report** for any pay cycle: money in, spent, refunds and what you kept, where it went by category, your top shops, the allowance, and budgets once you set them. Every list adds up to the totals at the top.
+- **Save as PDF** prints the page. From the home-screen app it opens the report in Safari with a hint: Share → Print, then pinch out to save the PDF.
+- **Share report** sends the page, and **Export CSV** gives you just that cycle's entries.
+
+---
+
+## v16: Smarter categories
+**30 October 2026** · no sheet update needed
+
+- **Needs review suggests a category** for each payment, learned from how you filed the same shop before. Bank-style names like "CARREFOUR ABU DHABI AE" are matched to "Carrefour".
+- When the app is sure, one tap files every payment from that shop, and "File N with their suggestions" files all the sure ones at once. When it only has a guess ("Maybe like…"), you pick, so nothing gets filed wrongly behind your back.
+- Similar names that are different shops stay apart: Noon and Noon Food, Careem and Careem Food, Uber and Uber Eats.
+- The add sheet picks the category for a shop it knows well, and only suggests one when it's unsure.
+
+---
+
+## v15: Activity filters and bulk edit
+**30 October 2026** · no sheet update needed
+
+- Activity has **filters**: account, category, a cycle or your own dates, and an amount range. The total of what's showing sits on top, with spending, refunds and money in shown separately.
+- **Select** lets you pick several entries and change their category or delete them in one go. Before deleting, it lists what will go. One Undo puts them all back.
+- Selecting never includes entries you can't see on screen. If more entries match than the list shows, it says so.
 
 ---
 

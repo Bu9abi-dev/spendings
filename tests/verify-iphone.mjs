@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const { chromium, devices } = require(process.env.PLAYWRIGHT || 'playwright');
 const OUT = process.argv[2] || '/tmp/verify-iphone';
 fs.mkdirSync(OUT, { recursive: true });
-const BASE = 'http://localhost:8765/';
+const BASE = (process.env.BASE || 'http://localhost:8765').replace(/\/?$/, '/');
 let fails = 0, findings = 0;
 const ok = (c, m, x = '') => { console.log(`${c ? 'PASS' : 'FAIL'}  ${m}${x ? '  ' + x : ''}`); if (!c) fails++; };
 const finding = (m) => { console.log(`FINDING ${m}`); findings++; };

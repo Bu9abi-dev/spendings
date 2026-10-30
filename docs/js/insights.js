@@ -1,6 +1,6 @@
 // Insights tab: where the money went, allowance pace, accounts, income and the last six cycles.
 import {
-  ACCOUNTS, SPEND_CATEGORIES, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
+  ACCOUNTS, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
 } from './model.js';
 import { state, getExtra, saveExtra } from './store.js';
 import { esc } from './ui.js';
@@ -19,13 +19,14 @@ const niceDay = (key) => { const [, m, d] = key.split('-').map(Number); return `
 
 /** The "Subscriptions" card: payments that repeat, with what they cost per month. */
 function subscriptionsCard() {
+  if (insightsCycle && insightsCycle !== currentCycle()) return ''; // only for the cycle we're in
   const ignored = ignoredSubs();
   const subs = detectRecurring(state.entries, state.settings, { ignored });
   if (!subs.length && !ignored.length) return '';
   const row = (s) => {
     const left = -daysUntil(s.next); // days since the expected date
     const when = s.isLate ? `No charge since ${niceDay(s.last)}, maybe cancelled`
-      : `${s.cadenceLabel} · next ${left > 0 ? `was ${niceDay(s.next)}` : niceDay(s.next)}`;
+      : `${s.cadenceLabel} · ${left > 0 ? `was due ${niceDay(s.next)}` : `expected ${niceDay(s.next)}`}`;
     return `<details class="sub-row${s.isLate ? ' late' : ''}">
       <summary>
         <span class="lg-icon" style="--tint:var(--series-other)">${icon('calendar', { size: 16 })}</span>
@@ -33,7 +34,7 @@ function subscriptionsCard() {
         <span class="sub-amt num"><b>${fmt(s.amount)}</b><small>${s.cadence === 'monthly' ? 'a month' : s.cadence === 'weekly' ? 'a week' : 'a year'}</small></span>
       </summary>
       <div class="sub-more">
-        ${s.isNew ? '<span class="sub-flag">New — started charging</span>' : ''}
+        ${s.isNew ? '<span class="sub-flag">New this month</span>' : ''}
         ${s.was ? `<span class="sub-flag">Price changed: AED ${fmt(s.was)} to ${fmt(s.amount)}</span>` : ''}
         <p>${s.count} payments so far · about AED ${fmt(s.monthly, { whole: true })} a month</p>
         <button type="button" class="btn-plain" data-sub-ignore="${esc(s.key)}">Not a subscription</button>
@@ -56,6 +57,12 @@ export function subsClick(t) {
 }
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
 
+/** Back to the cycle we're in (the Home subscription line leads to a card that only shows there). */
+export const showCurrentInsights = () => { insightsCycle = null; };
+
+/** The cycle Insights is showing (the monthly report opens on it). */
+export const insightsShown = () => insightsCycle || currentCycle();
+
 /** Step the cycle shown by -1 or +1; never past the current one. */
 export function shiftInsights(delta) {
   insightsCycle = shiftCycle(insightsCycle || currentCycle(), delta);
@@ -68,12 +75,12 @@ export function renderInsights() {
   const isCurrent = cyc === currentCycle();
   const sum = summarize(state.entries, cyc, s, state.plan);
 
-  const main = SPEND_CATEGORIES.filter((c) => c.slot);
-  const otherTotal = ['Family & Gifts', 'Other', 'Uncategorised'].reduce((a, k) => a + (sum.byCategory.get(k) || 0), 0)
-    + [...sum.byCategory].filter(([k]) => !SPEND_CATEGORIES.some((c) => c.id === k) && k !== 'Uncategorised').reduce((a, [, v]) => a + v, 0);
+  const main = allCategories('Spend').filter((c) => c.slot); // hidden built-ins keep their colour, so the donut matches the legend
+  // everything without its own colour: Family, Other, your own and hidden categories, and Needs category
+  const otherTotal = [...sum.byCategory].filter(([k]) => !main.some((c) => c.id === k)).reduce((a, [, v]) => a + v, 0);
   const slices = [...main.map((c) => ({ label: c.short, value: sum.byCategory.get(c.id) || 0, color: seriesColor(c.slot) })), { label: 'Other', value: otherTotal, color: 'var(--series-other)' }];
 
-  const legendRows = [...SPEND_CATEGORIES, { id: 'Uncategorised', short: 'Needs category', icon: 'tray', slot: 0 }]
+  const legendRows = [...allCategories('Spend'), { id: 'Uncategorised', short: 'Needs category', icon: 'tray', slot: 0 }]
     .map((c) => ({ c, v: sum.byCategory.get(c.id) || 0 }))
     .filter((r) => r.v > 0)
     .sort((a, b) => b.v - a.v);
@@ -123,7 +130,7 @@ export function renderInsights() {
   const restOfSpend = sum.spent - merchants.reduce((a, m) => a + m.total, 0);
 
   const trends = categoryTrends(state.entries, cyc, s, 6);
-  const catOf = (id) => SPEND_CATEGORIES.find((c) => c.id === id)
+  const catOf = (id) => categoryMeta(id)
     || (id === 'Uncategorised' ? { id, short: 'Needs category', icon: 'tray', slot: 0, warn: true } : { id, icon: 'dots', slot: 0 });
   const trendNote = (t) => (t.usual == null ? 'Nothing before this' : `Usual AED ${fmt(t.usual, { whole: true })}`);
 
@@ -138,13 +145,18 @@ export function renderInsights() {
       <button type="button" class="icon-btn" data-cyc="1" aria-label="Next cycle" ${isCurrent ? 'disabled' : ''}>${icon('chevR', { size: 20 })}</button>
     </div>
 
+    <section class="group report-link">
+      <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span>
+        <span class="row-main"><span class="row-title">${cycleName(cyc, true)} report</span><span class="row-sub">Save it as a PDF or CSV</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
+    </section>
+
     <section class="panel">
       <h3 class="panel-title">Where it went</h3>
       ${donut(slices, { total: sum.spent, centerLabel: 'Spent' })}
       <div class="legend">
         ${legendRows.length ? legendRows.map(({ c, v }) => `<div class="lg-row">
           <span class="lg-icon" style="--tint:${c.id === 'Uncategorised' ? 'var(--warn)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}</span>
-          <span class="lg-name">${c.id === 'Uncategorised' ? 'Needs category' : c.id}</span>
+          <span class="lg-name">${c.id === 'Uncategorised' ? 'Needs category' : esc(c.label || c.id)}</span>
           <span class="lg-bar"><i style="--w:${(v / Math.max(1, sum.spent)) * 100}%; --tint:${c.id === 'Uncategorised' ? 'var(--warn)' : seriesColor(c.slot)}"></i></span>
           <span class="lg-val num">${fmt(v, { whole: true })}</span>
           <span class="lg-pct num">${Math.round((v / Math.max(1, sum.spent)) * 100)}%</span>
