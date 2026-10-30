@@ -202,11 +202,20 @@ function finalize(e, { keepAED = false } = {}) {
    Every change records how to reverse itself. undo() replays the reversal without recording it. */
 const history = [];
 let muted = 0;
+let collecting = null; // set while batch() runs: steps gather here instead of the history
 function record(label, reverse) {
   if (muted) return;
+  if (collecting) { collecting.push(reverse); return; }
   history.push({ label, reverse });
   if (history.length > 30) history.shift();
   emit('history');
+}
+/** Several changes that undo together as one step, e.g. filing every payment from one merchant. */
+export function batch(label, fn) {
+  const outer = collecting, steps = [];
+  collecting = steps;
+  try { fn(); } finally { collecting = outer; }
+  if (steps.length) record(label, () => steps.reverse().forEach((r) => r()));
 }
 export const canUndo = () => history.length > 0;
 export const lastAction = () => history[history.length - 1]?.label || '';
@@ -457,10 +466,6 @@ export function moveAccount(name, delta) {
   commitAccounts(list);
 }
 
-export function suggestCategory(merchant) {
-  const k = merchantKey(merchant);
-  return k ? state.merchants[k] || '' : '';
-}
 
 /* ───── Demo ───── */
 

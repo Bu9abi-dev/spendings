@@ -651,6 +651,7 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .cat:active .cat-icon { transform: scale(0.9); }
 .cat.on .cat-icon { background: var(--cat); color: #fff; transform: scale(1.06); box-shadow: 0 4px 14px color-mix(in srgb, var(--cat) 40%, transparent); }
 .cat-name { font-size: 12px; font-weight: 500; color: var(--label-2); white-space: nowrap; }
+.cat.sug .cat-icon { box-shadow: inset 0 0 0 2px var(--cat); }
 .cat.on .cat-name { color: var(--label); font-weight: 650; }
 
 .keypad-wrap { flex: none; padding: 8px 8px 8px; background: var(--kbd-tray); }
@@ -699,6 +700,26 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .rc-cat:active { transform: scale(0.94); }
 .rc-cat.on { background: var(--cat); color: #fff; }
 .rc-cat.on .i { color: #fff; }
+/* smarter categories: the suggestion on each card, and "file all" at the top */
+.rc-cat.sug { box-shadow: inset 0 0 0 1.5px var(--cat); }
+.rc-suggest {
+  width: 100%; margin-bottom: 10px; padding: 10px 12px; border-radius: 16px;
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  background: color-mix(in srgb, var(--cat) 16%, var(--bg-2));
+  transition: transform 0.15s var(--ease-out);
+}
+.rc-suggest:active { transform: scale(0.98); }
+.rs-icon { width: 34px; height: 34px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--cat); color: #fff; }
+.rs-text { display: flex; flex-direction: column; min-width: 0; }
+.rs-text b { font-size: 16px; font-weight: 600; }
+.rs-text span { font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-hint { margin: -2px 0 10px; font-size: 13px; color: var(--label-2); }
+.rc-accept-all {
+  height: 46px; border-radius: 16px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 16px; font-weight: 600; color: var(--on-tint); background: var(--tint);
+  transition: transform 0.15s var(--ease-out);
+}
+.rc-accept-all:active { transform: scale(0.98); }
 
 /* shortcut guide */
 .guide { padding: 0 var(--gutter) 30px; }
