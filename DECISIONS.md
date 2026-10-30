@@ -4,6 +4,18 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Category budgets (branch `claude/category-budgets`):** limits are saved as `{ v: 1, limits: { <categoryId>: AED } }`
+  under the `budgets` extra, one limit for every cycle (no per-month overrides yet). "Spent" is exactly Insights'
+  `summarize().byCategory`: every account, transfers excluded, refunds not netted off (a refund doesn't free up budget).
+  80% is "near", 100% is "over" (exactly at the limit counts as over). Percent is shown rounded down so "99%" never sits
+  beside a red "over". Home shows at most one line, for the fullest budget, with "and N more" if several are flagged;
+  it isn't a real dismiss, it just disappears when nothing is at 80%, and tapping it opens Insights. Insights shows the
+  card for whichever cycle is being viewed, against the same limits; with no budgets it shows a "Set a budget" prompt that
+  jumps to Settings. Settings has a Budgets section (one row per category, tap for a sheet with a number field, Save, and
+  Remove); the keypad wasn't used, matching the payday plan's amount field. Unknown category ids (a category removed
+  later) still get a row, called by their id. Maths and HTML are in `budgets.js` (no store import, so it runs in Node
+  tests); the store wiring and sheet are in `budgets-settings.js`.
+
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
   current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the

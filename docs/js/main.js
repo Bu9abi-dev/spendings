@@ -11,6 +11,7 @@ import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
+import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import { renderActivity, activityList, activityFilter } from './activity.js';
 import { renderInsights, shiftInsights } from './insights.js';
@@ -98,6 +99,10 @@ function renderSettings() {
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
     <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
+
+    <h3 class="group-title" id="budgets">Budgets</h3>
+    <section class="group">${budgetsSettingsBlock()}</section>
+    <p class="group-foot">A limit per category for each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
@@ -344,7 +349,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || budgetsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic(); go(goBtn.dataset.go);

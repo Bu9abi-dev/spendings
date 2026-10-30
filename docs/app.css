@@ -1183,3 +1183,36 @@ html.sheet-open body::after { opacity: 0; }
 .conn-details > summary::-webkit-details-marker { display: none; }
 .conn-details[open] > summary .chev { transform: rotate(180deg); }
 .conn-details .chev { transition: transform 0.25s var(--ease-out); margin-left: auto; }
+
+/* Category budgets */
+.bg-list { display: grid; gap: 14px; }
+.bg-row { display: grid; grid-template-columns: 28px minmax(0, 1fr) auto; grid-template-areas: "ic name pct" "bar bar bar" "left left left"; align-items: center; gap: 4px 10px; font-size: 15px; }
+.bg-row .lg-icon { grid-area: ic; }
+.bg-name { grid-area: name; display: grid; min-width: 0; }
+.bg-name b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bg-name small, .bg-left { font-size: 12px; color: var(--label-2); }
+.bg-pct { grid-area: pct; font-weight: 600; }
+.bg-row.near .bg-pct { color: var(--warn); }
+.bg-row.over .bg-pct { color: var(--neg); }
+.bg-track { grid-area: bar; height: 8px; border-radius: 4px; background: var(--fill-3); overflow: hidden; }
+.bg-track i { display: block; height: 100%; width: var(--w); border-radius: 4px; background: var(--tint); animation: grow 0.8s var(--ease-out) both; transform-origin: left; }
+.bg-left { grid-area: left; }
+.budget-prompt { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; min-height: 48px; }
+.budget-prompt .row-main { flex: 1; min-width: 0; }
+.budget-nudge {
+  display: flex; align-items: center; gap: 10px;
+  width: calc(100% - 2 * var(--gutter));
+  margin: 12px var(--gutter) 0;
+  padding: 10px 14px;
+  border-radius: 18px;
+  text-align: left; font-size: 15px;
+  background: color-mix(in srgb, var(--warn) 9%, var(--bg-2));
+  transition: transform 0.16s var(--ease-out);
+}
+.budget-nudge.over { background: color-mix(in srgb, var(--neg) 9%, var(--bg-2)); }
+.budget-nudge:active { transform: scale(0.98); }
+.bn-icon { color: var(--warn); display: grid; }
+.budget-nudge.over .bn-icon { color: var(--neg); }
+.bn-text { flex: 1; min-width: 0; display: grid; font-weight: 500; }
+.bn-text small { font-size: 12px; font-weight: 400; color: var(--label-2); }
+@media (prefers-reduced-motion: reduce) { .bg-track i { animation: none; } .budget-nudge { transition: none; } }

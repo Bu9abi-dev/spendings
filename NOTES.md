@@ -40,6 +40,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/views.js` | Shared bits: entry row, sync badge, large title + undo button, demo banner. |
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
 | `docs/js/charts.js` | SVG charts. |
+| `docs/js/budgets.js` | Category budgets: pure maths (spent vs limit, near/over) plus the Insights card, Home line and Settings rows HTML. |
+| `docs/js/budgets-settings.js` | Budgets store wiring: read/save limits in the `budgets` extra, and the Settings edit sheet. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature

@@ -8,6 +8,8 @@ import { icon } from './icons.js';
 import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
 import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
+import { budgetRows, budgetsCard } from './budgets.js';
+import { currentLimits } from './budgets-settings.js';
 
 let insightsCycle = null;
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
@@ -107,6 +109,8 @@ export function renderInsights() {
         </div>`).join('') : '<p class="muted center">No spending in this cycle.</p>'}
       </div>
     </section>
+
+    ${budgetsCard(budgetRows(sum.byCategory, currentLimits()), { isCurrent })}
 
     <section class="panel">
       <h3 class="panel-title">Day by day</h3>
