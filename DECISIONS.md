@@ -14,12 +14,36 @@ Choices made while running the app on my own, newest first, with the reason for 
   `Split` (ids survive the sheet round trip and no column changes); their share is rounded down to the fil, so the
   leftover fil is yours, in the entry's own currency (each half is then priced in AED separately, so a USD split can
   differ from the whole by a fil in AED). One person per split; a split payment can't be split again (edit their
-  half instead). "Change both" copies date, currency and card to the other half, never the amount. A removed person
+  half instead). "Change both" copies date, currency and card to the other half (amounts: see the council fixes below). A removed person
   stays in `people` (so last cycle's loans still count as allowance used) and re-adding the name brings them back.
   People take Accounts-tab rows, and the script keeps 20, so adding stops at 20 accounts and people together.
-  Settle up defaults to the main account. Code.gs: `mapCard_` and `ownAccountIn_` skip people, because `mapCard_`
+  Code.gs: `mapCard_` and `ownAccountIn_` skip people, because `mapCard_`
   also matches a card by account name as a substring (a person called "Visa" or "Al" could have caught a card);
-  with no Extras tab nothing changes. Bulk delete in Activity only warns that the other half stays.
+  with no Extras tab nothing changes.
+- **Money owed, council fixes (30 Oct, after the build review):**
+  - **Bank alert after a split.** `twinOf_` also matches an auto-logged Spend (Apple Pay / Bank alert) whose
+    `<id>-split` Transfer (looked up by id: its source is `Split`, not an automatic one; same card and currency) makes
+    the amounts add up to the alert. Still one-to-one (the Spend becomes `Apple Pay + Bank alert`), and a split Spend is
+    never turned into a top-up. Old payloads and unsplit payments match exactly as before. Needs the script redeploy.
+  - **USD splits add up in AED.** Their share is priced at the rate; yours is the bill's AED price minus theirs (the
+    bill keeps the price it already had). Both prices go to the sheet: `updateEntry` sends `amountAED` only when the
+    caller sets it on purpose (a split, "Change both"), so normal edits and new amounts are still repriced by the sheet;
+    `addEntry` and the script's add keep a USD entry's given `amountAED` (an add without one is priced as before).
+  - **Settle up pays back where the money came from:** the account of the latest Transfer from your own accounts to
+    that person (a loan or their share of a split), else the main account. From the allowance card that's a top-up,
+    so Safe to spend recovers. "You owe" still pays from the main account. The sheet is titled "Ahmed pays you back" /
+    "You pay Ahmed".
+  - **Home has one notice line.** The owed line sits in "Where your money is", under "All your money" (which it isn't
+    part of). When that card isn't on screen (an account lens, balances not set) it joins the notices at the lowest
+    rank (`owed`), so it never stacks under another.
+  - **"Change both" keeps the bill adding up.** A new amount on one half: the card was charged the whole bill, so the
+    bill stays and the other half takes the difference; if the new amount is the whole bill or more, the other half
+    grows in proportion instead. The question sheet says which, with the new amount. Bulk delete in Activity now takes
+    the other half of any ticked half too (one undo) and says so.
+  - Split toast "Split · your share AED 43.68"; "Split with someone" sits above the keypad; Settings → People says,
+    while extras are phone-only, that the script update makes Apple Pay card matching ignore people; the BNPL plan's
+    "Paid from" never offers a person (a plan saved with one shows the allowance card).
+  - `verify-owed` adds a BNPL plan and a split in one cycle: Home total, Safe to spend and `cycleReport` agree.
 
 - **The flaky extras test was a test bug, but it led to a real app race, now fixed.** The test's `settle()`
   used `waitForFunction` with an `async` check. Playwright treats the Promise the check returns as "true", so

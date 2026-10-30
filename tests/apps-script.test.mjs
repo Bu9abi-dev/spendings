@@ -263,6 +263,44 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   // a merchant that merely contains an account's letters is still a purchase
   r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('12.00', 'CASHEW HOUSE') });
   assert.equal(r.entry.type, 'Spend');
+
+  // a payment split in the app (money owed): Apple Pay logs 100, the app cuts it to your 60 plus a
+  // `-split` Transfer of 40 to a person; the bank alert for the full 100 is the same payment
+  p2({ action: 'accounts', accounts: [...p2({ action: 'list' }).accounts, { name: 'Ahmed', note: 'Person', color: 'graphite', wallet: '' }] });
+  p2({ action: 'extras', key: 'people', value: { v: 1, names: ['Ahmed'] } });
+  r = p2({ source: 'applepay', amount: 'AED 100.00', merchant: 'Zuma', card: 'ADCB Debit', category: 'Food & Drinks' });
+  const sid = r.entry.id;
+  assert.equal(p2({ action: 'update', id: sid, fields: { amount: 60 } }).ok, true);
+  p2({ action: 'add', entry: { id: `${sid}-split`, type: 'Transfer', amount: 40, account: 'ADCB', toAccount: 'Ahmed', note: 'Split: Zuma', source: 'Split', date: r.entry.date } });
+  const n1 = ledger().length;
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('100.00', 'ZUMA') });
+  assert.equal(r.duplicate, true, 'the alert for the whole bill matches the split payment');
+  assert.match(r.message, /^Already logged · AED 100 · Zuma · split with Ahmed/);
+  assert.equal(ledger().length, n1, 'nothing logged twice');
+  const zuma = ledger().find((e) => e.id === sid);
+  assert.equal(zuma.amount, 60, 'your share stays your share');
+  assert.equal(zuma.type, 'Spend');
+  assert.equal(zuma.source, 'Apple Pay + Bank alert', 'paired once');
+  // one-to-one: a second alert for 100 (another real payment) is logged
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('100.00', 'ZUMA') });
+  assert.equal(r.duplicate, false);
+  assert.equal(ledger().length, n1 + 1);
+  // an alert for just your share or just theirs doesn't match the split pair
+  r = p2({ source: 'applepay', amount: 'AED 100.00', merchant: 'Zuma', card: 'ADCB Debit', category: 'Food & Drinks' });
+  assert.equal(r.duplicate, true, 'the new bank alert pairs with its own Apple Pay');
+  r = p2({ source: 'applepay', amount: 'AED 40.00', merchant: 'Zuma', card: 'ADCB Debit', category: 'Food & Drinks' });
+  assert.equal(r.duplicate, false);
+
+  // a USD split: each half keeps the price the app gave it, so the halves add up to the whole in AED
+  r = p2({ action: 'add', entry: { id: 'usd1', type: 'Spend', amount: 10.01, currency: 'USD', account: 'ADCB', category: 'Shopping', source: 'App', amountAED: 36.77 } });
+  assert.equal(r.entries[0].amountAED, 36.77, 'an app-priced USD entry keeps its price');
+  p2({ action: 'update', id: 'usd1', fields: { amount: 5.01, amountAED: 18.41 } });
+  p2({ action: 'add', entry: { id: 'usd1-split', type: 'Transfer', amount: 5, currency: 'USD', account: 'ADCB', toAccount: 'Ahmed', source: 'Split', amountAED: 18.36 } });
+  const usd = ledger().filter((e) => e.id === 'usd1' || e.id === 'usd1-split');
+  assert.equal(Math.round(usd.reduce((t, e) => t + e.amountAED, 0) * 100) / 100, 36.77);
+  // an add without a price (the Shortcut, older app versions) is still priced by the sheet
+  r = p2({ action: 'add', entry: { id: 'usd2', type: 'Spend', amount: 10, currency: 'USD', account: 'ADCB', category: 'Shopping' } });
+  assert.equal(r.entries[0].amountAED, 36.73);
 }
 
 // Extras: one JSON value per key, updated in place, returned by list, kept through a reset

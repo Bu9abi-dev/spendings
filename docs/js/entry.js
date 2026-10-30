@@ -1,7 +1,7 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
-import { ACCOUNTS, PEOPLE_ACCOUNTS, isPerson, categoryMeta, pickerCategories, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
+import { ACCOUNTS, PEOPLE_ACCOUNTS, isPerson, categoryMeta, pickerCategories, seriesColor, money, fmt, dubaiParts, balances, toAED } from './model.js';
 import { state, addEntry, updateEntry, deleteEntry, setPrefs, undo, batch } from './store.js';
-import { splitPartner, splitTransfer, partnerPatch, personOf } from './people.js';
+import { splitPartner, splitTransfer, partnerPatch, personOf, splitPrices, rescaledPartner } from './people.js';
 import { openSplit, askLinked } from './people-ui.js';
 import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
@@ -16,7 +16,7 @@ function localInputValue(iso) {
 }
 const fromLocalInput = (v) => new Date(`${v}:00+04:00`).toISOString();
 
-export function openEntry(existing = null, preset = {}) {
+export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
   const e = existing ? { ...existing } : {
     type: 'Spend', amount: 0, currency: 'AED', account: state.settings.allowanceAccount, toAccount: '',
     category: '', merchant: '', note: '', date: new Date().toISOString(), ...preset,
@@ -27,7 +27,7 @@ export function openEntry(existing = null, preset = {}) {
   const html = `
     <header class="sheet-head">
       <button class="text-btn" data-act="cancel" type="button">Cancel</button>
-      <h2 class="sheet-title">${existing ? 'Edit entry' : 'New entry'}</h2>
+      <h2 class="sheet-title">${existing ? 'Edit entry' : esc(title || 'New entry')}</h2>
       ${existing ? `<button class="icon-btn danger" data-act="delete" type="button" aria-label="Delete entry">${icon('trash', { size: 20 })}</button>` : '<span class="icon-btn-spacer"></span>'}
     </header>
     <div class="segmented glass" role="radiogroup" aria-label="Type">
@@ -71,10 +71,10 @@ export function openEntry(existing = null, preset = {}) {
         </label>
       </div>
       <p class="split-note" hidden></p>
-      <button type="button" class="dup-btn split-btn" data-act="split" hidden>${icon('split', { size: 18 })}Split with someone</button>
       ${existing ? `<button type="button" class="dup-btn" data-act="duplicate">${icon('copy', { size: 18 })}Log this again</button>` : ''}
     </div>
     <div class="keypad-wrap">
+      <button type="button" class="dup-btn split-btn" data-act="split" hidden>${icon('split', { size: 18 })}Split with someone</button>
       <div class="keypad" role="group" aria-label="Amount keypad">
         ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" class="key" data-key="${k}" aria-label="${k === 'del' ? 'Delete digit' : k === '.' ? 'Decimal point' : k}">${k === 'del' ? icon('backspace', { size: 24 }) : k}</button>`).join('')}
       </div>
@@ -347,12 +347,16 @@ export function openEntry(existing = null, preset = {}) {
           openSplit({ amount: e.amount, currency: e.currency, label: merchantInput.value.trim() }, ({ person, mine, theirs }) => {
             const fields = collect();
             const total = e.amount;
+            // a USD bill: their share priced at the rate, yours the rest of the bill's AED price (kept when unchanged)
+            const same = existing && +existing.amount === +fields.amount && existing.currency === fields.currency;
+            const prices = splitPrices(same ? toAED(existing, state.settings) : toAED({ amount: fields.amount, currency: fields.currency }, state.settings), theirs, fields.currency, state.settings);
             batch(`Split ${money(total, fields.currency)} with ${person}`, () => {
-              const spend = existing ? updateEntry(existing.id, { ...fields, amount: mine }) : addEntry({ ...fields, amount: mine });
-              addEntry(splitTransfer(spend, person, theirs));
+              const mineFields = { ...fields, amount: mine, ...(prices ? { amountAED: prices.mineAED } : {}) };
+              const spend = existing ? updateEntry(existing.id, mineFields) : addEntry(mineFields);
+              addEntry({ ...splitTransfer(spend, person, theirs), ...(prices ? { amountAED: prices.theirsAED } : {}) });
             });
             close();
-            toast(`Split with ${esc(person)} · your share ${money(mine, fields.currency, { fixed: true })}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
+            toast(`Split · your share ${money(mine, fields.currency, { fixed: true })}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
           });
           return;
         }
@@ -373,12 +377,14 @@ export function openEntry(existing = null, preset = {}) {
             // half of a split: offer to carry the change to the other half, as one undo step
             askLinked(existing, 'edit', (how) => {
               batch(`Edited ${money(fields.amount, fields.currency)}${how === 'both' ? ' and its other half' : ''}`, () => {
-                const saved = updateEntry(existing.id, fields);
-                if (how === 'both' && saved) updateEntry(other.id, partnerPatch(saved, other));
+                if (how !== 'both') { updateEntry(existing.id, fields); return; }
+                const { mine: f1, other: f2 } = bothHalves(existing, fields, other);
+                const saved = updateEntry(existing.id, f1);
+                if (saved) updateEntry(other.id, { ...partnerPatch(saved, other, existing), ...f2 });
               });
               close();
               toast(`Updated · ${money(fields.amount, fields.currency)}${how === 'both' ? ' · both halves' : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
-            });
+            }, null, fields);
             return;
           }
           if (existing) updateEntry(existing.id, fields);
@@ -392,6 +398,21 @@ export function openEntry(existing = null, preset = {}) {
           toast(`${existing ? 'Updated' : 'Saved'} · ${money(fields.amount, fields.currency)}${fields.category ? ' · ' + fields.category : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
         }
       });
+
+      // "Change both" on a USD split whose amount or currency changed: price the halves so they add up to the
+      // bill in AED (the bill keeps its old AED price when its total and currency stay the same)
+      function bothHalves(before, fields, other) {
+        const r = rescaledPartner(before, fields, other);
+        const otherAmount = r ? r.amount : other.amount;
+        if (fields.currency === 'AED' || (!r && fields.currency === before.currency)) return { mine: fields, other: {} };
+        const keep = r?.keepsTotal && fields.currency === before.currency;
+        const whole = keep ? toAED(before, state.settings) + toAED(other, state.settings) : toAED({ amount: +fields.amount + +otherAmount, currency: fields.currency }, state.settings);
+        const editedIsTheirs = before.type === 'Transfer';
+        const pr = splitPrices(whole, editedIsTheirs ? fields.amount : otherAmount, fields.currency, state.settings);
+        return editedIsTheirs
+          ? { mine: { ...fields, amountAED: pr.theirsAED }, other: { amountAED: pr.mineAED } }
+          : { mine: { ...fields, amountAED: pr.mineAED }, other: { amountAED: pr.theirsAED } };
+      }
 
       function collect() {
         return {

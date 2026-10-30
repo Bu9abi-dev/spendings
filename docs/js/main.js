@@ -1,5 +1,5 @@
 import {
-  ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
+  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
   state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
@@ -107,7 +107,7 @@ function renderSettings() {
 
     <h3 class="group-title" id="people">People</h3>
     <section class="group">${peopleSettingsBlock()}</section>
-    <p class="group-foot">Friends you split bills with or lend to. What they owe isn’t counted as your money; Home shows it on its own line.</p>
+    <p class="group-foot">Friends you split bills with or lend to. What they owe isn’t counted as your money; Home shows it under “Where your money is”.${extrasOnPhoneOnly() && PEOPLE_ACCOUNTS.length ? ' <span class="people-script-hint">Updating your sheet’s script also makes Apple Pay card matching ignore people.</span>' : ''}</p>
 
     <h3 class="group-title" id="categories">Categories</h3>
     <section class="group">${categoriesSettingsBlock()}</section>

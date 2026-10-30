@@ -1459,3 +1459,11 @@ html.sheet-open body::after { opacity: 0; }
 .linked-btn + .linked-btn { margin-top: 10px; }
 @media (prefers-reduced-motion: reduce) { .pc-settle { transition: none; } }
 .owed-line { min-height: 44px; }
+/* what people owe, under "All your money" (it isn't part of it) */
+.where-owed { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 2px; padding: 0 0 0 19px; border-top: 0.5px solid var(--sep); text-align: left; font-size: 15px; color: var(--label-2); }
+.where-owed > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.where-owed > .i:first-child { color: var(--tint-text); }
+.where-owed .chev { color: var(--label-3); }
+/* Split with someone, above the keypad so it's in view without scrolling */
+.keypad-wrap .split-btn { margin: 0 auto 8px; height: 44px; }
+.keypad-wrap .split-btn[hidden] { display: none; }

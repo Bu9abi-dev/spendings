@@ -50,8 +50,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/categorize.js` | Learns merchant → category from past entries; `cleanMerchant` is the one shop-name normaliser. |
 | `docs/js/categories.js` | Settings → Categories (your own, rename, hide). Lists live in model.js (`setCategoryList`, `allCategories`, `pickerCategories`, `categoryMeta(id).label`). |
 | `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
-| `docs/js/people.js` | Pure money-owed maths: split shares, linked halves (`${id}-split`), settle-up preset, recent people, Home line text. People flags and `peopleBalances`/`moneyTotal` live in model.js (`setPeopleList`, `isPerson`, `PEOPLE_ACCOUNTS`). |
-| `docs/js/people-ui.js` | Settings → People, add/rename/remove a person (`people` extra + account, one undo step), Home "Owed to you" line, People sheet with Settle up, split sheet, "half of a split" question. |
+| `docs/js/people.js` | Pure money-owed maths: split shares and USD prices (`splitPrices`), linked halves (`${id}-split`), "Change both" amounts (`rescaledPartner`), settle-up preset and account (`lentFrom`), recent people, Home line text. People flags and `peopleBalances`/`moneyTotal` live in model.js (`setPeopleList`, `isPerson`, `PEOPLE_ACCOUNTS`). |
+| `docs/js/people-ui.js` | Settings → People, add/rename/remove a person (`people` extra + account, one undo step), Home "Owed to you" line (in "Where your money is", or the lowest-rank notice), People sheet with Settle up, split sheet, "half of a split" question. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature

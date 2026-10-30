@@ -5,7 +5,7 @@ import { PEOPLE_ACCOUNTS, isPerson, accountMeta, balances, fmt, money, dayKey, d
 import { state, getExtra, saveExtra, batch, addAccount, updateAccount, removeAccount, nameTaken, undo } from './store.js';
 import {
   PEOPLE_KEY, SPLIT_PARTS, peopleBalances, withPerson, renamedPerson, splitShares, recentPeople, personEntries, settleUpPreset,
-  owedText, balanceWords, personOf, splitPartner,
+  owedText, balanceWords, personOf, splitPartner, lentFrom, settleUpTitle, rescaledPartner,
 } from './people.js';
 import { openEntry } from './entry.js';
 import { openSheet, haptic, toast, esc } from './ui.js';
@@ -134,12 +134,14 @@ export function openPersonEdit(name, { onSaved } = {}) {
 
 /* ───────────────────────── Home ───────────────────────── */
 
-/** "Owed to you AED X · You owe AED Y" as one line that opens the People sheet; '' when nothing is owed. */
-export function owedLineHTML() {
+/** "Owed to you AED X · You owe AED Y", opening the People sheet; '' when nothing is owed.
+    Home shows it inside "Where your money is", under the total it isn't part of ({ inCard: true }).
+    Without that card on screen it's Home's one notice line, at the lowest rank. */
+export function owedLineHTML({ inCard = false } = {}) {
   const sum = peopleBalances(state.entries, state.settings);
   const text = owedText(sum);
   if (!text) return '';
-  return `<button type="button" class="sub-line owed-line" data-act="people">${icon('people', { size: 16 })}<span>${esc(text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>`;
+  return `<button type="button" class="${inCard ? 'where-owed' : 'sub-line'} owed-line" data-act="people">${icon('people', { size: 16 })}<span>${esc(text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>`;
 }
 
 /** How an entry changed what a person owes: + they owe you more, − you owe them more. */
@@ -199,10 +201,12 @@ export function openPeople() {
         if (st) {
           const name = st.dataset.settle;
           const bal = balances(state.entries, state.settings).get(name)?.balance || 0;
-          const preset = settleUpPreset(name, bal, state.settings.emergencyAccount);
+          // paid back into the account the money was lent from (the allowance card: Safe to spend recovers)
+          const into = bal > 0 ? lentFrom(state.entries, name, state.settings.emergencyAccount) : state.settings.emergencyAccount;
+          const preset = settleUpPreset(name, bal, into);
           if (!preset) return redraw();
           haptic(); close();
-          setTimeout(() => openEntry(null, preset), 280);
+          setTimeout(() => openEntry(null, preset, { title: settleUpTitle(name, bal) }), 280);
         }
       });
     },
@@ -294,10 +298,21 @@ export function openSplit({ amount, currency = 'AED', label = '' }, onDone) {
 
 /* ───────────────────────── Linked halves ───────────────────────── */
 
+const person0 = (entry, partner) => personOf(entry) || personOf(partner);
+
 /** One half of a split is being changed or deleted: ask whether the other half goes too.
     choose('both' | 'one') runs on a tap; Cancel does nothing. */
-export function askLinked(entry, mode, choose, onCancel) {
+export function askLinked(entry, mode, choose, onCancel, edited = null) {
   const partner = splitPartner(entry, state.entries);
+  // an amount change: say what "Change both" does to the other half's amount
+  const r = edited ? rescaledPartner(entry, edited, partner) : null;
+  const cur = (edited || entry).currency;
+  const otherName = partner.type === 'Transfer' ? `${esc(person0(entry, partner))}’s share` : 'your share';
+  const bothFoot = r
+    ? (r.keepsTotal
+      ? `Both keeps the bill at ${esc(money(r.total, cur, { fixed: true }))}: ${otherName} becomes ${esc(money(r.amount, cur, { fixed: true }))}. Date, currency and card match too.`
+      : `Both keeps the same split: ${otherName} becomes ${esc(money(r.amount, cur, { fixed: true }))}, a bill of ${esc(money(r.total, cur, { fixed: true }))}. Date, currency and card match too.`)
+    : 'Both keeps the date, currency and card the same on each half. Each keeps its own amount.';
   const person = personOf(entry) || personOf(partner);
   const other = partner.type === 'Transfer' ? `${esc(person)}’s share (${esc(money(partner.amount, partner.currency, { fixed: true }))})` : `your share (${esc(money(partner.amount, partner.currency, { fixed: true }))}${partner.merchant ? ` at ${esc(partner.merchant)}` : ''})`;
   const del = mode === 'delete';
@@ -309,7 +324,7 @@ export function askLinked(entry, mode, choose, onCancel) {
         <p class="reset-lede">This is half of a payment split with <b>${esc(person)}</b>. The other half is ${other}.</p>
         <button type="button" class="dup-btn${del ? ' danger-btn solid' : ''} linked-btn" data-act="both">${del ? 'Delete both' : 'Change both'}</button>
         <button type="button" class="dup-btn linked-btn" data-act="one">${del ? 'Delete only this one' : 'Only this one'}</button>
-        <p class="group-foot center">${del ? 'Deleting only this one leaves the other half as it is.' : 'Both keeps the date, currency and card the same on each half. Each keeps its own amount.'}</p>
+        <p class="group-foot center">${del ? 'Deleting only this one leaves the other half as it is.' : bothFoot}</p>
       </div>`,
     onMount(sheet, close) {
       sheet.addEventListener('click', (ev) => {

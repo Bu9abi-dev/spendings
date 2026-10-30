@@ -245,15 +245,20 @@ export function openBulkCategory(onDone) {
 
 /** Ask once, then delete every ticked entry as one undoable step. */
 export function openBulkDelete(onDone) {
-  const list = selectedEntries();
-  if (!list.length) return;
+  const ticked = selectedEntries();
+  if (!ticked.length) return;
+  // a split payment goes as a whole: the other half of a ticked half goes too (same undo step)
+  const ids = new Set(ticked.map((e) => e.id));
+  const halves = [];
+  for (const e of ticked) {
+    const o = splitPartner(e, state.entries);
+    if (o && !ids.has(o.id)) { ids.add(o.id); halves.push(o); }
+  }
+  const list = [...ticked, ...halves];
   const t = totals(list, state.settings);
   const SHOWN_MAX = 5;
   const lines = list.slice(0, SHOWN_MAX).map((e) => `<li><span>${esc(e.merchant || e.note || e.category || e.type)}</span><b class="num">${money(toAED(e, state.settings), 'AED', { fixed: true })}</b></li>`).join('');
   const more = list.length > SHOWN_MAX ? `<li class="more">+${list.length - SHOWN_MAX} more</li>` : '';
-  // halves of a split whose other half isn't ticked: say the other half stays
-  const ids = new Set(list.map((e) => e.id));
-  const halves = list.filter((e) => { const o = splitPartner(e, state.entries); return o && !ids.has(o.id); }).length;
   const what = [t.spent ? `${money(t.spent, 'AED', { fixed: true })} of spending` : '', t.income ? `${money(t.income, 'AED', { fixed: true })} of income` : ''].filter(Boolean).join(' and ');
   openSheet({
     label: 'Delete entries', tall: false,
@@ -262,7 +267,7 @@ export function openBulkDelete(onDone) {
         <div class="reset-icon">${icon('trash', { size: 28 })}</div>
         <p class="reset-lede">This removes <b>${plural(list.length, 'entry', 'entries')}</b>${what ? ` (${what})` : ''} from the app and the sheet. Your balances update to match.</p>
         <ul class="del-list">${lines}${more}</ul>
-        ${halves ? `<p class="group-foot center split-warn">${halves === 1 ? 'One is' : `${halves} are`} half of a split payment. The other ${halves === 1 ? 'half stays' : 'halves stay'} unless you tick ${halves === 1 ? 'it' : 'them'} too.</p>` : ''}
+        ${halves.length ? `<p class="group-foot center split-warn">Includes the other half of ${halves.length === 1 ? 'a split payment' : `${halves.length} split payments`}, so nothing is left half there.</p>` : ''}
         <p class="group-foot center">You can undo it straight after.</p>
         <button type="button" class="dup-btn danger-btn solid" data-act="confirm">${icon('trash', { size: 18 })}Delete ${plural(list.length, 'entry', 'entries')}</button>
       </div>`,

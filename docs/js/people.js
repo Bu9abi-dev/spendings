@@ -2,7 +2,7 @@
 // A person is an account (the sheet's Accounts tab) named in the `people` extra, { v: 1, names: [...] }.
 // Their balance is what is owed: > 0 they owe you, < 0 you owe them. A split is the Spend cut down to
 // your share plus a Transfer of their share from the same account to them, with the id `${spendId}-split`.
-import { peopleBalances, isPerson, PEOPLE_ACCOUNTS, fmt, money } from './model.js';
+import { peopleBalances, isPerson, PEOPLE_ACCOUNTS, ACCOUNTS, fmt, money, toAED } from './model.js';
 
 export { peopleBalances, isPerson, PEOPLE_ACCOUNTS };
 
@@ -68,10 +68,35 @@ export function splitTransfer(spend, person, theirs) {
   };
 }
 
+/** Each half of a split priced in AED so the two add up to the whole bill's AED price exactly:
+    their share is priced at the rate, yours is the rest. AED bills need no pricing (null). */
+export function splitPrices(wholeAED, theirs, currency, settings) {
+  if (!currency || currency === 'AED') return null;
+  const theirsAED = toAED({ amount: theirs, currency }, settings);
+  return { mineAED: Math.round((wholeAED - theirsAED) * 100) / 100, theirsAED };
+}
+
+/** "Change both" after one half's amount changed (before → after): the other half's new amount, so the bill
+    still adds up. The card was charged the whole bill, so it stays the same and the other half takes the
+    difference (keepsTotal). When the new amount is the whole bill or more, there's nothing left for the other
+    half, so it grows in proportion instead (the split stays the same share, the bill gets bigger).
+    null when the amount didn't change. */
+export function rescaledPartner(before, after, partner) {
+  const b = fils(before.amount), a = fils(after.amount), o = fils(partner.amount);
+  if (a === b || !(a > 0)) return null;
+  const total = b + o;
+  if (a < total) return { amount: (total - a) / 100, keepsTotal: true, total: total / 100 };
+  const scaled = Math.max(1, Math.round((o * a) / b));
+  return { amount: scaled / 100, keepsTotal: false, total: (a + scaled) / 100 };
+}
+
 /** Fields to copy to the other half when one half is edited and you choose "both": the account it was
-    paid from, the date and the currency. Amounts are each half's own. */
-export function partnerPatch(edited, partner) {
+    paid from, the date and the currency, and (when the edited half's amount changed) the other half's
+    amount from rescaledPartner, so the two halves still make up the bill. */
+export function partnerPatch(edited, partner, before = null) {
   const patch = { date: edited.date, currency: edited.currency };
+  const r = before ? rescaledPartner(before, edited, partner) : null;
+  if (r) patch.amount = r.amount;
   if (edited.type === 'Spend' && partner.type === 'Transfer') {
     if (!isPerson(edited.account)) patch.account = edited.account;
     patch.note = `Split: ${edited.merchant || edited.category || 'payment'}`;
@@ -98,8 +123,24 @@ export function recentPeople(entries, people = PEOPLE_ACCOUNTS) {
 /** The latest entries with a person, newest first. */
 export const personEntries = (entries, name, limit = 5) => entries.filter((e) => e.account === name || e.toAccount === name).slice(0, limit);
 
-/** The pre-filled Transfer that settles a person's balance: they pay you back into the main account,
-    or you pay them from it. null when nothing is owed. */
+/** Where a person's money came from: the account of the latest Transfer from one of your own accounts
+    to them (a loan or their share of a split), so being paid back goes back there. Paid back into the
+    allowance card it's a top-up, so Safe to spend recovers what the loan used. `fallback` (the main
+    account) when there's no such Transfer or that account is gone. */
+export function lentFrom(entries, name, fallback) {
+  let last = null;
+  for (const e of entries) {
+    if (e.type !== 'Transfer' || e.toAccount !== name || isPerson(e.account)) continue;
+    if (!last || e.date > last.date) last = e;
+  }
+  return last && ACCOUNTS.some((a) => a.id === last.account) ? last.account : fallback;
+}
+
+/** The Settle up sheet's title: "Ahmed pays you back" / "You pay Ahmed". */
+export const settleUpTitle = (name, balance) => (balance > 0 ? `${name} pays you back` : `You pay ${name}`);
+
+/** The pre-filled Transfer that settles a person's balance: they pay you back into `account` (where the
+    money was lent from, see lentFrom), or you pay them from it. null when nothing is owed. */
 export function settleUpPreset(name, balance, mainAccount) {
   const amt = Math.round(Math.abs(balance) * 100) / 100;
   if (amt < 0.01) return null;

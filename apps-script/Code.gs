@@ -320,10 +320,13 @@ function logCardSpend_(s, p) {
   if (twin) {
     // mark the pair so a later payment of the same amount isn't mistaken for this one
     var fix = { source: PAIRED };
+    var half = twin.splitHalf;
     // the other source logged it as a purchase; the bank alert shows it was a top-up of your own account
-    if (isMove && twin.type === 'Spend') { fix.type = 'Transfer'; fix.toAccount = to.name; fix.category = ''; fix.status = 'OK'; }
+    // (never for a split payment: sharing it with someone says it was a purchase)
+    if (isMove && twin.type === 'Spend' && !half) { fix.type = 'Transfer'; fix.toAccount = to.name; fix.category = ''; fix.status = 'OK'; }
     twin = updateEntry_(twin.id, fix).entry;
     var tmsg = 'Already logged · ' + fmtMoney_(twin.amount, twin.currency) + (twin.merchant ? ' · ' + twin.merchant : '') + ' · ' + twin.account;
+    if (half) tmsg = 'Already logged · ' + fmtMoney_(entry.amount, entry.currency) + (twin.merchant ? ' · ' + twin.merchant : '') + ' · split with ' + half.toAccount + ' · ' + twin.account;
     if (twin.toAccount) tmsg = 'Already logged · moved ' + fmtMoney_(twin.amount, twin.currency) + ' from ' + twin.account + ' to ' + twin.toAccount;
     return { ok: true, message: tmsg, entry: twin, duplicate: true };
   }
@@ -365,7 +368,9 @@ var PAIRED = 'Apple Pay + Bank alert';
 /**
  * The same payment reported by the other automatic source (Apple Pay vs bank alert): same account,
  * amount and currency within TWIN_MINUTES. Each entry pairs at most once (its source becomes PAIRED), so two
- * genuine payments of the same amount both stay logged.
+ * genuine payments of the same amount both stay logged. A payment split in the app (money owed) holds only
+ * your share; its other half is the Transfer with the id <spend id>-split, and the two together make up the
+ * alert's amount, so that pair counts as the same payment too.
  */
 function twinOf_(entry, date) {
   var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
@@ -375,13 +380,27 @@ function twinOf_(entry, date) {
   var rows = sh.getRange(from, 1, sh.getLastRow() - from + 1, COLS.length).getValues().map(fromRow_);
   var since = date.getTime() - TWIN_MINUTES * 60000;
   var auto = { 'Apple Pay': 1, 'Bank alert': 1 };
+  var byId = {};
+  rows.forEach(function (e) { byId[e.id] = e; });
+  var near = function (a, b) { return Math.abs(a - b) < 0.005; };
+  // the other half of a split Spend, when it is one: looked up by id (its source is Split, not an automatic one)
+  var splitHalf = function (e) {
+    var t = byId[e.id + '-split'];
+    return t && t.type === 'Transfer' && t.account === e.account && t.currency === e.currency ? t : null;
+  };
   var same = function (e) {
-    return (e.type === 'Spend' || e.type === 'Transfer') && auto[e.source] && e.account === entry.account && e.currency === entry.currency &&
-      Math.abs(e.amount - entry.amount) < 0.005 && new Date(e.date).getTime() >= since;
+    if (!((e.type === 'Spend' || e.type === 'Transfer') && auto[e.source] && e.account === entry.account && e.currency === entry.currency &&
+      new Date(e.date).getTime() >= since)) return false;
+    if (near(e.amount, entry.amount)) return true;
+    var t = e.type === 'Spend' ? splitHalf(e) : null;
+    return !!t && near(e.amount + t.amount, entry.amount);
   };
   // unpaired entries from the other source, oldest first; an entry already paired never matches again
   var others = rows.filter(function (e) { return same(e) && e.source !== entry.source && e.id !== entry.id; });
-  return others.length ? others[0] : null;
+  if (!others.length) return null;
+  var twin = others[0];
+  twin.splitHalf = near(twin.amount, entry.amount) ? null : splitHalf(twin);
+  return twin;
 }
 
 function addEntries_(list) {
@@ -392,6 +411,9 @@ function addEntries_(list) {
   var rows = [], out = [], dupes = 0, touched = {};
   list.forEach(function (raw) {
     var e = normalise_(raw, s);
+    // a foreign-currency entry the app has already priced (each half of a USD split, an undone delete)
+    // keeps that price, so the halves add up to the whole; without one the sheet's rate prices it
+    if (e.currency !== 'AED' && raw.amountAED != null && raw.amountAED !== '' && !isNaN(Number(raw.amountAED))) e.amountAED = Math.round(Number(raw.amountAED) * 100) / 100;
     if (existing[e.id] || touched['id:' + e.id]) { dupes++; out.push(e); return; }
     touched['id:' + e.id] = true;
     rows.push(toRow_(e, now, now));

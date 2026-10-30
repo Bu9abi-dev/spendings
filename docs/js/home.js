@@ -175,16 +175,15 @@ export function renderHome(h) {
       </div>
     </section>
     ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
-    ${homeNotice(m)}
-    ${owedLineHTML()}
+    ${homeNotice(m, focus === 'all' && m.matched)}
     <div class="lens-detail">${detail(m, focus)}</div>`;
 }
 
 /** At most one quiet line on Home, the most urgent of: an overdue buy-now-pay-later payment, a category over its limit, a subscription that just
     started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit. Each feature decides whether it has
     something to say (…Notice); Home only picks one, so notices never stack up. */
-const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'budget:near'];
-function homeNotice(m) {
+const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'budget:near', 'owed'];
+function homeNotice(m, whereShown) {
   const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
   const found = [];
   const b = budgetNotice(budgetRows(m.sum.byCategory, currentLimits()), { isCurrent });
@@ -193,6 +192,9 @@ function homeNotice(m) {
   if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
   const bn = bnplHomeNotice(); // a buy-now-pay-later payment overdue, or due within 7 days
   if (bn) found.push(bn);
+  // what people owe sits in "Where your money is" when that card is on screen; otherwise it's the last of the notices
+  const owed = whereShown ? '' : owedLineHTML();
+  if (owed) found.push({ rank: 'owed', html: owed });
   found.sort((x, y) => NOTICE_ORDER.indexOf(x.rank) - NOTICE_ORDER.indexOf(y.rank));
   return found[0]?.html || '';
 }
@@ -329,6 +331,7 @@ function whereCard(m) {
     <div class="where-bar">${rows.filter((r) => r.v > 0).map((r) => `<span style="flex-grow:${r.v}; --c:${r.c}"></span>`).join('')}</div>
     ${rows.map((r) => `<div class="where-row"><i style="--c:${r.c}"></i><span class="wr-main"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></span><b class="num${r.shown < 0 ? ' neg' : ''}">${r.shown < 0 ? '−' : ''}${fmt(Math.abs(r.shown), { whole: true })}</b></div>`).join('')}
     <div class="where-row total"><span class="wr-main"><b>All your money</b></span><b class="num">${fmt(m.total, { whole: true })}</b></div>
+    ${owedLineHTML({ inCard: true })}
   </section>`;
 }
 

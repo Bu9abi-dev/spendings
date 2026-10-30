@@ -9,8 +9,9 @@ import {
 } from '../docs/js/model.js';
 import {
   splitShares, splitPartner, splitTransfer, partnerPatch, settleUpPreset, owedText, recentPeople, withPerson, renamedPerson, peopleNames,
-  balanceWords, personOf,
+  balanceWords, personOf, lentFrom, settleUpTitle, rescaledPartner, splitPrices,
 } from '../docs/js/people.js';
+import { paymentEntry, planState, autoLink, bnplSummary } from '../docs/js/bnpl.js';
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };
@@ -95,6 +96,23 @@ ok(peopleBalances(withSplit, S).people.some((p) => p.id === 'Ahmed' && p.archive
 ok(!peopleBalances([...withSplit, E('Transfer', 50, 'Ahmed', '2026-11-09T10:00:00+04:00', { toAccount: 'ADIB' })], S).people.some((p) => p.id === 'Ahmed'), 'a removed, settled person drops out of the list');
 setAccountList([...DEFAULT_ACCOUNTS, ...PEOPLE]);
 
+/* ───── 2b. A buy-now-pay-later plan and a split in the same cycle: Home and the report agree ─────
+   (the report half runs in the browser, below: report.js needs the app) */
+let bnplCase;
+{
+  const plan = { id: 'bn-1', provider: 'Tabby', merchant: 'Noon', item: 'AirPods', category: 'Shopping', total: 900, count: 4, cadence: '2w', first: '2026-10-30', account: 'ADCB', paid: [null, null, null, null] };
+  const inst = { ...E('Spend', 0, 'ADCB', '2026-10-30T10:00:00+04:00'), ...paymentEntry(plan, 0, new Date('2026-10-30T10:00:00+04:00').toISOString()), id: 'bn-pay-1', status: 'OK' };
+  inst.cycle = cycleOf(inst.date, S.cycleStart); inst.amountAED = inst.amount;
+  const both = [...withSplit, inst];
+  const linked = autoLink([plan], both, S).plans;
+  ok(planState(linked[0], both).paidCount === 1 && bnplSummary(linked, both).owed === 675, 'the plan payment links to its instalment; 675 still to pay');
+  ok(!linked.some((x) => x.paid.some((r) => r && (r.entry === splitSpend.id || r.entry === splitTr.id))), 'a split dinner is never taken for a plan payment');
+  const mh = homeNumbers(both, PLAN, S, now);
+  ok(near(mh.total, m.total - 225), 'All your money drops by the plan payment only (what Ahmed owes is apart)');
+  ok(near(mh.safe, m.safe - 225) && near(mh.safe, 3000 - 200 - 100 - 225), 'Safe to spend drops by the payment only; the plan’s remaining 675 is never taken off it');
+  bnplCase = { entries: both, cyc: mh.cyc, total: mh.total, safe: mh.safe, left: mh.sum.allowanceLeft, used: mh.sum.allowanceUsed, now: now.toISOString() };
+}
+
 /* ───── 3. Split shares ───── */
 ok(JSON.stringify(splitShares(100, 'half')) === '{"mine":50,"theirs":50}', 'half of 100 = 50 / 50');
 ok(JSON.stringify(splitShares(100, 'third')) === '{"mine":66.67,"theirs":33.33}', 'a third of 100: they pay 33.33, you 66.67 (the leftover fil is yours)');
@@ -134,6 +152,31 @@ ok(personOf(splitTr) === 'Ahmed' && personOf(friendPaid) === 'Sara' && personOf(
   const p = partnerPatch(edited, splitTr);
   ok(p.account === 'BOTIM' && p.date === edited.date && p.note === 'Split: Zuma DIFC' && !('amount' in p), '"Change both" copies card, date and name, never the amount');
   ok(partnerPatch({ ...splitTr, account: 'Cash' }, splitSpend).account === 'Cash', 'editing their half carries the card to your half');
+}
+{
+  // Settle up pays back into the account the money was lent from
+  ok(lentFrom(withSplit, 'Ahmed', 'ADIB') === 'ADCB', 'Ahmed’s share came off the allowance card: he pays back into it');
+  ok(lentFrom([...withSplit, lendHub], 'Sara', 'ADIB') === 'ADIB' && lentFrom(withSplit, 'Sara', 'ADIB') === 'ADIB', 'a loan from the main account goes back there; nothing lent (a friend paid) → the main account');
+  ok(lentFrom([...withSplit, E('Transfer', 20, 'BOTIM', '2026-11-06T10:00:00+04:00', { toAccount: 'Ahmed' })], 'Ahmed', 'ADIB') === 'BOTIM', 'the latest loan decides');
+  ok(lentFrom([E('Transfer', 20, 'Gone', '2026-11-06T10:00:00+04:00', { toAccount: 'Ahmed' })], 'Ahmed', 'ADIB') === 'ADIB', 'an account that’s gone falls back to the main account');
+  const pre = settleUpPreset('Ahmed', 50, lentFrom(withSplit, 'Ahmed', 'ADIB'));
+  const back2 = E('Transfer', pre.amount, pre.account, '2026-11-08T10:00:00+04:00', { toAccount: pre.toAccount });
+  ok(near(homeNumbers([...withSplit, back2], PLAN, S, now).safe, m.safe + 50), 'settling up as offered: Safe to spend recovers what his share used');
+  ok(settleUpTitle('Ahmed', 50) === 'Ahmed pays you back' && settleUpTitle('Sara', -40) === 'You pay Sara', 'the Settle up sheet says who pays whom');
+}
+{
+  // "Change both" with a new amount keeps the bill adding up
+  const r1 = rescaledPartner({ amount: 60 }, { amount: 70 }, { amount: 40 });
+  ok(r1.keepsTotal && r1.amount === 30 && r1.total === 100, 'your share 60 → 70 of a 100 bill: theirs becomes 30');
+  const r2 = rescaledPartner({ amount: 40 }, { amount: 150 }, { amount: 60 });
+  ok(!r2.keepsTotal && r2.amount === 225 && r2.total === 375, 'more than the whole bill: the other half grows in the same proportion');
+  ok(rescaledPartner({ amount: 60 }, { amount: 60 }, { amount: 40 }) === null, 'no amount change, no rescale');
+  const p2 = partnerPatch({ ...splitSpend, amount: 70 }, { ...splitTr, amount: 50 }, splitSpend);
+  ok(p2.amount === 30 && fils(70) + fils(p2.amount) === fils(100), 'partnerPatch carries the rescaled amount');
+  // USD: halves priced so they add up to the bill in AED exactly
+  const pr = splitPrices(36.77, 5, 'USD', S);
+  ok(pr.theirsAED === 18.36 && fils(pr.mineAED) + fils(pr.theirsAED) === fils(36.77), 'a USD split: theirs priced at the rate, yours the rest of the bill');
+  ok(splitPrices(100, 50, 'AED', S) === null, 'an AED split needs no pricing');
 }
 ok(JSON.stringify(settleUpPreset('Ahmed', 50, 'ADIB')) === JSON.stringify({ type: 'Transfer', amount: 50, currency: 'AED', account: 'Ahmed', toAccount: 'ADIB', merchant: 'Settle up', note: '' }), 'settle up when they owe you: from them into the main account');
 ok(settleUpPreset('Sara', -40, 'ADIB').account === 'ADIB' && settleUpPreset('Sara', -40, 'ADIB').toAccount === 'Sara' && settleUpPreset('Sara', -40, 'ADIB').amount === 40, 'settle up when you owe them: from the main account to them');
@@ -202,6 +245,7 @@ const spend = await ev(async () => {
 const before = await home();
 await ev(async (id) => { const [s, en] = await Promise.all([import('/js/store.js'), import('/js/entry.js')]); en.openEntry(s.state.entries.find((x) => x.id === id)); }, spend.id);
 await p.waitForSelector('[data-act="split"]:not([hidden])');
+ok(await p.$eval('[data-act="split"]', (el) => { const r = el.getBoundingClientRect(), k = document.querySelector('.sheet .keypad').getBoundingClientRect(); return !!el.closest('.keypad-wrap') && r.bottom <= k.top + 1 && r.top >= 0 && r.bottom <= innerHeight && r.height >= 44; }), '"Split with someone" sits just above the keypad, in view without scrolling');
 await p.click('[data-act="split"]');
 await p.waitForSelector('.split-form');
 ok(await p.$eval('.people-chips [data-split-person]', (el) => el.dataset.splitPerson) === 'Ahmed' && await p.$eval('[data-part="half"]', (el) => el.classList.contains('on')), 'the split sheet offers Ahmed first, Half picked');
@@ -217,6 +261,7 @@ await p.click('[data-part="half"]');
 await p.click('section.sheet:last-of-type [data-act="done"]');
 await gone('.split-form');
 await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
+ok((await p.textContent('#toast .toast-text')).trim() === 'Split · your share AED 43.68', 'a short toast: "Split · your share AED 43.68"');
 st = await ev(async (id) => {
   const s = await import('/js/store.js');
   return { spend: s.state.entries.find((x) => x.id === id), tr: s.state.entries.find((x) => x.id === `${id}-split`), label: s.lastAction() };
@@ -229,6 +274,17 @@ ok(near(after.safe, before.safe) && near(after.total, before.total), 'Safe to sp
 ok(near(after.spent, before.spent - 43.67), 'this cycle’s spending counts only your share');
 await p.waitForSelector('.owed-line');
 ok((await p.textContent('.owed-line')).trim() === 'Owed to you AED 43.67', 'Home says "Owed to you AED 43.67"');
+const NOTICES = '#view .sub-line, #view .budget-nudge';
+const notices = async () => p.$$eval(NOTICES, (l) => l.map((x) => (x.classList.contains('owed-line') ? 'owed' : 'other')));
+const onAll = await notices();
+ok(!!(await p.$('.where .owed-line')) && onAll.length <= 1 && !onAll.includes('owed'), 'the owed line sits in "Where your money is", under the total, not as a second notice; Home keeps at most one notice line');
+// looking at one account, the card isn't there: the owed line is then the one notice, at the lowest rank
+await p.click('.key-acc[data-focus="BOTIM"]');
+await p.waitForSelector('.lens[data-focus="BOTIM"]');
+const onAcc = await notices();
+ok(onAcc.length === 1 && onAcc[0] === (onAll.length ? 'other' : 'owed'), `an account lens: one notice line, the owed line only when nothing more urgent (${onAcc.join()})`);
+await p.click('.key-acc[data-focus="all"]');
+await p.waitForSelector('.lens[data-focus="all"]');
 
 // the entry now says it is split, and has no second Split button
 await ev(async (id) => { const [s, en] = await Promise.all([import('/js/store.js'), import('/js/entry.js')]); en.openEntry(s.state.entries.find((x) => x.id === id)); }, spend.id);
@@ -243,14 +299,17 @@ await p.waitForSelector('.person-card[data-person="Ahmed"]');
 ok(/owes you 43\.67/.test(await p.textContent('.person-card[data-person="Ahmed"]')) && /Split: /.test(await p.textContent('.person-card[data-person="Ahmed"] .pc-list')), 'the People sheet shows Ahmed’s balance and the split');
 await p.click('[data-settle="Ahmed"]');
 await p.waitForSelector('.sheet[data-type="Transfer"]');
-ok(await p.$eval('.sheet [data-role="account"] [data-acc="Ahmed"]', (el) => el.classList.contains('on')) && await p.$eval('.sheet [data-role="toAccount"] [data-acc="ADIB"]', (el) => el.classList.contains('on')), 'Settle up opens a Transfer from Ahmed into the main account');
+ok(await p.$eval('.sheet [data-role="account"] [data-acc="Ahmed"]', (el) => el.classList.contains('on')) && await p.$eval('.sheet [data-role="toAccount"] [data-acc="ADCB"]', (el) => el.classList.contains('on')), 'Settle up opens a Transfer from Ahmed back into the card his share was paid from (the allowance card)');
+ok((await p.textContent('.sheet .sheet-title')).trim() === 'Ahmed pays you back', 'the Settle up sheet is titled "Ahmed pays you back"');
 ok((await p.textContent('.sheet .amount')).replace(/\s/g, '') === '43.67', 'pre-filled with what he owes');
 ok(/People/.test(await p.textContent('.sheet [data-role="toAccount"]')), 'Transfers show people in their own group');
 await p.click('.sheet .save-btn');
 await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
 await p.waitForFunction(() => !document.querySelector('.owed-line'));
 ok(true, 'settled: the Home line goes away');
-ok(near((await home()).total, before.total + 43.67), 'his money back in ADIB: All your money goes up by what he owed');
+const settled = await home();
+ok(near(settled.total, before.total + 43.67), 'his money back: All your money goes up by what he owed');
+ok(near(settled.safe, before.safe + 43.67), 'paid back into the allowance card: Safe to spend recovers his share');
 
 // undo the settle-up, then undo the split: both halves come back as they were
 await ev(async () => (await import('/js/store.js')).undo());
@@ -319,6 +378,51 @@ await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
 st = await ev(async (id) => { const s = await import('/js/store.js'); return [s.state.entries.find((x) => x.id === id).date, s.state.entries.find((x) => x.id === `${id}-split`).date]; }, spend.id);
 ok(st[0] === st[1] && st[0] === new Date('2026-11-01T09:30:00+04:00').toISOString(), '"Change both" moves both halves to the new date');
 
+// "Change both" with a new amount: the bill still adds up (your share 43.68 → 60 of 87.35, Sara's becomes 27.35)
+await ev(async (id) => { const [s, en] = await Promise.all([import('/js/store.js'), import('/js/entry.js')]); en.openEntry(s.state.entries.find((x) => x.id === id)); }, spend.id);
+await p.waitForSelector('.split-note:not([hidden])');
+for (let i = 0; i < 6; i++) await p.click('.sheet [data-key="del"]');
+for (const k of ['6', '0']) await p.click(`.sheet [data-key="${k}"]`);
+await p.click('.sheet .save-btn');
+await p.waitForSelector('.linked-btn[data-act="both"]');
+ok(/keeps the bill at AED 87\.35: Sara’s share becomes AED 27\.35/.test(await p.textContent('.reset-body')), 'it says what "Change both" does: the bill stays AED 87.35, Sara’s share becomes 27.35');
+await p.click('.linked-btn[data-act="both"]');
+await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
+st = await ev(async (id) => { const s = await import('/js/store.js'); return [s.state.entries.find((x) => x.id === id).amount, s.state.entries.find((x) => x.id === `${id}-split`).amount]; }, spend.id);
+ok(st[0] === 60 && st[1] === 27.35, '"Change both" with a new amount: 60 + 27.35 = the 87.35 the card was charged');
+await ev(async () => (await import('/js/store.js')).undo());
+st = await ev(async (id) => { const s = await import('/js/store.js'); return [s.state.entries.find((x) => x.id === id).amount, s.state.entries.find((x) => x.id === `${id}-split`).amount]; }, spend.id);
+ok(st[0] === 43.68 && st[1] === 43.67, 'one undo puts both amounts back');
+
+// bulk delete in Activity takes the other half too, as one undo step
+await p.click('.tabbar [data-tab="activity"]');
+await p.waitForSelector('[data-act="select"]');
+await ev(async (id) => { const a = await import('/js/activity.js'); a.startSelect(); a.toggleSelected(id); a.openBulkDelete(() => {}); }, spend.id);
+await p.waitForSelector('.split-warn');
+ok(/Delete 2 entries/.test(await p.textContent('.sheet [data-act="confirm"]')) && /other half of a split payment/.test(await p.textContent('.split-warn')), 'ticking one half: the delete sheet includes the other half and says so');
+await p.click('.sheet [data-act="confirm"]');
+await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
+st = await ev(async (id) => { const s = await import('/js/store.js'); return [!!s.state.entries.find((x) => x.id === id), !!s.state.entries.find((x) => x.id === `${id}-split`), s.lastAction()]; }, spend.id);
+ok(!st[0] && !st[1] && st[2] === 'Deleted 2 entries', 'bulk delete removed both halves in one step');
+await ev(async () => (await import('/js/store.js')).undo());
+st = await ev(async (id) => { const s = await import('/js/store.js'); return [!!s.state.entries.find((x) => x.id === id), !!s.state.entries.find((x) => x.id === `${id}-split`)]; }, spend.id);
+ok(st[0] && st[1], 'one undo brings both back');
+await ev(async () => (await import('/js/activity.js')).endSelect());
+
+// a buy-now-pay-later plan is paid from your own accounts, never a person
+await ev(async () => (await import('/js/bnpl-ui.js')).openPlanEditor(null));
+await p.waitForSelector('#bn-account');
+let opts = await p.$$eval('#bn-account option', (l) => l.map((o) => o.value));
+ok(!opts.includes('Ahmed') && !opts.includes('Sara') && opts.includes('ADCB'), `the plan's "Paid from" lists only your accounts (${opts.join(', ')})`);
+await p.click('.sheet [data-act="cancel"]');
+await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
+await ev(async () => (await import('/js/bnpl-ui.js')).openPlanEditor({ id: 'bn-x', provider: 'Tabby', merchant: 'Noon', item: '', category: 'Shopping', total: 400, count: 4, cadence: '2w', first: '2026-11-01', account: 'Ahmed', paid: [], skip: [] }));
+await p.waitForSelector('#bn-account');
+opts = await p.$$eval('#bn-account option', (l) => l.map((o) => o.value));
+ok(!opts.includes('Ahmed') && await p.$eval('#bn-account', (el) => el.value) === 'ADCB', 'a plan saved with a person as its account offers the allowance card instead');
+await p.click('.sheet [data-act="cancel"]');
+await p.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
+
 // the monthly report: total leaves people out, one line says what is owed
 ok(await ev(async () => {
   const [s, m, rp] = await Promise.all([import('/js/store.js'), import('/js/model.js'), import('/js/report.js')]);
@@ -333,6 +437,63 @@ await p.waitForSelector('.owed-line');
 ok(await p.evaluate(() => document.documentElement.scrollWidth) <= 390, 'no sideways scroll on an iPhone-width screen');
 const tap = await p.$eval('.owed-line', (el) => el.getBoundingClientRect().height);
 ok(tap >= 44, `the Home line is a comfortable tap target (${Math.round(tap)}px)`);
+
+// the same cycle with a buy-now-pay-later payment and a split: the report agrees with Home (numbers from part 2b)
+ok(await ev(async (c) => {
+  const [m, rp] = await Promise.all([import('/js/model.js'), import('/js/report.js')]);
+  const was = [...m.PEOPLE_ACCOUNTS.map((a) => a.id)];
+  m.setPeopleList(['Ahmed', 'Sara']);
+  const S = { ...m.DEFAULT_SETTINGS };
+  const PLAN = [{ id: 'allowance', name: 'Allowance', kind: 'Move', amount: 3000, day: 27, from: 'ADIB', to: 'ADCB', category: '' }];
+  const r = rp.cycleReport(c.entries, c.cyc, S, PLAN, null, new Date(c.now));
+  const h = m.homeNumbers(c.entries, PLAN, S, new Date(c.now));
+  m.setPeopleList(was);
+  const near = (a, b) => Math.abs(a - b) < 0.005;
+  return near(r.totalMoney, c.total) && near(h.total, c.total) && near(h.safe, c.safe) && near(r.allowance.left, c.left) && near(r.allowance.used, c.used)
+    && near(r.allowance.used, 200 + 50 + 50 + 225) && near(r.spent, 200 + 50 + 40 + 225) && near(r.owedToYou, 50) && near(r.youOwe, 40);
+}, bnplCase), 'a plan payment and a split in one cycle: Home total, Safe to spend and the report agree (allowance used 525, spent 515, owed apart)');
+ok(!errors.length, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
+
+/* ───── 6. Not demo: what goes to the sheet (USD split prices, the Settings hint) ───── */
+const p2 = await (await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce', hasTouch: true })).newPage();
+p2.on('pageerror', (e) => errors.push(e.message));
+await p2.goto(`${URL}#home`);
+await p2.waitForSelector('.lens');
+const usd = await p2.evaluate(async () => {
+  const [s, pu] = await Promise.all([import('/js/store.js'), import('/js/people-ui.js')]);
+  pu.addPerson('Ahmed');
+  const e = s.addEntry({ type: 'Spend', amount: 10.01, currency: 'USD', account: 'ADCB', category: 'Shopping', merchant: 'Amazon', source: 'Apple Pay' });
+  s.state.outbox.length = 0; // as if sent
+  return e;
+});
+await p2.evaluate(async (id) => { const [s, en] = await Promise.all([import('/js/store.js'), import('/js/entry.js')]); en.openEntry(s.state.entries.find((x) => x.id === id)); }, usd.id);
+await p2.waitForSelector('[data-act="split"]:not([hidden])');
+await p2.click('[data-act="split"]');
+await p2.waitForSelector('.split-form');
+await p2.click('section.sheet:last-of-type [data-act="done"]');
+await p2.waitForFunction(() => document.querySelectorAll('.sheet').length === 0);
+st = await p2.evaluate(async (id) => {
+  const s = await import('/js/store.js');
+  const mine = s.state.entries.find((x) => x.id === id), theirs = s.state.entries.find((x) => x.id === `${id}-split`);
+  const up = s.state.outbox.find((o) => o.op === 'update' && o.id === id), add = s.state.outbox.find((o) => o.op === 'add' && o.id === `${id}-split`);
+  return { mine: mine.amountAED, theirs: theirs.amountAED, upAED: up?.fields.amountAED, addAED: add?.entry.amountAED };
+}, usd.id);
+ok(fils(st.mine) + fils(st.theirs) === fils(usd.amountAED) && st.theirs === 18.36, `a USD split: the halves (AED ${st.mine} + ${st.theirs}) add up to the bill’s AED ${usd.amountAED}`);
+ok(st.upAED === st.mine && st.addAED === st.theirs, 'both prices go to the sheet: the edit of your half and the add of theirs carry amountAED');
+st = await p2.evaluate(async (id) => {
+  const s = await import('/js/store.js');
+  s.state.outbox.length = 0;
+  s.updateEntry(id, { category: 'Travel' });
+  const plain = s.state.outbox.at(-1).fields;
+  s.updateEntry(id, { amount: 6 });
+  const repriced = s.state.outbox.at(-1).fields;
+  return { plain: 'amountAED' in plain, repriced: 'amountAED' in repriced, aed: s.state.entries.find((x) => x.id === id).amountAED };
+}, usd.id);
+ok(!st.plain && !st.repriced && st.aed === 22.04, 'a normal edit or a new amount still sends no price (the sheet reprices it), and the app reprices at the rate');
+await p2.evaluate(async () => { const s = await import('/js/store.js'); s.state.extrasUnsent = ['people']; });
+await p2.click('.tabbar [data-tab="settings"]');
+await p2.waitForSelector('[data-person-edit="Ahmed"]');
+ok(/makes Apple Pay card matching ignore people/.test(await p2.textContent('#people ~ .group-foot')), 'while extras are phone-only and people exist, Settings says the script update makes card matching ignore people');
 ok(!errors.length, `no page errors${errors.length ? ': ' + errors.join(' | ') : ''}`);
 await b.close();
 console.log(`all ${n} owed checks passed`);

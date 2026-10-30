@@ -292,8 +292,11 @@ export function batch(label, fn) {
 const describe = (e) => `${money(e.amount, e.currency)}${e.merchant ? ` · ${e.merchant}` : e.type === 'Transfer' ? ` · ${e.account} → ${e.toAccount}` : ''}`;
 const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'category', 'merchant', 'note', 'date', 'source'];
 
+// a price in AED set on purpose (each half of a USD split, so the halves add up to the whole)
+const explicitAED = (f) => f.amountAED != null && f.amountAED !== '' && !Number.isNaN(+f.amountAED) && (f.currency || 'AED') !== 'AED';
+
 export function addEntry(fields) {
-  const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields });
+  const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields }, { keepAED: explicitAED({ currency: 'AED', ...fields }) });
   state.entries = sortEntries([e, ...state.entries]);
   // a BNPL payment ("Tabby · Noon") takes the plan's category; it isn't you teaching the app a merchant
   if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') state.merchants[merchantKey(e.merchant)] = e.category;
@@ -311,11 +314,14 @@ export function updateEntry(id, fields) {
   record(`Edited ${describe(before)}`, () => putBack(before));
   // a USD entry keeps the rate it was priced at unless its amount or currency changes
   const repriced = ('amount' in fields && +fields.amount !== +before.amount) || ('currency' in fields && fields.currency !== before.currency);
-  const e = finalize({ ...before, ...fields }, { keepAED: !repriced && before.amountAED != null && before.amountAED !== '' });
+  // …or when the caller sets the price itself (a split): then the sheet gets that exact price too
+  const priced = 'amountAED' in fields && explicitAED({ ...before, ...fields });
+  const e = finalize({ ...before, ...fields }, { keepAED: priced || (!repriced && before.amountAED != null && before.amountAED !== '') });
   state.entries[i] = e;
   sortEntries(state.entries);
   const sent = { ...fields, cycle: undefined };
-  delete sent.cycle; delete sent.status; delete sent.amountAED;
+  delete sent.cycle; delete sent.status;
+  if (priced) sent.amountAED = +fields.amountAED; else delete sent.amountAED;
   if (!state.prefs.demo) enqueue({ op: 'update', id, fields: sent });
   persist(); emit('entries');
   sync();
