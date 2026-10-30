@@ -16,7 +16,7 @@ import { icon } from './icons.js';
 const SERIES = ['#8e8e93', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
 // Name and colour come from the category list (custom categories too); unknown ones are grey.
 const catColor = (id) => SERIES[categoryMeta(id)?.slot || 0] || SERIES[0];
-const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.id || id);
+const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.label || id);
 
 /** Shop name without store/MCC numbers or the city: "CARREFOUR MCC 5411 ABU DHABI" → "CARREFOUR". */
 // tidies a bank-style name for display; grouping uses categorize.cleanMerchant, shared with Needs review

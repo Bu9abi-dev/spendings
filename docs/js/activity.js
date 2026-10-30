@@ -1,6 +1,6 @@
 // Activity tab: every entry, grouped by day, with search, filter chips, a Filter sheet
 // (account, category, period, amount), the filtered total, and Select mode for bulk edits.
-import { dayKey, dayLabel, fmt, toAED, ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money } from './model.js';
+import { dayKey, dayLabel, fmt, toAED, ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, allCategories, seriesColor, money } from './model.js';
 import { state, batch, updateEntry, deleteEntry, topUndoId } from './store.js';
 import { esc, openSheet, toast, haptic } from './ui.js';
 import { icon } from './icons.js';
@@ -151,7 +151,8 @@ export function openFilters(onChange) {
   // accounts in use, plus any old (archived) ones that still have entries
   const accounts = [...new Set([...ACCOUNTS.map((a) => a.id), ...state.entries.flatMap((e) => [e.account, e.toAccount]).filter(Boolean)])];
   const opt = (v, label, cur) => `<option value="${esc(v)}" ${v === cur ? 'selected' : ''}>${esc(label)}</option>`;
-  const incomeOnly = INCOME_CATEGORIES.filter((c) => !SPEND_CATEGORIES.some((s) => s.id === c.id));
+  // every category, hidden ones too, so old entries can still be found
+  const incomeOnly = allCategories('Income').filter((c) => !allCategories('Spend').some((s) => s.id === c.id));
   const countLine = () => { const n = matches().length; return `Showing ${plural(n, 'entry', 'entries')}`; };
   openSheet({
     label: 'Filters',
@@ -161,8 +162,8 @@ export function openFilters(onChange) {
         <section class="group">
           <label class="row input-row"><span>Account</span><select name="account">${opt('', 'Any', f.account)}${accounts.map((a) => opt(a, a, f.account)).join('')}</select></label>
           <label class="row input-row"><span>Category</span><select name="category">${opt('', 'Any', f.category)}${opt(NO_CATEGORY, 'Uncategorised', f.category)}
-            <optgroup label="Spending">${SPEND_CATEGORIES.map((c) => opt(c.id, c.id, f.category)).join('')}</optgroup>
-            <optgroup label="Income">${incomeOnly.map((c) => opt(c.id, c.id, f.category)).join('')}</optgroup></select></label>
+            <optgroup label="Spending">${allCategories('Spend').map((c) => opt(c.id, c.label || c.id, f.category)).join('')}</optgroup>
+            <optgroup label="Income">${incomeOnly.map((c) => opt(c.id, c.label || c.id, f.category)).join('')}</optgroup></select></label>
         </section>
         <h3 class="group-title">When</h3>
         <div class="filter-chips period-chips">${PERIODS.map(([k, l]) => `<button type="button" class="fchip${f.period === k ? ' on' : ''}" data-period="${k}" aria-pressed="${f.period === k}">${l}</button>`).join('')}</div>
@@ -213,7 +214,7 @@ export function openBulkCategory(onDone) {
   const list = selectedEntries();
   const spend = list.filter((e) => e.type === 'Spend'), income = list.filter((e) => e.type === 'Income');
   const skipped = list.length - spend.length - income.length; // transfers and bank matches have no category
-  const row = (cats, type) => `<div class="rc-cats">${cats.map((c) => `<button type="button" class="rc-cat" data-type="${type}" data-cat="${esc(c.id)}" style="--cat:${type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${c.short}</button>`).join('')}</div>`;
+  const row = (cats, type) => `<div class="rc-cats">${cats.map((c) => `<button type="button" class="rc-cat" data-type="${type}" data-cat="${esc(c.id)}" style="--cat:${type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${esc(c.short)}</button>`).join('')}</div>`;
   openSheet({
     label: 'Change category', tall: false,
     html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">Cancel</button><h2 class="sheet-title">Change category</h2><span class="icon-btn-spacer"></span></header>

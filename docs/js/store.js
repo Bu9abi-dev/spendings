@@ -1,5 +1,5 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, balances, cycleOf, toAED, uid, money } from './model.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { demoEntries, DEMO_PLAN } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
@@ -40,8 +40,20 @@ export const isDemo = () => !!state.prefs.demo;
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function emit(reason) {
   if (batching) { batchEmits.add(reason); return; }
+  applyCategories();
   for (const fn of listeners) fn(reason);
 }
+
+// Your own categories live in the `categories` extra. Refresh the shared lists whenever it changes
+// (a save here, a sync from the sheet, undo, demo mode), before anything redraws.
+let appliedCategories;
+function applyCategories() {
+  const cfg = state.extras.categories;
+  if (cfg === appliedCategories) return;
+  appliedCategories = cfg;
+  setCategoryList(cfg);
+}
+applyCategories();
 
 function persist() {
   if (state.prefs.demo || batching) return;
