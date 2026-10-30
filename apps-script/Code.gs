@@ -224,6 +224,7 @@ function addApplePay_(body) {
     category: clean_(body.category),
     note: clean_(body.note),
     source: 'Apple Pay',
+    testRun: !clean_(body.amount) && !clean_(body.merchant),
   });
 }
 
@@ -276,6 +277,12 @@ function parseBankAlert_(text) {
 /** Shared by Apple Pay and bank alerts: files one card payment and builds the notification text. */
 function logCardSpend_(s, p) {
   var money = p.money, account = p.account, merchant = p.merchant, category = p.category;
+  // Tapping ▶ on the Shortcut to test it sends no payment details. Say the connection works and log
+  // nothing, instead of an AED 0 entry in Needs review. Only a request with no amount text AND no
+  // merchant counts (p.testRun): an amount that couldn't be read is still kept for review.
+  if (p.testRun) {
+    return { ok: true, test: true, message: 'Connected ✓ The sheet got your Shortcut. Nothing was logged because there was no payment in this test.' };
+  }
   if (!category || /later|skip|review/i.test(category)) category = '';
   if (category && SPEND_CATEGORIES.indexOf(category) < 0) category = matchCategory_(category) || '';
   var remembered = '';
@@ -447,6 +454,8 @@ function listAll_() {
     plan: readPlan_(),
     accounts: readAccounts_(),
     extras: readExtras_(),
+    // what this version of the script can do, so the app can tell an old script from a new one
+    features: ['extras'],
     sheetName: SpreadsheetApp.getActive().getName(),
     sheetUrl: SpreadsheetApp.getActive().getUrl(),
   };
@@ -1109,6 +1118,10 @@ function clean_(v) {
 function parseMoney_(v) {
   if (typeof v === 'number') return { amount: Math.abs(v), currency: 'AED' };
   var s = String(v || '').replace(/[ ‏‎]/g, ' ');
+  // an iPhone set to Arabic digits sends "٤٢٫٥٠": make it "42.50"
+  s = s.replace(/[٠-٩]/g, function (d) { return String(d.charCodeAt(0) - 0x660); })
+    .replace(/[۰-۹]/g, function (d) { return String(d.charCodeAt(0) - 0x6F0); })
+    .replace(/٫/g, '.').replace(/٬/g, ',');
   var currency = 'AED';
   if (/US\$|USD|\$/i.test(s)) currency = 'USD';
   else {

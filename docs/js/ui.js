@@ -47,7 +47,7 @@ export function haptic() {
 
 /* ───── Toast ───── */
 let toastTimer;
-export function toast(text, { action, onAction, icon = '', tone = '' } = {}) {
+export function toast(text, { action, onAction, icon = '', tone = '', duration } = {}) {
   const host = document.getElementById('toast');
   clearTimeout(toastTimer);
   host.className = `toast glass ${tone}`;
@@ -56,7 +56,7 @@ export function toast(text, { action, onAction, icon = '', tone = '' } = {}) {
   requestAnimationFrame(() => host.classList.add('show'));
   if (action) host.querySelector('.toast-action').onclick = () => { onAction?.(); hide(); };
   const hide = () => { host.classList.remove('show'); setTimeout(() => { host.hidden = true; }, 300); };
-  toastTimer = setTimeout(hide, action ? 5000 : 2600);
+  toastTimer = setTimeout(hide, duration || (action ? 5000 : 2600));
 }
 
 /* ───── Bottom sheet ───── */

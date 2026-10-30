@@ -8,12 +8,15 @@ import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openEntry } from './entry.js';
 import { openSheet, toast, haptic, esc, spring, reduceMotion, rollNumber } from './ui.js';
 import { icon } from './icons.js';
-import { bindDonut, bindPace } from './charts.js';
+import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
-import { renderActivity, activityList, activityFilter } from './activity.js';
+import {
+  renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
+  startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
+} from './activity.js';
 import { renderInsights, shiftInsights } from './insights.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
@@ -279,6 +282,7 @@ function openShortcutGuide() {
         <li>Add <b>Show Notification</b> with <b>Dictionary Value</b> as the text. Done ✓</li>
       </ol>
       <div class="tip-card">${icon('sparkle', { size: 18 })}<p><b>Want it zero-tap?</b> Skip step 3 and send <code>Decide later</code> as the category. Merchants you’ve filed before are categorised automatically. The rest wait in <b>Needs review</b>.</p></div>
+      <div class="tip-card">${icon('check', { size: 18 })}<p><b>Testing it?</b> Tap <b>▶</b> on the Shortcut. The notification says <b>Connected ✓</b> and nothing is logged, because there was no real payment.</p></div>
       <div class="tip-card">${icon('warn', { size: 18 })}<p>If you pay with no signal, the Shortcut can’t reach the sheet and shows an error. Add that payment with <b>+</b> later.</p></div>
     </div>`,
     onMount(sheet, close) {
@@ -306,7 +310,7 @@ function render(reason) {
     return;
   }
   if (reason && tab === 'activity' && document.activeElement?.matches('.search input')) {
-    view.querySelector('.activity-list').innerHTML = activityList();
+    refreshActivity(view);
     return;
   }
   const prevCap = view.querySelector('.capsule');
@@ -317,8 +321,10 @@ function render(reason) {
   if (tab === 'home') afterHomeRender(snap);
   animateFresh();
   view.dataset.tab = tab;
+  syncSelectingClass(tab === 'activity');
   bindDonut(view);
   bindPace(view);
+  bindBars(view);
   observeTitle();
   // the signature move: liquid springs to the new level, numerals roll
   const cap = view.querySelector('.capsule');
@@ -350,6 +356,7 @@ function go(next) {
   const t = document.getElementById('toast');
   if (!t.hidden) { t.classList.remove('show'); setTimeout(() => { t.hidden = true; }, 250); }
   if (next === tab) { window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
+  if (tab === 'activity') endSelect(); // leaving Activity drops a half-made selection
   tab = next;
   history.replaceState(null, '', `#${tab}`);
   const swap = () => { render(); window.scrollTo(0, 0); };
@@ -409,6 +416,7 @@ document.addEventListener('click', async (ev) => {
   const tabBtn = t.closest('.tabbar [data-tab]');
   if (tabBtn) { haptic(); return go(tabBtn.dataset.tab); }
   if (t.closest('.fab')) { haptic(); return openEntry(); }
+  if (tab === 'activity' && view.contains(t) && activityClick(t)) return;
   const quick = t.closest('[data-quick]');
   if (quick) {
     const e = state.entries.find((x) => x.id === quick.dataset.quick);
@@ -428,7 +436,7 @@ document.addEventListener('click', async (ev) => {
     return;
   }
   const kind = t.closest('[data-kind]');
-  if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
+  if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
   const mode = t.closest('[data-theme-mode]');
@@ -448,6 +456,29 @@ document.addEventListener('click', async (ev) => {
   if (act === 'reset') openReset();
   if (act === 'connect') connect(t.closest('[data-act]'));
 });
+
+/* Activity: Select mode, the Filter sheet and filter pills. Returns true when it handled the tap. */
+function activityClick(t) {
+  const redraw = () => refreshActivity(view);
+  if (activitySelect.on) {
+    const row = t.closest('.entry[data-id]');
+    if (row) { haptic(); toggleSelected(row.dataset.id); redraw(); return true; }
+  }
+  const clear = t.closest('[data-clear]');
+  if (clear) { haptic(); clearFilter(clear.dataset.clear); redraw(); return true; }
+  const act = t.closest('[data-act]')?.dataset.act;
+  if (act === 'filters') { haptic(); openFilters(redraw); return true; }
+  if (act === 'select') { haptic(); closeSwipe(); startSelect(); redraw(); return true; }
+  if (act === 'select-done') { haptic(); endSelect(); redraw(); return true; }
+  if (act === 'select-all') { haptic(); selectAll(); redraw(); return true; }
+  if (act === 'bulk-cat') { haptic(); openBulkCategory(redraw); return true; }
+  if (act === 'bulk-del') { haptic(); openBulkDelete(redraw); return true; }
+  return false;
+}
+function refreshActivityChips(on) {
+  view.querySelectorAll('.filter-chips [data-kind]').forEach((b) => { b.classList.toggle('on', b === on); b.setAttribute('aria-selected', b === on); });
+  refreshActivity(view);
+}
 
 async function connect(btn) {
   const url = view.querySelector('input[name="url"]').value.trim();
@@ -523,7 +554,7 @@ function exportCSV() {
 }
 
 view.addEventListener('input', (ev) => {
-  if (ev.target.matches('.search input')) { activityFilter.q = ev.target.value; view.querySelector('.activity-list').innerHTML = activityList(); }
+  if (ev.target.matches('.search input')) { activityFilter.q = ev.target.value; refreshActivity(view); }
 });
 
 view.addEventListener('change', async (ev) => {
@@ -592,7 +623,7 @@ function swipeDelete(wrap) {
 }
 view.addEventListener('pointerdown', (e) => {
   const wrap = e.target.closest('.swipe');
-  if (!wrap || e.target.closest('.swipe-del')) return;
+  if (!wrap || e.target.closest('.swipe-del') || (tab === 'activity' && activitySelect.on)) return;
   if (openSwipe && openSwipe !== wrap) closeSwipe();
   swipeDrag = { wrap, row: wrap.querySelector('.entry'), x0: e.clientX, y0: e.clientY, base: wrap === openSwipe ? -REVEAL : 0, on: false, id: e.pointerId, last: [e.timeStamp, e.clientX], v: 0 };
 });

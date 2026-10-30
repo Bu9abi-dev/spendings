@@ -25,7 +25,39 @@ timeline
         v11 : Calmer syncing : No red error on a slow connection : Fewer sheet reads
     section 30 October 2026
         v12 : Money rows always add up : Extras tab for new features : Sheet update needed
+        v13 : Testing the Shortcut logs nothing : Arabic digits read right : Faster screens
+        v14 : Day-by-day and weekly spending : Top places : Categories over six cycles
+        v15 : Activity filters : Select and edit many : One undo
 ```
+
+---
+
+## v15: Activity filters and bulk edit
+**30 October 2026** · no sheet update needed
+
+- Activity has **filters**: account, category, a cycle or your own dates, and an amount range. The total of what's showing sits on top, with spending, refunds and money in shown separately.
+- **Select** lets you pick several entries and change their category or delete them in one go. Before deleting, it lists what will go. One Undo puts them all back.
+- Selecting never includes entries you can't see on screen. If more entries match than the list shows, it says so.
+
+---
+
+## v14: Spending charts
+**30 October 2026** · no sheet update needed
+
+- Insights has a **Day by day** chart of the cycle's spending, with a weekly view. Press and slide along it to see any day. Moving money between your accounts is left out, because it isn't spending.
+- **Top places** lists where your money went most this cycle and how many payments each got.
+- **Categories over six cycles** shows each category's last six cycles side by side, with your usual amount, so you can see what's creeping up.
+
+---
+
+## v13: Cleaner Shortcut tests and faster screens
+**30 October 2026** · sheet update needed
+
+- Tapping ▶ on the Apple Pay Shortcut to test it now shows "Connected ✓" and logs nothing. Before, it added an AED 0 entry to Needs review that you had to delete.
+- If your iPhone sends amounts in Arabic digits (٤٢٫٥٠), the sheet now reads them as 42.50 instead of 0.
+- A real payment whose amount can't be read is still kept in Needs review, so nothing is ever dropped.
+- Every screen works out dates faster. With a few thousand entries, Insights opens about three times quicker.
+- The sheet part needs the new `apps-script/Code.gs` pasted into Apps Script and a new version of the deployment published. If you haven't done v12's update yet, this one covers both.
 
 ---
 

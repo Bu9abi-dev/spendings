@@ -8,6 +8,9 @@ const read = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSO
 const write = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* storage full or blocked */ } };
 
 const listeners = new Set();
+// batch() state (see Batches below): declared up here because emit/persist/sync check it
+let batching = 0, batchSteps = null, batchSync = false;
+const batchEmits = new Set();
 export const state = {
   conn: read(K.conn, { url: '', token: '' }),
   entries: [],
@@ -35,10 +38,13 @@ setAccountList(state.accounts);
 export const isConnected = () => !!(state.conn.url && state.conn.token);
 export const isDemo = () => !!state.prefs.demo;
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
-function emit(reason) { for (const fn of listeners) fn(reason); }
+function emit(reason) {
+  if (batching) { batchEmits.add(reason); return; }
+  for (const fn of listeners) fn(reason);
+}
 
 function persist() {
-  if (state.prefs.demo) return;
+  if (state.prefs.demo || batching) return;
   write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl, plan: state.plan, accounts: state.accounts, extras: state.extras, extrasUnsent: state.extrasUnsent });
   write(K.outbox, state.outbox);
 }
@@ -89,6 +95,7 @@ let retryTimer = null;
 const SPINNER_AFTER = 3000, RETRY_EVERY = 15000, LIST_FRESH = 30000;
 export function sync() {
   if (state.prefs.demo || !isConnected()) return Promise.resolve();
+  if (batching) { batchSync = true; return Promise.resolve(); } // one sync after the whole batch
   // a change made mid-sync gets its own pass straight after
   if (syncing) { again = true; return syncing; }
   clearTimeout(retryTimer); retryTimer = null;
@@ -201,29 +208,17 @@ function finalize(e, { keepAED = false } = {}) {
 /* ───── Undo ─────
    Every change records how to reverse itself. undo() replays the reversal without recording it. */
 const history = [];
-let muted = 0;
-let deferring = 0, touched = false; // inside batch(): persist/emit/sync wait until the end
-let collecting = null; // set while batch() runs: steps gather here instead of the history
+let muted = 0, historySeq = 0;
 function record(label, reverse) {
   if (muted) return;
-  if (collecting) { collecting.push(reverse); return; }
-  history.push({ label, reverse });
+  if (batchSteps) { batchSteps.push(reverse); return; } // part of a batch: undone together
+  history.push({ label, reverse, id: ++historySeq });
   if (history.length > 30) history.shift();
   emit('history');
 }
-// replaced by store.batch once activity-filters lands
-/** Several changes that undo together as one step, e.g. filing every payment from one merchant.
-    Saving, redrawing and syncing wait until the end, so it costs one sync, not one per entry. */
-export function batch(label, fn) {
-  const outer = collecting, steps = [];
-  collecting = steps; deferring++;
-  try { fn(); } finally {
-    collecting = outer;
-    if (--deferring === 0 && touched) { touched = false; persist(); emit('entries'); sync(); }
-  }
-  if (steps.length) record(label, () => steps.reverse().forEach((r) => r()));
-}
 export const canUndo = () => history.length > 0;
+/** Id of the newest undo step, so a toast can check its own step is still the one Undo would undo. */
+export const topUndoId = () => history[history.length - 1]?.id || 0;
 export const lastAction = () => history[history.length - 1]?.label || '';
 export function undo() {
   const h = history.pop();
@@ -233,6 +228,36 @@ export function undo() {
   emit('history');
   return h.label;
 }
+
+/* ───── Batches ─────
+   Several changes as one step (bulk recategorise or delete in Activity): one undo, one save,
+   one redraw and one sync at the end, instead of one per entry. */
+function quietly(fn) {
+  batching++;
+  try { fn(); } finally {
+    if (--batching === 0) {
+      persist();
+      const reasons = [...batchEmits];
+      batchEmits.clear();
+      reasons.forEach(emit);
+      if (batchSync) { batchSync = false; sync(); }
+    }
+  }
+}
+/** Runs fn (which calls updateEntry/deleteEntry/…) as one undoable step called `label`. Returns how many changes it made. */
+export function batch(label, fn) {
+  const steps = [];
+  const outer = batchSteps;
+  batchSteps = steps;
+  try { quietly(fn); } finally {
+    batchSteps = outer;
+    // even if fn threw midway, what it did so far is one undo step. Undo walks the changes
+    // backwards, so each one is reversed against the state it left.
+    if (steps.length) record(label, () => quietly(() => { for (const r of [...steps].reverse()) r(); }));
+  }
+  return steps.length;
+}
+
 const describe = (e) => `${money(e.amount, e.currency)}${e.merchant ? ` · ${e.merchant}` : e.type === 'Transfer' ? ` · ${e.account} → ${e.toAccount}` : ''}`;
 const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'category', 'merchant', 'note', 'date', 'source'];
 
@@ -260,7 +285,8 @@ export function updateEntry(id, fields) {
   const sent = { ...fields, cycle: undefined };
   delete sent.cycle; delete sent.status; delete sent.amountAED;
   if (!state.prefs.demo) enqueue({ op: 'update', id, fields: sent });
-  if (deferring) touched = true; else { persist(); emit('entries'); sync(); }
+  persist(); emit('entries');
+  sync();
   return e;
 }
 
