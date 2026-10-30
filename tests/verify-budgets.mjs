@@ -124,7 +124,11 @@ ok(await p.$$eval('.bg-row', (x) => x.length) === 1, 'Insights shows one bar for
 ok(await p.$eval('.bg-row', (el) => el.classList.contains('near')), 'about 90% reads as near');
 ok(/^\d+%$/.test(await p.textContent('.bg-pct')) && /left/.test(await p.textContent('.bg-left')), 'the bar shows a percent and what is left');
 
-// Home
+// Home shows one notice at a time; the demo's subscriptions would outrank a "near" budget, so set them aside
+await p.evaluate(async () => {
+  const [st, r] = await Promise.all([import('/js/store.js'), import('/js/recurring.js')]);
+  st.saveExtra('recurring', { v: 1, ignored: [...new Set(st.state.entries.map((e) => r.recurringKey(e.merchant)).filter(Boolean))] });
+});
 await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.budget-nudge');
 ok(/is at \d+% of its limit/.test(await p.textContent('.budget-nudge')), 'Home says the category is at N% of its limit');
@@ -133,6 +137,10 @@ ok(await p.$$eval('.budget-nudge', (x) => x.length) === 1, 'Home shows just the 
 // over the limit, then undo and clear
 await p.evaluate(async (cid) => { (await import('/js/budgets-settings.js')).setLimit(cid, 1); }, food2.id);
 await p.waitForSelector('.budget-nudge.over');
+await p.evaluate(async () => (await import('/js/store.js')).saveExtra('recurring', null)); // subscriptions back
+await p.waitForTimeout(300);
+ok(await p.$$eval('.budget-nudge, .sub-line', (x) => x.length) === 1 && await p.$('.budget-nudge.over'), 'over a limit outranks a subscription: still one line on Home');
+await p.evaluate(async () => (await import('/js/store.js')).undo()); // subscriptions set aside again
 ok(/over its limit by AED/.test(await p.textContent('.budget-nudge')), 'over the limit says by how much');
 await p.evaluate(async () => { (await import('/js/store.js')).undo(); });
 await p.waitForSelector('.budget-nudge:not(.over)');
