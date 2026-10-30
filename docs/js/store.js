@@ -98,6 +98,17 @@ export async function ping(url, token) {
   try { return await call({ action: 'ping' }, { timeout: 15000 }); } finally { state.conn = prev; }
 }
 
+/** Asks a newly made sheet to build its tabs. An older script has no `install`; its setup is run by hand,
+    so that counts as done. */
+export async function installSheet(url, token) {
+  const prev = state.conn;
+  state.conn = { url, token };
+  try { return await call({ action: 'install' }, { timeout: 90000 }); } catch (e) {
+    if (/Unknown action/i.test(e.message)) return { ok: true, old: true };
+    throw e;
+  } finally { state.conn = prev; }
+}
+
 /* ───── Sync ───── */
 
 let syncing = null;
@@ -501,6 +512,20 @@ export function removeAccount(name, moveTo) {
   commitAccounts(state.accounts.map((a) => (a.name === name ? { ...a, archived: true } : a)));
   muted--;
   record(`Removed ${name}`, () => { if (closing) deleteEntry(closing.id); if (state.plan !== planBefore) savePlan(planBefore); commitAccounts(before); });
+}
+
+/** The setup guide's answers, once a sheet is connected: accounts first (the sheet checks settings and
+    the plan against them), then settings, then the plan. One save and one sync, and no undo step:
+    there's no earlier set-up to go back to. */
+export function applySetup({ accounts, settings, plan }) {
+  muted++;
+  try {
+    quietly(() => {
+      if (accounts?.length) commitAccounts(accounts);
+      if (settings && Object.keys(settings).length) saveSettings(settings);
+      if (plan) savePlan(plan);
+    });
+  } finally { muted--; }
 }
 
 /* ───── Reset ───── */

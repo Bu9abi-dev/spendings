@@ -262,7 +262,7 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   p3({ action: 'add', entry: { id: 'x1', type: 'Spend', amount: 5, account: 'ADCB', category: 'Other' } });
   p3({ action: 'reset' });
   assert.deepEqual(p3({ action: 'list' }).extras.budgets, { 'Food & Drinks': 900 }, 'reset keeps extras');
-  assert.deepEqual(p3({ action: 'list' }).features, ['extras']);
+  assert.deepEqual(p3({ action: 'list' }).features, ['extras', 'install']);
   // a manual ▶ test of the Shortcut: says it's connected and logs nothing
   const before = p3({ action: 'list' }).entries.length;
   r = p3({ source: 'applepay', amount: '', merchant: '', card: '', category: 'Decide later' });
@@ -279,6 +279,74 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   assert.equal(r.entry.status, 'Review');
   // the Apple Pay Shortcut's request is unchanged and still works
   assert.equal(p3({ source: 'applepay', amount: 'AED 12.00', merchant: 'Cafe', card: 'ADCB', category: 'Decide later' }).ok, true);
+}
+
+// Setup guide: a sheet made from outside has only a "Setup" tab holding the app's key. The script adopts
+// that key the first time it needs one, removes the tab, and `install` builds every tab without popups.
+{
+  const env = makeEnv();
+  const KEY = 'AbCdEfGhIjKlMnOpQrStUvWx';
+  const setupTab = env.ss.insertSheet('Setup');
+  setupTab.getRange(1, 1).setValue('Spendings app key (the script keeps it safe and removes this tab)');
+  setupTab.getRange(2, 1).setValue(KEY);
+  env.ss.deleteSheet(env.ss.getSheetByName('Sheet1'));
+  const raw = (body) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify(body) } }).text);
+  assert.equal(raw({ token: 'wrong', action: 'ping' }).ok, false, 'a wrong key is still refused');
+  assert.equal(env.props.TOKEN, KEY, 'the installer key is adopted on first use');
+  assert.ok(!env.ss.getSheetByName('Setup'), 'the Setup tab no longer shows the key');
+  assert.equal(env.ss.getSheets().length, 1, 'the last tab is emptied and renamed, not deleted');
+  assert.equal(env.ss.getSheets()[0].getLastRow(), 0);
+  const r = raw({ token: KEY, action: 'ping' });
+  assert.equal(r.ok, true);
+  assert.ok(!env.ss.getSheetByName('Ledger'), 'ping alone builds nothing');
+  const inst = raw({ token: KEY, action: 'install' });
+  assert.equal(inst.ok, true);
+  assert.deepEqual([...inst.features], ['extras', 'install']);
+  for (const tab of ['Overview', 'Ledger', 'Accounts', 'Settings', 'Merchants', 'Plan']) assert.ok(env.ss.getSheetByName(tab), `install made ${tab}`);
+  assert.ok(!env.ss.getSheetByName('Sheet1'), 'the empty leftover tab is removed');
+  assert.equal(raw({ token: KEY, action: 'install' }).ok, true, 'install is safe to run again');
+  assert.equal(env.ss.getSheets().filter((t) => t.name === 'Ledger').length, 1);
+  // the guide's answers arrive through the usual actions
+  assert.equal(raw({ token: KEY, action: 'accounts', accounts: [{ name: 'FAB', color: 'blue', wallet: 'fab' }, { name: 'Cash', color: 'green' }] }).ok, true);
+  assert.equal(raw({ token: KEY, action: 'settings', settings: { allowanceAccount: 'FAB', emergencyAccount: 'FAB', cycleStart: 25, allowance: 2000 } }).ok, true);
+  const l = raw({ token: KEY, action: 'list' });
+  assert.deepEqual(l.accounts.map((a) => a.name), ['FAB', 'Cash']);
+  assert.equal(l.settings.cycleStart, 25);
+  // the Shortcut payloads work on a sheet made this way
+  const ap = raw({ token: KEY, source: 'applepay', amount: 'AED 12.00', merchant: 'Cafe', card: 'FAB Platinum', category: 'Food & Drinks' });
+  assert.equal(ap.ok, true); assert.equal(ap.entry.account, 'FAB');
+  const bk = raw({ token: KEY, source: 'bank', app: 'FAB', title: 'FAB', body: 'Purchase of AED 30.00 at LULU with card XX1234' });
+  assert.equal(bk.ok, true);
+  // the browser page the guide opens to ask for permission
+  assert.match(env.ctx.doGet({ parameter: { setup: '1' } }).html, /Spendings can use your sheet/);
+  assert.equal(JSON.parse(env.ctx.doGet({ parameter: {} }).text).ok, true, 'a plain GET still answers JSON');
+}
+
+// A sheet set up by hand never looks at a Setup tab: its key was made by setup() and stays.
+{
+  const env = makeEnv();
+  env.ctx.setup();
+  const key = env.ctx.getToken_();
+  const t = env.ss.insertSheet('Setup');
+  t.getRange(1, 1).setValue('Spendings app key (the script keeps it safe and removes this tab)');
+  t.getRange(2, 1).setValue('ZZZZZZZZZZZZZZZZZZZZZZZZ');
+  assert.equal(env.ctx.getToken_(), key);
+  assert.ok(env.ss.getSheetByName('Setup'), 'left alone');
+  // a Setup tab without the marker, or with a bad key, is ignored on a fresh sheet too
+  const env2 = makeEnv();
+  const t2 = env2.ss.insertSheet('Setup');
+  t2.getRange(1, 1).setValue('My notes'); t2.getRange(2, 1).setValue('ZZZZZZZZZZZZZZZZZZZZZZZZ');
+  assert.notEqual(env2.ctx.getToken_(), 'ZZZZZZZZZZZZZZZZZZZZZZZZ');
+  const env3 = makeEnv();
+  const t3 = env3.ss.insertSheet('Setup');
+  t3.getRange(1, 1).setValue('Spendings app key'); t3.getRange(2, 1).setValue('short');
+  assert.notEqual(env3.ctx.getToken_(), 'short');
+  // an old payload on a sheet missing its Ledger builds the tabs first instead of failing
+  const env4 = makeEnv();
+  const k4 = env4.ctx.getToken_();
+  const r4 = JSON.parse(env4.ctx.doPost({ postData: { contents: JSON.stringify({ token: k4, source: 'applepay', amount: 'AED 5', merchant: 'Kiosk', card: 'ADCB', category: 'Other' }) } }).text);
+  assert.equal(r4.ok, true);
+  assert.ok(env4.ss.getSheetByName('Ledger'));
 }
 
 console.log('apps-script: all tests passed');

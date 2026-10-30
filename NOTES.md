@@ -26,6 +26,7 @@ Kept current by whoever is working on the app (Claude, running the improvement l
   `tests/verify-maths.mjs` and `tests/verify-undo.mjs`.
 - The Apple Pay Shortcut (`source=applepay`) and bank-notification Shortcut (`source=bank`) POSTs must keep
   working unchanged. `tests/apps-script.test.mjs` covers both.
+- **Code.gs has a copy in `docs/setup/Code.gs.txt`** (the setup guide installs it). Every Code.gs change: `cp apps-script/Code.gs docs/setup/Code.gs.txt`.
 - Sheet safety: never delete or overwrite Ledger data. New data goes in new tabs or the Extras tab.
 
 ## Code map
@@ -50,6 +51,10 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/categorize.js` | Learns merchant → category from past entries; `cleanMerchant` is the one shop-name normaliser. |
 | `docs/js/categories.js` | Settings → Categories (your own, rename, hide). Lists live in model.js (`setCategoryList`, `allCategories`, `pickerCategories`, `categoryMeta(id).label`). |
 | `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
+| `docs/js/setup.js` | First-run setup guide (welcome, cards, money, create sheet, Shortcut, done). Auto-opens at Home on a fresh phone; `?notour` or `#settings` skips it. Answers in `sp.setup` until connected, then `applySetup` in store.js. |
+| `docs/js/provision.js` | Pure: makes the sheet with Google's REST APIs (Sheets + Apps Script) from a sign-in token; resumable, injectable `fetch`. |
+| `docs/js/config.js` | `GOOGLE_CLIENT_ID` for Sign in with Google (public; empty = by-hand setup only). |
+| `docs/setup/Code.gs.txt` | **A copy of `apps-script/Code.gs`** that the guide installs. Change both: `cp apps-script/Code.gs docs/setup/Code.gs.txt` (`tests/verify-setup.mjs` checks). |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature
