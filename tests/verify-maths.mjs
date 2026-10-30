@@ -21,7 +21,7 @@ function homeModel(entries, plan, s, now, dismissed = {}) {
   return { ...m, len, elapsed, unmovedPlanId: m.allowanceUnmoved ? m.allowMove.id : '' };
 }
 const rowSum = (rows) => rows.reduce((a, r) => a + r.v, 0);
-const shownSum = (rows) => rows.reduce((a, r) => a + Math.round(r.v), 0); // what the eye adds up (fmt whole)
+const shownSum = (rows) => rows.reduce((a, r) => a + r.shown, 0); // what the eye adds up (the whole numbers shown)
 
 const S = { ...DEFAULT_SETTINGS };
 let n = 0;
@@ -126,7 +126,7 @@ console.log('\n── 3c. Rounding: rows shown as whole numbers vs total ──'
   const m = homeModel(L, plan, S, D('2026-10-07T12:00:00+04:00'));
   const rows = whereRows(m);
   console.log('      rows:', rows.map((r) => `${r.label}=${r.v.toFixed(2)}`).join(' | '), `| total=${m.total.toFixed(2)}`);
-  if (shownSum(rows) !== Math.round(m.total)) finding(`MINOR where-rounding: rows displayed ${rows.map((r) => Math.round(r.v)).join(' + ')} = ${shownSum(rows)} but total shows ${Math.round(m.total)} (each row rounded independently; a 0.4 ADIB row is hidden by the |v| ≥ 0.5 filter)`);
+  ok(shownSum(rows) === Math.round(m.total), `rows shown as whole numbers add up to the total shown (${rows.map((r) => r.shown).join(' + ')} = ${Math.round(m.total)})`);
 }
 
 console.log('\n── 3d. allowance account == main account (selectable in Settings → Budget) ──');
@@ -136,7 +136,7 @@ console.log('\n── 3d. allowance account == main account (selectable in Setti
   const L = [E('Adjustment', 5000, 'ADIB', '2026-09-20T10:00:00+04:00'), E('Spend', 200, 'ADIB', '2026-10-01T10:00:00+04:00')];
   const m = homeModel(L, [], S2, D('2026-10-07T12:00:00+04:00'));
   const rows = whereRows(m);
-  if (!near(rowSum(rows), m.total)) finding(`BUG where-same-account: allowanceAccount = emergencyAccount = ADIB → rows sum ${rowSum(rows)} vs total ${m.total} (Safe ${m.safe} counted twice: once as its own row, again inside "Emergency money")`);
+  ok(near(rowSum(rows), m.total), `same account: rows add up to the total (${rowSum(rows)} = ${m.total})`);
 }
 
 console.log('\n── 4. Cycle end: carry-over, reset, unmoved allowance, top-ups ──');

@@ -400,16 +400,18 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
 
 /** "Where your money is": every part of the total, so the numbers visibly add up. */
 export function whereRows(m) {
-  const rows = [];
-  const add = (label, v, c, sub = '') => { if (Math.abs(v) >= 0.5) rows.push({ label, v, c, sub }); };
+  const all = [];
+  const add = (label, v, c, sub = '') => all.push({ label, v, c, sub });
   const allowColor = accountMeta(m.allowAcc).color, hubColor = accountMeta(m.hub).color;
+  const same = m.allowAcc === m.hub;
   // rows say where money physically is, so only the part of Safe to spend still in the allowance
   // account sits here; any part moved on shows under the account it went to
-  const safeHere = m.allowAcc === m.hub ? m.safe : Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
+  const safeHere = same ? m.safe : Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
   const movedOn = Math.max(0, m.safe) - safeHere;
   add('Safe to spend', safeHere, allowColor, movedOn >= 0.5 ? `in ${m.allowAcc} · ${fmt(movedOn, { whole: true })} more moved to other accounts` : `${m.allowAcc} allowance left`);
-  if (m.allowAcc !== m.hub) add(`${m.allowAcc} carried over`, m.allowBal - safeHere, allowColor, 'unspent from earlier cycles');
-  add('Emergency money', m.hubB.free, hubColor, `${m.hub} after responsibilities`);
+  if (!same) add(`${m.allowAcc} carried over`, m.allowBal - safeHere, allowColor, 'unspent from earlier cycles');
+  // one account doing both jobs: Safe to spend is already part of its free money, so count it once
+  add('Emergency money', m.hubB.free - (same ? safeHere : 0), hubColor, `${m.hub} after responsibilities`);
   add('Responsibilities', m.hubB.reserved, 'var(--warn)', `held in ${m.hub} until paid`);
   add('Still to move', m.hubB.toMove, 'var(--label-3)', `waiting in ${m.hub}`);
   for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);
@@ -419,5 +421,11 @@ export function whereRows(m) {
     const a = accountMeta(id);
     add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
   }
-  return rows;
+  // whole numbers that add up to the rounded total: round every row down, then give the
+  // leftover dirhams to the rows with the biggest fractions (largest remainder)
+  const target = Math.round(all.reduce((a, r) => a + r.v, 0));
+  all.forEach((r) => { r.shown = Math.floor(r.v); });
+  let spare = target - all.reduce((a, r) => a + r.shown, 0);
+  [...all].sort((a, b) => (b.v - Math.floor(b.v)) - (a.v - Math.floor(a.v))).forEach((r) => { if (spare > 0) { r.shown++; spare--; } });
+  return all.filter((r) => r.shown !== 0);
 }
