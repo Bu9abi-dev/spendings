@@ -202,6 +202,7 @@ function finalize(e, { keepAED = false } = {}) {
    Every change records how to reverse itself. undo() replays the reversal without recording it. */
 const history = [];
 let muted = 0;
+let deferring = 0, touched = false; // inside batch(): persist/emit/sync wait until the end
 let collecting = null; // set while batch() runs: steps gather here instead of the history
 function record(label, reverse) {
   if (muted) return;
@@ -210,11 +211,16 @@ function record(label, reverse) {
   if (history.length > 30) history.shift();
   emit('history');
 }
-/** Several changes that undo together as one step, e.g. filing every payment from one merchant. */
+// replaced by store.batch once activity-filters lands
+/** Several changes that undo together as one step, e.g. filing every payment from one merchant.
+    Saving, redrawing and syncing wait until the end, so it costs one sync, not one per entry. */
 export function batch(label, fn) {
   const outer = collecting, steps = [];
-  collecting = steps;
-  try { fn(); } finally { collecting = outer; }
+  collecting = steps; deferring++;
+  try { fn(); } finally {
+    collecting = outer;
+    if (--deferring === 0 && touched) { touched = false; persist(); emit('entries'); sync(); }
+  }
   if (steps.length) record(label, () => steps.reverse().forEach((r) => r()));
 }
 export const canUndo = () => history.length > 0;
@@ -254,8 +260,7 @@ export function updateEntry(id, fields) {
   const sent = { ...fields, cycle: undefined };
   delete sent.cycle; delete sent.status; delete sent.amountAED;
   if (!state.prefs.demo) enqueue({ op: 'update', id, fields: sent });
-  persist(); emit('entries');
-  sync();
+  if (deferring) touched = true; else { persist(); emit('entries'); sync(); }
   return e;
 }
 

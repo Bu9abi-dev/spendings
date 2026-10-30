@@ -174,7 +174,8 @@ function openReview() {
   };
   // other waiting payments from the same shop as e
   const twins = (e, list) => list.filter((x) => x.id !== e.id && x.type === e.type && sameMerchant(x.merchant, e.merchant));
-  const confident = (g) => g && g.confidence !== 'low';
+  // only a high-confidence guess is ever filed without you tapping it
+  const confident = (g) => !!g && g.confidence === 'high';
 
   const body = () => {
     const list = items();
@@ -186,11 +187,12 @@ function openReview() {
     return all + list.map((e) => {
       const g = guess.get(e.id);
       const n = twins(e, list).length + 1;
-      const why = !g ? '' : g.confidence === 'low' ? 'Best guess from the name' : `Like ${esc(g.like)}${g.times > 1 ? ` · ${g.times} times` : ''}`;
+      const group = g && g.confidence === 'high' && n > 1; // "file all" only when sure
+      const why = !g ? '' : g.confidence === 'low' ? 'Guess from the shop name' : `${g.confidence === 'medium' ? 'Maybe like' : 'Like'} ${esc(g.like)}${g.times > 1 ? ` · ${g.times} times` : ''}`;
       const meta = g && categoryMeta(g.category);
-      const sug = g ? `<button type="button" class="rc-suggest" data-cat="${esc(g.category)}"${n > 1 ? ' data-all="1"' : ''} style="--cat:${seriesColor(meta.slot)}">
+      const sug = g ? `<button type="button" class="rc-suggest" data-cat="${esc(g.category)}"${group ? ' data-all="1"' : ''} style="--cat:${seriesColor(meta.slot)}">
           <span class="rs-icon">${icon(meta.icon, { size: 18 })}</span>
-          <span class="rs-text"><b>${n > 1 ? `File all ${n} as ${esc(meta.short)}` : `File as ${esc(g.category)}`}</b><span>${why}</span></span>
+          <span class="rs-text"><b>${group ? `File all ${n} as ${esc(meta.short)}` : `File as ${esc(g.category)}`}</b><span>${why}</span></span>
         </button>` : n > 1 ? `<p class="rc-hint">${n} payments from this shop. Pick a category and you can file them all.</p>` : '';
       return `<article class="review-card" data-id="${esc(e.id)}">
       <div class="rc-head"><div><b>${esc(e.merchant || 'Unknown merchant')}</b><span>${esc(accountMeta(e.account).name)} · ${dayLabel(dayKey(e.date))}, ${timeLabel(e.date)}</span></div>
@@ -211,7 +213,7 @@ function openReview() {
       // file several at once, undone together in one step
       const fileMany = (pairs, label) => {
         batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })));
-        toast(esc(label), { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { doUndo(); redraw(); } });
+        toast(`${esc(label)}. Undo puts ${pairs.length > 1 ? `these ${pairs.length}` : 'it'} back.`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { doUndo(); redraw(); } });
       };
       sheet.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-act="done"]')) return close();
@@ -239,6 +241,7 @@ function openReview() {
         b.classList.add('on');
         // picked by hand and the same shop has more waiting: offer to file those too
         if (others.length) {
+          // this toast's button files the others (its own undo step); the header Undo still undoes the one you just picked
           toast(`Filed as ${esc(categoryMeta(cat, e.type).short)}`, {
             icon: icon('check', { size: 18 }), tone: 'good', action: `File ${others.length} more`,
             onAction: () => { fileMany(others.map((x) => [x.id, cat]), `Filed ${others.length} more from ${e.merchant}`); redraw(); },

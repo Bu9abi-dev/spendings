@@ -4,7 +4,7 @@
 // cleanMerchant() strips the noise so they line up with what you typed before ("Carrefour").
 // suggestFor() then looks for, in order:
 //   1. the same cleaned name among your filed entries (or the sheet's remembered merchants),
-//   2. a close name: one contains the other ("carrefour" / "carrefour market"), or a one-letter typo,
+//   2. a close name: a one-letter typo or one name starting the other ("carrefour" / "carrefour market"). Both only ever medium,
 //   3. a built-in hint for well-known UAE shops ("ADNOC" → Transport & Fuel). Lowest confidence.
 // Only ever suggests. Nothing here changes an entry by itself.
 import { SPEND_CATEGORIES } from './model.js';
@@ -14,9 +14,10 @@ const NOISE = new Set([
   'abu', 'dhabi', 'dubai', 'sharjah', 'ajman', 'ain', 'al ain', 'auh', 'dxb', 'shj', 'uae', 'ae', 'are', 'u', 'a', 'e',
   'mcc', 'pos', 'purchase', 'payment', 'pay', 'card', 'applepay', 'contactless', 'visa', 'mastercard', 'debit', 'credit',
   'llc', 'l', 'c', 'fze', 'fzco', 'fz', 'co', 'est', 'branch', 'br', 'trading', 'tr', 'ltd', 'inc', 'the',
-  'www', 'com', 'net', 'online', 'mall', 'city', 'center', 'centre', 'road', 'st', 'street', 'reem', 'island', 'yas',
-  'khalifa', 'mussafah', 'mushrif', 'marina', 'jbr', 'jlt', 'bur', 'deira', 'karama', 'airport', 'terminal',
+  'www', 'com', 'net', 'online', 'city', 'center', 'centre', 'road', 'st', 'street', 'reem', 'island',
+  'khalifa', 'mussafah', 'mushrif', 'jbr', 'jlt', 'bur', 'deira', 'karama', 'airport', 'terminal',
 ]);
+const TRAILING = new Set(['yas', 'marina', 'mall']);
 // Payment-processor prefixes: "SQ *SALT", "PAYPAL *NETFLIX", "SUMUP *KARAK"
 const PREFIX = /^(sq|sp|tst|paypal|pp|sumup|zettle|izettle|stripe|google|gpay|checkout|ckout|amzn mktp|amazon mktp)\s*\*\s*/i;
 
@@ -26,9 +27,17 @@ export function cleanMerchant(raw) {
   s = s.replace(/\.(com|ae|net|org)\b/g, ' ')         // amazon.ae → amazon
     .replace(/&/g, ' and ')
     .replace(/[^a-z0-9؀-ۿ]+/g, ' ');         // punctuation → space (keeps Arabic)
-  const words = s.split(' ').filter((w) => w && !NOISE.has(w) && !/\d/.test(w)); // numbers are store ids, MCCs, card digits
+  const all = s.split(' ').filter(Boolean);
+  // drop noise words, store/MCC numbers and long digit codes; keep short leading numbers ("7 Eleven", "800 Pizza")
+  const keep = (w, i) => !NOISE.has(w) && !(/\d/.test(w) && !(i === 0 && /^\d{1,3}$/.test(w) && all.length > 1 && all.slice(1).some((x) => /^[a-z؀-ۿ]/.test(x) && !NOISE.has(x))));
+  let words = all.filter(keep);
+  // "yas", "marina", "mall" can be part of a name ("Yas Mall" the place), so they only go when they trail a real name
+  words = words.filter((w, i) => i === 0 || !TRAILING.has(w));
+  if (!words.length) words = all.filter((w) => !NOISE.has(w) && !/\d/.test(w));
   return words.slice(0, 3).join(' ');                  // the first few words name the shop; the rest is usually location
 }
+
+export const merchantKey = cleanMerchant; // one shop-name normaliser for every module (report, recurring…)
 
 // Built-in hints for when you've never filed a merchant. Checked against the cleaned name.
 const HINTS = [
@@ -56,15 +65,14 @@ function oneApart(a, b) {
   return edits + (a.length - i) + (b.length - j) <= 1;
 }
 
-/** How alike two cleaned names are, 0..1. 1 = same; 0.8 = one contains the other; 0.7 = a typo apart. */
+/** How alike two cleaned names are, 0..1. 1 = same; 0.9 = a one-letter typo apart (names of 5+ letters);
+    0.5 = one name starts the other ("noon" / "noon food"): related, but NOT the same shop. */
 function likeness(a, b) {
   if (a === b) return 1;
+  if (a.length >= 5 && b.length >= 5 && oneApart(a, b)) return 0.9;
   const A = a.split(' '), B = b.split(' ');
-  // "carrefour" vs "carrefour market": every word of the shorter name starts the longer one
   const [short, long] = A.length <= B.length ? [A, B] : [B, A];
-  if (short.join(' ').length >= 4 && short.every((w, i) => w === long[i])) return 0.8;
-  // one-letter typo in a longish first word, rest equal ("carefour" vs "carrefour")
-  if (A.length === B.length && A[0].length >= 5 && oneApart(A[0], B[0]) && A.slice(1).join(' ') === B.slice(1).join(' ')) return 0.7;
+  if (short.length < long.length && short.join(' ').length >= 4 && short.every((w, i) => w === long[i])) return 0.5;
   return 0;
 }
 
@@ -106,7 +114,8 @@ function topCategory(g) {
  * Best guess for a merchant name, or null.
  * → { category, confidence: 'high' | 'medium' | 'low', like: 'Carrefour', times: 5, key: 'carrefour' }
  *   high   = same shop, and you filed it the same way at least 3 times out of 4
- *   medium = same or similar shop, less consistent or fewer times
+ *   medium = same shop but less consistent or fewer times, a typo apart, or one name inside the other
+ *   Only 'high' is ever acted on automatically; medium and low are suggestions you tap.
  *   low    = no history, only a built-in hint
  */
 export function suggestFor(merchant, index) {
@@ -128,8 +137,8 @@ export function suggestFor(merchant, index) {
   return hint ? { category: hint[0], confidence: 'low', like: '', times: 0, key } : null;
 }
 
-/** Same shop? Used for "file all from this merchant". */
+/** Same shop (identical, or a one-letter typo)? "Noon" and "Noon Food" are different shops. Used for "file all". */
 export const sameMerchant = (a, b) => {
   const x = cleanMerchant(a), y = cleanMerchant(b);
-  return !!x && likeness(x, y) >= 0.8;
+  return !!x && likeness(x, y) >= 0.9;
 };

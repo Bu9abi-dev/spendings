@@ -212,12 +212,12 @@ export function openEntry(existing = null, preset = {}) {
         const tag = $('.suggest');
         const was = e.category + '|' + hinted;
         hinted = '';
-        if (g && g.confidence !== 'low' && (!e.category || autoPicked)) {
+        if (g && g.confidence === 'high' && (!e.category || autoPicked)) {
           e.category = g.category; autoPicked = true;
           tag.hidden = false;
           tag.textContent = g.like && g.like.toLowerCase() !== name.toLowerCase() ? `· like ${g.like}` : `· remembered for ${name}`;
-        } else if (g && g.confidence === 'low' && (!e.category || autoPicked)) {
-          // only a guess from the name: ring it, let you pick
+        } else if (g && (!e.category || autoPicked)) {
+          // medium or low: only a guess, so ring it and let you pick
           if (autoPicked) { e.category = ''; autoPicked = false; }
           hinted = g.category;
           tag.hidden = false; tag.textContent = `· maybe ${categoryMeta(g.category).short}?`;

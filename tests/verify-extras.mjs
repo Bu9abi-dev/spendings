@@ -30,7 +30,7 @@ await c.route('https://script.google.com/**', async (route) => {
 const p = await c.newPage();
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
-await p.goto('http://localhost:8765/#settings');
+await p.goto((process.env.BASE || 'http://localhost:8765/') + '#settings');
 await p.fill('input[name="url"]', URL_);
 await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');
