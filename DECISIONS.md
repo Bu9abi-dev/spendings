@@ -4,6 +4,27 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Category budgets, after the council and the v18 merge:** Settings already had "Budget" (the allowance), so the
+  Settings block is "Category limits" and the Insights card is "Category budgets". Names and icons come from
+  `allCategories('Spend')`/`categoryMeta` (never the shown-only list), so a limit on a hidden, renamed or custom
+  category keeps its look, and the label is what's shown everywhere. Settings lists only categories that have a
+  limit plus an "Add a limit" row that opens a chooser of shown categories. Home's decision is the pure
+  `budgetNotice(rows, { isCurrent })` returning `{ priority: 'over'|'near', text }` (or null), so Home can later cap
+  itself at one notice; it only appears for the current cycle and tapping it resets Insights' sticky cycle
+  (`resetInsights()`). A row under 1 AED over shows cents, exactly at the limit says "At the limit". The sheet's
+  only footer is "Refunds aren't taken off; they count as money in." Deleting a custom category in Settings →
+  Categories also clears its limit, as one undo step (`store.batch` around the two `saveExtra` calls).
+- **Category budgets (branch `claude/category-budgets`):** limits are saved as `{ v: 1, limits: { <categoryId>: AED } }`
+  under the `budgets` extra, one limit for every cycle (no per-month overrides yet). "Spent" is exactly Insights'
+  `summarize().byCategory`: every account, transfers excluded, refunds not netted off (a refund doesn't free up budget).
+  80% is "near", 100% is "over" (exactly at the limit counts as over). Percent is shown rounded down so "99%" never sits
+  beside a red "over". Home shows at most one line, for the fullest budget, with "and N more" if several are flagged;
+  it isn't a real dismiss, it just disappears when nothing is at 80%, and tapping it opens Insights. Insights shows the
+  card for whichever cycle is being viewed, against the same limits; with no budgets it shows a "Set a budget" prompt that
+  jumps to Settings. Settings has a Budgets section (one row per category, tap for a sheet with a number field, Save, and
+  Remove); the keypad wasn't used, matching the payday plan's amount field. Unknown category ids (a category removed
+  later) still get a row, called by their id. Maths and HTML are in `budgets.js` (no store import, so it runs in Node
+  tests); the store wiring and sheet are in `budgets-settings.js`.
 - **Custom categories keep the sheet's names fixed.** A category's id is what the Ledger stores, so renaming one
   (built-in or yours) only changes the label the app shows, and hiding only takes it out of the pickers. Past entries,
   the Apple Pay Shortcut's menu and remembered merchants keep working, and no Ledger cell is ever rewritten. Your
