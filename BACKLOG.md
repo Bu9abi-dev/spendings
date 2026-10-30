@@ -35,6 +35,12 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Later (wave 2)
 
+- **Chart follow-ups:** tap a place to filter Activity (after activity-filters merges); "on pace for AED X this
+  cycle"; an "over usual" flag feeding the weekly summary.
+- **BNPL tracking** (thread, `claude/bnpl`) and **custom categories** (thread, `claude/custom-categories`):
+  asked for by Abdullah on 30 Oct. Custom categories touch SPEND_CATEGORIES, which smart-categories and
+  budgets also read, so merge those first and rebase custom categories after.
+
 - **Money owed (split expenses).** Track what friends owe Abdullah and what he owes, as "person" accounts
   so lending is a transfer, never spending. Needs a design pass with the council first.
 - **Savings goals and net worth.** Goals saved in Extras, progress from chosen accounts; net worth view
@@ -51,5 +57,6 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v14 · Spending charts: day by day and weekly, top places, categories over six cycles (PR #7)
 - v13 · ▶ test logs nothing, Arabic digits in amounts, `features` list, 3x faster date maths
 - v12 · Foundation: date-proof tests, module split, money rows add up, same-account fix, Extras store (PR #6)

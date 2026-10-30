@@ -4,6 +4,15 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
+  branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
+  current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the
+  whole cycle fits on an iPhone.
+- **Small changes get one Opus reviewer instead of the full council** (v13 script batch). The reviewer found
+  that Arabic digits in Apple Pay amounts parsed as 0, which was fixed before merge.
+- **Release bumps after a thread's PR go straight to main** as a version + changelog commit, so I don't push to
+  another thread's branch while it may still be working on it.
+
 - **Council on the foundation PR, lighter format.** Five advisors ran; they agreed so closely that I wrote the
   synthesis myself instead of spending six more agents on peer review and a chairman. Full council (with
   peer review) stays the rule for wave-1 features. Transcript: council/council-transcript-2026-10-30-foundation.md.

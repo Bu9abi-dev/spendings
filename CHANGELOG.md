@@ -26,7 +26,17 @@ timeline
     section 30 October 2026
         v12 : Money rows always add up : Extras tab for new features : Sheet update needed
         v13 : Testing the Shortcut logs nothing : Arabic digits read right : Faster screens
+        v14 : Day-by-day and weekly spending : Top places : Categories over six cycles
 ```
+
+---
+
+## v14: Spending charts
+**30 October 2026** · no sheet update needed
+
+- Insights has a **Day by day** chart of the cycle's spending, with a weekly view. Press and slide along it to see any day. Moving money between your accounts is left out, because it isn't spending.
+- **Top places** lists where your money went most this cycle and how many payments each got.
+- **Categories over six cycles** shows each category's last six cycles side by side, with your usual amount, so you can see what's creeping up.
 
 ---
 
