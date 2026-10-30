@@ -320,7 +320,13 @@ await app((st, m, bn, a2) => {
 }, pp.id);
 await p.fill('#bn-item', 'TV');
 await p.click(sheet('[data-act="save"]'));
-await p.waitForFunction((id) => import('/js/store.js').then((st) => st.getExtra('bnpl').plans.find((x) => x.id === id)?.item === 'TV'), pp.id);
+await p.evaluate(async (id) => {   // polls inside evaluate: waitForFunction treats an async predicate's Promise as truthy at once
+  const st = await import('/js/store.js');
+  for (const t0 = Date.now(); st.getExtra('bnpl').plans.find((x) => x.id === id)?.item !== 'TV';) {
+    if (Date.now() - t0 > 10000) throw new Error('Save never reached the store');
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}, pp.id);
 pp = await planOf(pp.id);
 ok(pp.item === 'TV' && pp.paid[0]?.entry === lid && pp.paid[1]?.entry === '', 'Save keeps links made while the editor was open (paid read fresh at save time)');
 ok(pp.total === 1000 && pp.count === 3, 'and the total and count are unchanged');

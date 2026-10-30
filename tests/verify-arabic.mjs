@@ -93,7 +93,18 @@ const errors = [];
 p.on('pageerror', (e) => errors.push(String(e)));
 await p.goto(`${BASE}?demo=1&notour=1#home`);
 await p.waitForSelector('.lens');
-const settle = (ms = 350) => p.waitForTimeout(ms);
+// Waits for the page to be still (no running animation, scroll and sheet count unchanged for 4 frames)
+// instead of sleeping; the argument is ignored.
+const settle = () => p.evaluate(async () => {
+  const frame = () => new Promise((r) => requestAnimationFrame(r));
+  await frame();
+  let last = '', same = 0;
+  for (const t0 = Date.now(); same < 4 && Date.now() - t0 < 5000;) {
+    await frame();
+    const k = `${scrollY}|${document.getAnimations().length}|${document.querySelectorAll('.sheet').length}`;
+    same = k === last && !document.getAnimations().length ? same + 1 : 0; last = k;
+  }
+});
 const TABS = ['home', 'activity', 'insights', 'settings'];
 const tabText = async (tab) => { await p.click(`.tabbar [data-tab="${tab}"]`); await settle(); return p.evaluate(() => document.getElementById('view').innerText.replace(/[⁦-⁩]/g, '')); };
 

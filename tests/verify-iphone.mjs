@@ -196,11 +196,11 @@ for (const ph of PHONES) {
       Object.defineProperty(window, 'visualViewport', { configurable: true, get: () => fake });
       const { openEntry } = await import('/js/entry.js');
       openEntry();
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
       const sheet = [...document.querySelectorAll('.sheet')].pop();
       fake.height = innerHeight - 336; fake.offsetTop = 0; fake.dispatchEvent(new Event('resize'));
       sheet.querySelector('input[name="merchant"]').focus();
-      await new Promise((r) => setTimeout(r, 400));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
       const r = sheet.getBoundingClientRect(), f = sheet.querySelector('input[name="merchant"]').getBoundingClientRect();
       const res = { kbVar: sheet.style.getPropertyValue('--kb'), kbOpen: sheet.classList.contains('kb-open'), typing: sheet.classList.contains('typing'), sheetBottom: Math.round(r.bottom), visibleBottom: innerHeight - 336, fieldTop: Math.round(f.top), fieldBottom: Math.round(f.bottom), sheetTop: Math.round(r.top) };
       // iOS also scrolls the layout viewport: offsetTop > 0
@@ -224,7 +224,7 @@ for (const ph of PHONES) {
       const { total, safe, allowBal } = m;
       const sum = m.sum;
       const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: x.shown }));  // the whole numbers shown, after largest-remainder rounding
-      await new Promise((r) => setTimeout(r, 300));
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
       if (!document.querySelector('.where-row.total')) return { missing: location.hash + ' ' + document.querySelector('.lens-detail')?.innerHTML.slice(0, 200) };
       const rows = [...document.querySelectorAll('.where-row:not(.total)')].map((x) => ({ label: x.querySelector('b').textContent, v: +x.querySelector('.num').textContent.replace(/[,−]/g, (c) => (c === '−' ? '-' : '')) }));
       const shownTotal = +document.querySelector('.where-row.total .num').textContent.replace(/,/g, '');

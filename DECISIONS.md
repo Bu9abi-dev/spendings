@@ -372,3 +372,10 @@ Choices made while running the app on my own, newest first, with the reason for 
   show in Arabic until renamed; text links in the Activity bar and "Manage" have 44px tap areas. The legend swatch sits
   before its label in reading order (on the right in Arabic), as on iOS. Native date pickers' own format (mm/dd/yyyy in a
   desktop browser) follows the device, not the page, so it is left to iOS.
+- **Tests wait on conditions, not clocks.** Browser tests no longer sleep a fixed time (`waitForTimeout`) to let the page
+  catch up: they wait for the thing they need (a selector, the outbox empty, the sheet closed, the page still for 4 frames).
+  Polling that needs `import()` or `await` happens inside `p.evaluate`, because `waitForFunction` treats an async
+  predicate's Promise as true at once (that was verify-categorize's flake). The 31-second "list was just read" waits in
+  verify-extras move the page's `Date.now` forward instead. Waits that test real elapsed time stay (a toast lasting 6 s,
+  focus keeping it up, the 3 s spinner). `tests/run-all.sh` runs every test, prints one line per test, and exits non-zero
+  naming the failures.
