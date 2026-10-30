@@ -33,7 +33,15 @@ timeline
         v18 : Your own categories : Rename and hide : Sheet keeps the names
         v19 : Category limits : Progress bars : One quiet nudge
         v20 : Subscriptions : New ones flagged : One Home line at a time
+        v21 : Changes never lost on a slow connection
 ```
+
+---
+
+## v21: Safer syncing
+**30 October 2026** · no sheet update needed
+
+- Fixed a rare way a change could get lost on its way to your sheet: if you saved the same setting twice in quick succession on a slow connection, the change queued after it could be dropped. Edits made while a new entry was still uploading could also be lost. Both now always reach the sheet.
 
 ---
 

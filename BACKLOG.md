@@ -10,7 +10,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | 3 | BNPL tracking (council fixes) | `claude/bnpl` | Tabby/Tamara, auto-link with visible trail |
 | 4 | Savings goals and net worth | `claude/goals` | manual investments, read-only |
-| 5 | Flaky verify-extras | `claude/extras-flake` | find the race |
+
 
 ## Next
 
@@ -31,6 +31,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v21 · Safer syncing: a change saved while another is sending is never dropped
 - v20 · Subscriptions: detector, monthly total, new-charge flag; Home shows one notice at a time
 - v19 · Category budgets: monthly limits per category, Insights bars, one Home nudge
 - v18 · Your own categories: add, rename (label only), hide; Shortcut accepts them after the script update
