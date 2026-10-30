@@ -37,9 +37,9 @@ export function renderActivity() {
       <div class="search">${icon('search', { size: 18 })}<input type="search" placeholder="Search" value="${esc(activityFilter.q)}" aria-label="Search entries" enterkeyhint="search"></div>
       <button type="button" class="filter-btn${n ? ' on' : ''}" data-act="filters" aria-label="Filters${n ? `, ${n} on` : ''}">${icon('filter', { size: 20 })}${n ? `<span class="filter-count">${n}</span>` : ''}</button>
     </div>
-    <div class="filter-chips" role="tablist" aria-label="Filter">
+    <div class="filter-chips" role="radiogroup" aria-label="Show">
       ${[['all', 'All'], ['Spend', 'Spending'], ['Income', 'Income'], ['Transfer', 'Transfers'], ['review', 'Needs review']]
-        .map(([k, l]) => `<button type="button" role="tab" class="fchip${activityFilter.kind === k ? ' on' : ''}" aria-selected="${activityFilter.kind === k}" data-kind="${k}">${l}</button>`).join('')}
+        .map(([k, l]) => `<button type="button" role="radio" class="fchip${activityFilter.kind === k ? ' on' : ''}" aria-checked="${activityFilter.kind === k}" data-kind="${k}">${l}</button>`).join('')}
     </div>
     <div class="activity-body">${activityBody()}</div>`;
 }

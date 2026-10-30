@@ -95,7 +95,7 @@ export function budgetsCard(rows, { isCurrent = true } = {}) {
         <span class="lg-icon">${icon(r.meta.icon, { size: 16 })}</span>
         <span class="bg-name"><b>${esc(nameOf(r.meta))}</b><small>AED ${fmt(r.spent, { whole: true })} of ${fmt(r.limit, { whole: true })}</small></span>
         <span class="bg-pct num">${pctText(r)}</span>
-        <span class="bg-track" role="progressbar" aria-label="${esc(nameOf(r.meta))} limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.floor(r.ratio * 100))}"><i style="--w:${Math.min(100, r.ratio * 100)}%"></i></span>
+        <span class="bg-track" role="progressbar" aria-label="${esc(nameOf(r.meta))} limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.floor(r.ratio * 100))}" aria-valuetext="AED ${fmt(r.spent, { whole: true })} of ${fmt(r.limit, { whole: true })}"><i style="--w:${Math.min(100, r.ratio * 100)}%"></i></span>
         <span class="bg-left num">${leftText(r)}</span>
       </div>`).join('')}</div>
   </section>`;

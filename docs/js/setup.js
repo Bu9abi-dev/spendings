@@ -359,7 +359,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     if (step === 'shortcut') return '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button><button type="button" class="text-btn su-have" data-su="next">Later</button>';
     return '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button>';
   };
-  const dots = () => `<span class="su-dots" aria-label="Step ${idx() + 1} of ${steps.length}">${steps.map((s, i) => `<i class="${i === idx() ? 'on' : i < idx() ? 'past' : ''}"></i>`).join('')}</span>`;
+  const dots = () => `<span class="su-dots" role="img" aria-label="Step ${idx() + 1} of ${steps.length}">${steps.map((s, i) => `<i class="${i === idx() ? 'on' : i < idx() ? 'past' : ''}"></i>`).join('')}</span>`;
   const head = () => `<header class="sheet-head su-head">
       ${step === 'welcome' || step === 'done' ? '<button type="button" class="text-btn" data-su="close">Not now</button>' : `<button type="button" class="text-btn su-back" data-su="back">${icon('chevL', { size: 18 })}Back</button>`}
       ${dots()}<span class="su-head-spacer"></span></header>`;

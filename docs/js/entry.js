@@ -35,7 +35,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       ${['Spend', 'Income', 'Transfer'].map((t) => `<button type="button" role="radio" data-type="${t}">${TYPE_LABEL[t]}</button>`).join('')}
     </div>
     <div class="amount-row">
-      <button class="cur-pill" type="button" data-act="currency" aria-label="Currency"></button>
+      <button class="cur-pill" type="button" data-act="currency" aria-label="AED, change currency"></button>
       <span class="amount-box">
         <output class="amount num" aria-live="polite"></output>
         <input class="amount-input num" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" aria-label="Amount" placeholder="0">
@@ -67,7 +67,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         </label>
         <label class="field date-field">
           ${icon('calendar', { size: 20 })}
-          <input type="datetime-local" name="date" value="${localInputValue(e.date)}">
+          <input type="datetime-local" name="date" aria-label="Date and time" value="${localInputValue(e.date)}">
         </label>
       </div>
       <p class="split-note" hidden></p>
@@ -132,6 +132,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         amountEl.classList.toggle('zero', !amountStr || +amountStr === 0);
         amountEl.classList.toggle('long', shown.length > 7);
         $('.cur-pill').textContent = e.currency;
+        $('.cur-pill').setAttribute('aria-label', `${e.currency}, change currency`);
         e.amount = +amountStr || 0;
         sub.textContent = e.currency === 'USD' && e.amount ? `≈ ${money(e.amount * state.settings.usdRate, 'AED', { fixed: true })} at ${state.settings.usdRate}` : '';
         validate();
@@ -220,8 +221,8 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       function nudge() {
         haptic();
         const target = !(e.amount > 0) ? $('.amount-box') : e.type === 'Transfer' ? sheet.querySelector('[data-role="toAccount"]') : $('.cat-grid');
-        target?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-        target?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'none' }], { duration: 380, easing: 'ease-out' });
+        target?.scrollIntoView({ block: 'nearest', behavior: reduceMotion() ? 'auto' : 'smooth' });
+        if (!reduceMotion()) target?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-7px)' }, { transform: 'translateX(6px)' }, { transform: 'translateX(-3px)' }, { transform: 'none' }], { duration: 380, easing: 'ease-out' });
         if (sheet.classList.contains('native') && !(e.amount > 0)) amountInput.focus();
       }
 
@@ -364,7 +365,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         if (act === 'save' && e.amount >= BIG && !bigOk && !existing) {
           bigOk = true; haptic();
           save.textContent = `Tap again to save ${money(e.amount, e.currency)}`;
-          save.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 260 });
+          if (!reduceMotion()) save.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 260 });
           return;
         }
         if (act === 'save' && saveOk) {

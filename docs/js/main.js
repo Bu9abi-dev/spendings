@@ -48,10 +48,10 @@ function quickAdd() {
   const top = [...groups.values()].filter((g) => g.n >= 2).sort((a, b) => b.n - a.n).slice(0, 6);
   if (!top.length) return '';
   return `<h3 class="group-title">Quick add</h3>
-    <div class="quick" role="list">
+    <div class="quick" role="group" aria-label="Quick add">
       ${top.map(({ e }) => {
         const m = categoryMeta(e.category);
-        return `<button type="button" class="quick-chip" role="listitem" data-quick="${esc(e.id)}" style="--tint:${m ? seriesColor(m.slot) : 'var(--label-2)'}">
+        return `<button type="button" class="quick-chip" data-quick="${esc(e.id)}" style="--tint:${m ? seriesColor(m.slot) : 'var(--label-2)'}">
           <span class="qc-icon">${icon(m ? m.icon : 'dots', { size: 18 })}</span>
           <span class="qc-text"><b>${esc(e.merchant)}</b><span>${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount)} · ${esc(e.account)}</span></span>
         </button>`;
@@ -513,7 +513,7 @@ function activityClick(t) {
   return false;
 }
 function refreshActivityChips(on) {
-  view.querySelectorAll('.filter-chips [data-kind]').forEach((b) => { b.classList.toggle('on', b === on); b.setAttribute('aria-selected', b === on); });
+  view.querySelectorAll('.filter-chips [data-kind]').forEach((b) => { b.classList.toggle('on', b === on); b.setAttribute('aria-checked', b === on); });
   refreshActivity(view);
 }
 

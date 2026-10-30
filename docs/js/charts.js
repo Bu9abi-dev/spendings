@@ -29,7 +29,7 @@ export function donut(slices, { total, centerLabel = 'Spent', size = 220 } = {})
       aria-label="${esc(s.label)}: AED ${fmt(s.value)}, ${pct}%"/>`;
   }).join('');
   return `<div class="donut" data-total="${total ?? sum}" data-center="${esc(centerLabel)}">
-    <svg viewBox="0 0 220 220" width="${size}" height="${size}">${paths}</svg>
+    <svg viewBox="0 0 220 220" width="${size}" height="${size}" role="group" aria-label="Spending by category, ${slices.filter((s) => s.value > 0).length} parts. Each part is a button.">${paths}</svg>
     <div class="donut-center" aria-live="polite"><span class="dc-label">${esc(centerLabel)}</span><span class="dc-value num">AED ${fmt(total ?? sum, { whole: true })}</span></div>
   </div>`;
 }
@@ -57,6 +57,17 @@ export function bindDonut(root) {
   });
 }
 
+/** The pace chart in words, for screen readers: where spending is today against an even spread. */
+function paceSummary({ cumulative, pace, labels, todayIndex }) {
+  let i = Number.isInteger(todayIndex) && todayIndex >= 0 && todayIndex < cumulative.length ? todayIndex : cumulative.length - 1;
+  while (i > 0 && cumulative[i] == null) i--;
+  const spent = cumulative[i];
+  if (spent == null) return 'Cumulative spending against the allowance pace. Nothing spent yet.';
+  const diff = Math.round(spent - pace[i]);
+  const rel = Math.abs(diff) < 1 ? 'right on an even pace' : diff > 0 ? `AED ${fmt(diff, { whole: true })} over an even pace` : `AED ${fmt(-diff, { whole: true })} under an even pace`;
+  return `Cumulative spending against the allowance pace. By ${labels[i]}: spent AED ${fmt(spent, { whole: true })}, ${rel} of AED ${fmt(pace[i], { whole: true })}.`;
+}
+
 /** Cumulative spend line vs an even allowance pace line. One axis (AED). */
 export function paceLine({ days, cumulative, pace, todayIndex, labels }) {
   const W = 340, H = 170, L = 8, R = 8, T = 14, B = 22;
@@ -71,7 +82,7 @@ export function paceLine({ days, cumulative, pace, todayIndex, labels }) {
   const ticks = [0, Math.floor((days - 1) / 2), days - 1].map((i) => `<text x="${x(i)}" y="${H - 6}" class="axis" text-anchor="${i === 0 ? 'start' : i === days - 1 ? 'end' : 'middle'}">${labels[i]}</text>`).join('');
   const last = pts[pts.length - 1];
   return `<div class="pace-chart" data-days="${days}">
-    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="pace-svg" role="img" aria-label="Cumulative spending against the allowance pace">
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="pace-svg" role="img" aria-label="${esc(paceSummary({ cumulative, pace, labels, todayIndex }))}">
       ${grid}
       <line x1="${L}" x2="${W - R}" y1="${y(0)}" y2="${y(0)}" class="base"/>
       <polyline points="${line(pace)}" class="pace-line"/>
@@ -159,10 +170,10 @@ export function spendBars({ days, weeks, avg, soFar }) {
       <button type="button" role="radio" data-bars="week" aria-checked="${barsView === 'week'}">Week</button>
     </div>
     <p class="sb-readout" aria-live="polite">${defaults[barsView]}</p>
-    <div class="sb-plot sb-days">${avgLine}${days.map((d) => bar(d, dayMax, 'dy')).join('')}</div>
-    <div class="sb-ticks sb-days">${ticks}</div>
-    <div class="sb-plot sb-weeks">${weeks.map((w) => bar(w, weekMax, 'wk')).join('')}</div>
-    <div class="sb-wlabels sb-weeks">${weeks.map((w) => `<span>${esc(w.label)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>`).join('')}</div>
+    <div class="sb-plot sb-days" role="group" aria-label="Spent each day">${avgLine}${days.map((d) => bar(d, dayMax, 'dy')).join('')}</div>
+    <div class="sb-ticks sb-days" aria-hidden="true">${ticks}</div>
+    <div class="sb-plot sb-weeks" role="group" aria-label="Spent each week">${weeks.map((w) => bar(w, weekMax, 'wk')).join('')}</div>
+    <div class="sb-wlabels sb-weeks" aria-hidden="true">${weeks.map((w) => `<span>${esc(w.label)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>`).join('')}</div>
   </div>`;
 }
 

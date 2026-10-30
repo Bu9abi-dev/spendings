@@ -2,7 +2,7 @@
 import { ACCOUNTS, accountMeta, balances, fmt, colorHex } from './model.js';
 import { state, addAccount, updateAccount, removeAccount, nameTaken } from './store.js';
 import { CARD_COLORS } from './theme.js';
-import { openSheet, haptic, toast, esc } from './ui.js';
+import { openSheet, haptic, toast, esc, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 
 export function accountsSettingsBlock() {
@@ -88,7 +88,7 @@ export function openAccount(name) {
         if (mv) { moveTo = mv.dataset.move; sheet.querySelectorAll('[data-move]').forEach((b) => b.classList.toggle('on', b === mv)); haptic(); return; }
         const act = ev.target.closest('[data-act]')?.dataset.act;
         if (act === 'cancel') close();
-        if (act === 'remove') { const p = $('.remove-panel'); p.hidden = false; ev.target.closest('[data-act]').hidden = true; p.scrollIntoView({ behavior: 'smooth', block: 'nearest' }); haptic(); }
+        if (act === 'remove') { const p = $('.remove-panel'); p.hidden = false; ev.target.closest('[data-act]').hidden = true; p.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'nearest' }); haptic(); }
         if (act === 'confirm-remove') {
           removeAccount(name, moveTo);
           haptic(); close();
