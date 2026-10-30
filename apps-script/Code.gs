@@ -284,7 +284,7 @@ function logCardSpend_(s, p) {
     return { ok: true, test: true, message: 'Connected ✓ The sheet got your Shortcut. Nothing was logged because there was no payment in this test.' };
   }
   if (!category || /later|skip|review/i.test(category)) category = '';
-  if (category && SPEND_CATEGORIES.indexOf(category) < 0) category = matchCategory_(category) || '';
+  if (category && spendCategories_().indexOf(category) < 0) category = matchCategory_(category) || '';
   var remembered = '';
   if (!category && merchant) remembered = category = rememberedCategory_(merchant);
 
@@ -833,11 +833,37 @@ function rememberMerchant_(merchant, category) {
 
 function matchCategory_(text) {
   var t = String(text).toLowerCase();
-  for (var i = 0; i < SPEND_CATEGORIES.length; i++) {
-    var first = SPEND_CATEGORIES[i].toLowerCase().split(/[ &]/)[0];
-    if (t.indexOf(first) >= 0) return SPEND_CATEGORIES[i];
+  var cats = spendCategories_();
+  for (var i = 0; i < cats.length; i++) {
+    if (cats[i].toLowerCase() === t) return cats[i];
+  }
+  // the app may show a renamed label ("Eating out") for a built-in id ("Food & Drinks")
+  var names = categoryConfig_().names || {};
+  for (var id in names) {
+    if (String(names[id]).toLowerCase() === t && cats.indexOf(id) >= 0) return id;
+  }
+  for (var j = 0; j < cats.length; j++) {
+    var first = cats[j].toLowerCase().split(/[ &]/)[0];
+    if (first && t.indexOf(first) >= 0) return cats[j];
   }
   return '';
+}
+
+/** The app's Settings → Categories, saved in the Extras tab ({ custom, hidden, names }). Empty if never set. */
+function categoryConfig_() {
+  var c = readExtras_().categories;
+  return c && typeof c === 'object' ? c : {};
+}
+
+/** Built-in spending categories plus your own (hidden ones still count, so old Shortcut menus keep working). */
+function spendCategories_() {
+  var custom = categoryConfig_().custom;
+  var out = SPEND_CATEGORIES.slice();
+  (Array.isArray(custom) ? custom : []).forEach(function (x) {
+    var id = x && typeof x.id === 'string' ? x.id.trim() : '';
+    if (id && (x.type || 'Spend') === 'Spend' && out.indexOf(id) < 0) out.push(id);
+  });
+  return out;
 }
 
 /* ───────────────────────── Cycles ───────────────────────── */

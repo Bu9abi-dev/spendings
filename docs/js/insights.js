@@ -1,6 +1,6 @@
 // Insights tab: where the money went, allowance pace, accounts, income and the last six cycles.
 import {
-  ACCOUNTS, SPEND_CATEGORIES, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
+  ACCOUNTS, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
 } from './model.js';
 import { state } from './store.js';
 import { esc } from './ui.js';
@@ -25,11 +25,11 @@ export function renderInsights() {
   const sum = summarize(state.entries, cyc, s, state.plan);
 
   const main = SPEND_CATEGORIES.filter((c) => c.slot);
-  const otherTotal = ['Family & Gifts', 'Other', 'Uncategorised'].reduce((a, k) => a + (sum.byCategory.get(k) || 0), 0)
-    + [...sum.byCategory].filter(([k]) => !SPEND_CATEGORIES.some((c) => c.id === k) && k !== 'Uncategorised').reduce((a, [, v]) => a + v, 0);
+  // everything without its own colour: Family, Other, your own and hidden categories, and Needs category
+  const otherTotal = [...sum.byCategory].filter(([k]) => !main.some((c) => c.id === k)).reduce((a, [, v]) => a + v, 0);
   const slices = [...main.map((c) => ({ label: c.short, value: sum.byCategory.get(c.id) || 0, color: seriesColor(c.slot) })), { label: 'Other', value: otherTotal, color: 'var(--series-other)' }];
 
-  const legendRows = [...SPEND_CATEGORIES, { id: 'Uncategorised', short: 'Needs category', icon: 'tray', slot: 0 }]
+  const legendRows = [...allCategories('Spend'), { id: 'Uncategorised', short: 'Needs category', icon: 'tray', slot: 0 }]
     .map((c) => ({ c, v: sum.byCategory.get(c.id) || 0 }))
     .filter((r) => r.v > 0)
     .sort((a, b) => b.v - a.v);
@@ -79,7 +79,7 @@ export function renderInsights() {
   const restOfSpend = sum.spent - merchants.reduce((a, m) => a + m.total, 0);
 
   const trends = categoryTrends(state.entries, cyc, s, 6);
-  const catOf = (id) => SPEND_CATEGORIES.find((c) => c.id === id)
+  const catOf = (id) => categoryMeta(id)
     || (id === 'Uncategorised' ? { id, short: 'Needs category', icon: 'tray', slot: 0, warn: true } : { id, icon: 'dots', slot: 0 });
   const trendNote = (t) => (t.usual == null ? 'Nothing before this' : `Usual AED ${fmt(t.usual, { whole: true })}`);
 
@@ -100,7 +100,7 @@ export function renderInsights() {
       <div class="legend">
         ${legendRows.length ? legendRows.map(({ c, v }) => `<div class="lg-row">
           <span class="lg-icon" style="--tint:${c.id === 'Uncategorised' ? 'var(--warn)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}</span>
-          <span class="lg-name">${c.id === 'Uncategorised' ? 'Needs category' : c.id}</span>
+          <span class="lg-name">${c.id === 'Uncategorised' ? 'Needs category' : esc(c.label || c.id)}</span>
           <span class="lg-bar"><i style="--w:${(v / Math.max(1, sum.spent)) * 100}%; --tint:${c.id === 'Uncategorised' ? 'var(--warn)' : seriesColor(c.slot)}"></i></span>
           <span class="lg-val num">${fmt(v, { whole: true })}</span>
           <span class="lg-pct num">${Math.round((v / Math.max(1, sum.spent)) * 100)}%</span>

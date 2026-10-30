@@ -1183,3 +1183,15 @@ html.sheet-open body::after { opacity: 0; }
 .conn-details > summary::-webkit-details-marker { display: none; }
 .conn-details[open] > summary .chev { transform: rotate(180deg); }
 .conn-details .chev { transition: transform 0.25s var(--ease-out); margin-left: auto; }
+
+/* Settings → Categories */
+.cat-row.is-hidden .row-icon, .cat-row.is-hidden .row-title { opacity: 0.45; }
+.cat-income > summary { list-style: none; }
+.cat-income > summary::-webkit-details-marker { display: none; }
+.cat-income[open] > summary .chev { transform: rotate(180deg); }
+.cf-type { margin: 0 var(--gutter) 12px; }
+.cf-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(44px, 1fr)); gap: 8px; margin: 0 var(--gutter) 16px; }
+.cf-icon { height: 44px; border-radius: 12px; display: grid; place-items: center; background: var(--fill-3); color: var(--label-2); transition: transform 0.16s var(--ease-out), background 0.2s, color 0.2s; }
+.cf-icon[aria-checked="true"] { background: var(--tint); color: var(--on-tint); }
+.cf-icon:active { transform: scale(0.92); }
+@media (prefers-reduced-motion: reduce) { .cf-icon { transition: none; } }

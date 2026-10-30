@@ -1,5 +1,5 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
-import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
+import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, pickerCategories, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
 import { state, addEntry, updateEntry, deleteEntry, suggestCategory, setPrefs, undo } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
@@ -153,13 +153,13 @@ export function openEntry(existing = null, preset = {}) {
       }
 
       function renderCategories() {
-        const list = e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES;
+        const list = pickerCategories(e.type, e.category);
         if (e.category && !list.some((c) => c.id === e.category)) e.category = '';
         $('.cat-grid').innerHTML = list.map((c) => {
           const on = e.category === c.id;
           const color = e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot);
           return `<button type="button" class="cat${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-cat="${esc(c.id)}" style="--cat:${color}">
-            <span class="cat-icon">${icon(c.icon, { size: 22 })}</span><span class="cat-name">${c.short}</span></button>`;
+            <span class="cat-icon">${icon(c.icon, { size: 22 })}</span><span class="cat-name">${esc(c.short)}</span></button>`;
         }).join('');
       }
 

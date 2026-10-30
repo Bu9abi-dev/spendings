@@ -19,8 +19,8 @@ export function setAccountList(list) {
 }
 setAccountList(DEFAULT_ACCOUNTS);
 
-// Fixed order = validated palette order (dataviz reference palette, adjacent pairs pass CVD).
-export const SPEND_CATEGORIES = [
+// Built-in categories. Fixed order = validated palette order (dataviz reference palette, adjacent pairs pass CVD).
+export const DEFAULT_SPEND_CATEGORIES = [
   { id: 'Food & Drinks', short: 'Food', icon: 'fork', slot: 1 },
   { id: 'Transport & Fuel', short: 'Transport', icon: 'car', slot: 2 },
   { id: 'Groceries', short: 'Groceries', icon: 'basket', slot: 3 },
@@ -32,7 +32,7 @@ export const SPEND_CATEGORIES = [
   { id: 'Family & Gifts', short: 'Family', icon: 'gift', slot: 0 },
   { id: 'Other', short: 'Other', icon: 'dots', slot: 0 },
 ];
-export const INCOME_CATEGORIES = [
+export const DEFAULT_INCOME_CATEGORIES = [
   { id: 'Salary', short: 'Salary', icon: 'briefcase' },
   { id: 'Nafis', short: 'Nafis', icon: 'in' },
   { id: 'Allowance', short: 'Allowance', icon: 'wallet' },
@@ -40,6 +40,44 @@ export const INCOME_CATEGORIES = [
   { id: 'Refund', short: 'Refund', icon: 'undo' },
   { id: 'Other', short: 'Other', icon: 'dots' },
 ];
+
+// The lists the app shows: built-ins plus your own (Settings → Categories), minus hidden ones.
+// Refreshed in place by setCategoryList(), like ACCOUNTS, so every module sees the current list.
+// Hidden and removed categories stay findable through categoryMeta(), so past entries keep their names.
+export const SPEND_CATEGORIES = [];
+export const INCOME_CATEGORIES = [];
+const ALL_CATEGORIES = { Spend: [], Income: [] };
+export const CATEGORY_ICONS = ['fork', 'car', 'basket', 'ticket', 'bag', 'plane', 'bolt', 'heart', 'gift', 'briefcase', 'wallet', 'cash', 'card', 'store', 'home', 'calendar', 'note', 'sparkle', 'dots'];
+
+/** cfg is the `categories` extra: { v: 1, custom: [{ id, type, icon }], hidden: [id], names: { id: label } } */
+export function setCategoryList(cfg) {
+  const c = cfg && typeof cfg === 'object' ? cfg : {};
+  const hidden = new Set(Array.isArray(c.hidden) ? c.hidden : []);
+  const names = c.names && typeof c.names === 'object' ? c.names : {};
+  const custom = Array.isArray(c.custom) ? c.custom.filter((x) => x && typeof x.id === 'string' && x.id.trim()) : [];
+  for (const [type, defaults, shown] of [['Spend', DEFAULT_SPEND_CATEGORIES, SPEND_CATEGORIES], ['Income', DEFAULT_INCOME_CATEGORIES, INCOME_CATEGORIES]]) {
+    const mine = custom
+      .filter((x) => (x.type || 'Spend') === type && !defaults.some((d) => d.id === x.id))
+      // your own categories share the grey "other" colour: the eight-colour palette is checked for colour blindness
+      .map((x) => ({ id: x.id, short: x.id, icon: CATEGORY_ICONS.includes(x.icon) ? x.icon : 'dots', slot: 0, custom: true }));
+    const all = [...defaults, ...mine].map((x) => ({ ...x, short: names[x.id] || x.short, label: names[x.id] || x.id, hidden: hidden.has(x.id) }));
+    ALL_CATEGORIES[type].splice(0, ALL_CATEGORIES[type].length, ...all);
+    shown.splice(0, shown.length, ...all.filter((x) => !x.hidden));
+  }
+}
+setCategoryList(null);
+
+/** Every category of a type, hidden ones included (for Settings and for reading old entries). */
+export const allCategories = (type = 'Spend') => ALL_CATEGORIES[type === 'Income' ? 'Income' : 'Spend'];
+
+/** The categories to offer in a picker. A hidden one stays in the list while it's the one already chosen,
+    so editing an old entry never silently drops its category. */
+export function pickerCategories(type = 'Spend', current = '') {
+  const shown = type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES;
+  const extra = current && !shown.some((c) => c.id === current) ? allCategories(type).filter((c) => c.id === current) : [];
+  return [...shown, ...extra];
+}
+
 export const TYPES = ['Spend', 'Income', 'Transfer'];
 
 // The payday plan. Mirrors the sheet's Plan tab; used until the sheet answers.
@@ -63,8 +101,7 @@ const MONTHS_LONG = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 const TZ = 'Asia/Dubai';
 
 export function categoryMeta(id, type = 'Spend') {
-  const list = type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES;
-  return list.find((c) => c.id === id) || null;
+  return allCategories(type).find((c) => c.id === id) || null;
 }
 export const seriesColor = (slot) => (slot ? `var(--series-${slot})` : 'var(--series-other)');
 export const accountMeta = (id) => ALL_ACCOUNTS.find((a) => a.id === id) || { id, name: id || 'Unknown', role: '', colorId: 'graphite', color: 'var(--series-other)', archived: true };

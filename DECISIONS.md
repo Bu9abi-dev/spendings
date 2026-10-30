@@ -4,6 +4,19 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Custom categories keep the sheet's names fixed.** A category's id is what the Ledger stores, so renaming one
+  (built-in or yours) only changes the label the app shows, and hiding only takes it out of the pickers. Past entries,
+  the Apple Pay Shortcut's menu and remembered merchants keep working, and no Ledger cell is ever rewritten. Your
+  own categories share the grey "other" colour, because the eight-colour palette is the checked colour-blind-safe set.
+  Saved in the `categories` extra. A category can only be deleted while no entry uses it; otherwise hide it.
+- **Apps Script accepts your own categories from the Shortcut** (`spendCategories_()` reads the Extras tab), and a
+  renamed label maps back to its id. Needs the script redeploy, like v12's Extras; until then a custom category sent
+  by the Shortcut lands in Needs review, which is the old behaviour.
+- **Ran one council over three branches** (smart-categories, activity-filters, monthly-report): five Sonnet advisors,
+  each reviewing all three, synthesis by the loop thread. Transcript: council/council-transcript-2026-10-30-wave1.md.
+- **Took over the wave-1 threads that hit their limit.** Budgets, subscriptions and BNPL were rebuilt by subagents
+  on their own branches from main.
+
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
   current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the
