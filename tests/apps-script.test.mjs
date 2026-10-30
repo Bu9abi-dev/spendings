@@ -126,6 +126,27 @@ assert.equal(post({ action: 'list' }).settings.allowanceAccount, 'ADCB Allowance
 r = post({ action: 'accounts', accounts: post({ action: 'list' }).accounts.map((a) => (a.name === 'Cash' ? { ...a, archived: true } : a)) });
 assert.equal(r.accounts.find((a) => a.name === 'Cash').archived, true);
 
+// people (money owed): a person is never matched as your card, and lending from the allowance card uses allowance
+{
+  const allow = post({ action: 'list' }).settings.allowanceAccount;
+  post({ action: 'accounts', accounts: [...post({ action: 'list' }).accounts, { name: 'Visa', note: 'Person', color: 'graphite', wallet: '' }] });
+  let x = post({ source: 'applepay', amount: 'AED 12', merchant: 'Cafe', card: 'Visa Gold', category: 'Food & Drinks' });
+  assert.equal(x.entry.account, 'Visa'); // not flagged yet: the old name match still applies
+  assert.equal(post({ action: 'extras', key: 'people', value: { v: 1, names: ['Visa'] } }).ok, true);
+  x = post({ source: 'applepay', amount: 'AED 13', merchant: 'Cafe', card: 'Visa Gold', category: 'Food & Drinks' });
+  assert.notEqual(x.entry.account, 'Visa');
+  assert.equal(x.entry.status, 'Review'); // unknown card, for you to sort
+  x = post({ source: 'applepay', amount: 'AED 14', merchant: 'Visa', card: 'ADIB Visa', category: 'Food & Drinks' });
+  assert.equal(x.entry.type, 'Spend'); // paying a shop called like a person is still spending
+  const cyc = ctx.cycleOf_(new Date(), 27);
+  const left0 = ctx.cycleSummary_(cyc).allowanceLeft;
+  post({ action: 'add', entry: { id: 'lend1', type: 'Transfer', amount: 50, account: allow, toAccount: 'Visa' } });
+  assert.equal(Math.round((left0 - ctx.cycleSummary_(cyc).allowanceLeft) * 100) / 100, 50);
+  post({ action: 'add', entry: { id: 'back1', type: 'Transfer', amount: 50, account: 'Visa', toAccount: allow } });
+  assert.equal(Math.round(ctx.cycleSummary_(cyc).allowanceLeft * 100) / 100, Math.round(left0 * 100) / 100);
+  post({ action: 'extras', key: 'people', value: null });
+}
+
 // reset: entries and merchants cleared, a hidden backup keeps the old ledger, accounts survive
 const before = post({ action: 'list' }).entries.length;
 assert.ok(before > 0);

@@ -2,6 +2,7 @@
 // (account, category, period, amount), the filtered total, and Select mode for bulk edits.
 import { dayKey, dayLabel, fmt, toAED, ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, allCategories, seriesColor, money } from './model.js';
 import { state, batch, updateEntry, deleteEntry, topUndoId } from './store.js';
+import { splitPartner } from './people.js';
 import { esc, openSheet, toast, haptic } from './ui.js';
 import { icon } from './icons.js';
 import { entryRow, largeTitle, syncBadge, demoBanner, doUndo } from './views.js';
@@ -250,6 +251,9 @@ export function openBulkDelete(onDone) {
   const SHOWN_MAX = 5;
   const lines = list.slice(0, SHOWN_MAX).map((e) => `<li><span>${esc(e.merchant || e.note || e.category || e.type)}</span><b class="num">${money(toAED(e, state.settings), 'AED', { fixed: true })}</b></li>`).join('');
   const more = list.length > SHOWN_MAX ? `<li class="more">+${list.length - SHOWN_MAX} more</li>` : '';
+  // halves of a split whose other half isn't ticked: say the other half stays
+  const ids = new Set(list.map((e) => e.id));
+  const halves = list.filter((e) => { const o = splitPartner(e, state.entries); return o && !ids.has(o.id); }).length;
   const what = [t.spent ? `${money(t.spent, 'AED', { fixed: true })} of spending` : '', t.income ? `${money(t.income, 'AED', { fixed: true })} of income` : ''].filter(Boolean).join(' and ');
   openSheet({
     label: 'Delete entries', tall: false,
@@ -258,6 +262,7 @@ export function openBulkDelete(onDone) {
         <div class="reset-icon">${icon('trash', { size: 28 })}</div>
         <p class="reset-lede">This removes <b>${plural(list.length, 'entry', 'entries')}</b>${what ? ` (${what})` : ''} from the app and the sheet. Your balances update to match.</p>
         <ul class="del-list">${lines}${more}</ul>
+        ${halves ? `<p class="group-foot center split-warn">${halves === 1 ? 'One is' : `${halves} are`} half of a split payment. The other ${halves === 1 ? 'half stays' : 'halves stay'} unless you tick ${halves === 1 ? 'it' : 'them'} too.</p>` : ''}
         <p class="group-foot center">You can undo it straight after.</p>
         <button type="button" class="dup-btn danger-btn solid" data-act="confirm">${icon('trash', { size: 18 })}Delete ${plural(list.length, 'entry', 'entries')}</button>
       </div>`,

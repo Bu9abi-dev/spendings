@@ -1,5 +1,5 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, balances, cycleOf, toAED, uid, money } from './model.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { demoEntries, DEMO_PLAN } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
@@ -39,6 +39,7 @@ export const isConnected = () => !!(state.conn.url && state.conn.token);
 export const isDemo = () => !!state.prefs.demo;
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function emit(reason) {
+  applyPeople(); // even mid-batch, so account lists are right for the rest of the batch
   if (batching) { batchEmits.add(reason); return; }
   applyCategories();
   for (const fn of listeners) fn(reason);
@@ -54,6 +55,16 @@ function applyCategories() {
   setCategoryList(cfg);
 }
 applyCategories();
+
+// People (money owed) are accounts named in the `people` extra: { v: 1, names: [...] }.
+let appliedPeople;
+function applyPeople() {
+  const cfg = state.extras.people;
+  if (cfg === appliedPeople) return;
+  appliedPeople = cfg;
+  setPeopleList(cfg && Array.isArray(cfg.names) ? cfg.names : []);
+}
+applyPeople();
 
 function persist() {
   if (state.prefs.demo || batching) return;

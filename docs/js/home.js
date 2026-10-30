@@ -11,6 +11,7 @@ import { icon } from './icons.js';
 import { detectRecurring, subscriptionNotice } from './recurring.js';
 import { budgetRows, budgetNudge, budgetNotice } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
+import { owedLineHTML } from './people-ui.js';
 
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
 export const dirham = (cls = '') => `<svg class="dh ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15h3.2c4.6 0 7.8-3.1 7.8-7.5S14.8 4.5 10.2 4.5H7z"/><path d="M3.2 10.2h17.3M3.2 13.8h17.3"/></svg>`;
@@ -174,6 +175,7 @@ export function renderHome(h) {
     </section>
     ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
     ${homeNotice(m)}
+    ${owedLineHTML()}
     <div class="lens-detail">${detail(m, focus)}</div>`;
 }
 

@@ -6,6 +6,7 @@ import { cleanMerchant } from './categorize.js';
 import { detectRecurring, monthlyTotal } from './recurring.js';
 import {
   categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts,
+  isPerson, moneyTotal, peopleBalances,
 } from './model.js';
 import { state, getExtra } from './store.js';
 import { openSheet, toast, haptic, esc } from './ui.js';
@@ -82,7 +83,9 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
   // total money when the cycle ended (or now, for the cycle we're in)
   const asOf = isCurrent ? now : end;
   const bals = balances(entries.filter((e) => new Date(e.date) < asOf), s);
-  const totalMoney = [...bals.values()].reduce((a, b) => a + b.balance, 0);
+  // people's balances are money owed, not money you hold: listed apart
+  const totalMoney = moneyTotal(bals);
+  const owed = peopleBalances([], s, bals);
 
   const budgetRows = Object.entries(budgets).map(([id, b]) => ({ id, name: catName(id), limit: budgetLimit(b), spent: sum.byCategory.get(id) || 0 }))
     .filter((b) => b.limit > 0).sort((a, b) => b.spent / b.limit - a.spent / a.limit);
@@ -100,7 +103,8 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
     byAccount: [...sum.byAccount].map(([id, a]) => ({ id, spent: a.spent })).filter((a) => a.spent > 0).sort((a, b) => b.spent - a.spent),
     categories, merchants, biggest, moved, moves,
     allowance: { account: s.allowanceAccount, pot: sum.allowancePot, base: s.allowance, topUps: sum.topUps, carryIn: sum.carryIn, used: sum.allowanceUsed, left: sum.allowanceLeft },
-    totalMoney, accounts: [...bals].map(([id, b]) => ({ id, balance: b.balance })).filter((a) => Math.abs(a.balance) >= 0.005),
+    totalMoney, accounts: [...bals].filter(([id]) => !isPerson(id)).map(([id, b]) => ({ id, balance: b.balance })).filter((a) => Math.abs(a.balance) >= 0.005),
+    owedToYou: owed.owedToYou, youOwe: owed.youOwe,
     budgets: budgetRows, review: sum.review, count: sum.entries.filter((e) => e.type !== 'Adjustment').length,
   };
 }
@@ -184,6 +188,7 @@ export function reportHTML(r, settings) {
 
     ${section(r.isCurrent ? 'Accounts now' : 'Accounts at the end', `<table class="rp-table">${r.accounts.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.balance, { fixed: true })}</td></tr>`).join('')}
       <tr class="rp-total"><td class="rp-name">Total</td><td class="rp-num">${fmt(r.totalMoney, { fixed: true })}</td></tr></table>
+      ${r.owedToYou || r.youOwe ? `<p class="rp-muted rp-owed">${[r.owedToYou ? `Owed to you ${aed(r.owedToYou)}` : '', r.youOwe ? `You owe ${aed(r.youOwe)}` : ''].filter(Boolean).join(' · ')}. Not counted in the total.</p>` : ''}
       ${r.moves ? `<p class="rp-muted">${r.moves} ${r.moves === 1 ? 'move' : 'moves'} between accounts (${aed(r.moved)}). Moving money isn’t spending, so it’s not counted above.</p>` : ''}`)}
 
     <footer class="rp-foot">Made by Spendings on ${day(new Date())} ${dubaiParts(new Date()).y} · amounts in AED</footer>

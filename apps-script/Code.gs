@@ -350,7 +350,8 @@ function logCardSpend_(s, p) {
 /** Which of your accounts a merchant name is, by its Wallet-name word ("BOTIM MONEY" → BOTIM). Whole words only. */
 function ownAccountIn_(merchant) {
   var m = ' ' + String(merchant || '').toLowerCase().replace(/[^a-z0-9]+/g, ' ') + ' ';
-  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  var people = peopleSet_();
+  var accs = readAccounts_().filter(function (a) { return !a.archived && !people[a.name]; });
   for (var i = 0; i < accs.length; i++) {
     var key = String(accs[i].wallet || '').toLowerCase().trim();
     if (key && m.indexOf(' ' + key + ' ') >= 0) return { name: accs[i].name, known: true };
@@ -786,7 +787,9 @@ function getSettings_() {
 
 function mapCard_(card, cardMap) {
   var c = String(card || '').toLowerCase();
-  var accs = readAccounts_().filter(function (a) { return !a.archived; });
+  // a person (money owed, see peopleSet_) is never one of your cards, even if their name is in the card's
+  var people = peopleSet_();
+  var accs = readAccounts_().filter(function (a) { return !a.archived && !people[a.name]; });
   for (var j = 0; j < accs.length; j++) {
     var key = String(accs[j].wallet || '').toLowerCase().trim();
     if (key && c.indexOf(key) >= 0) return { name: accs[j].name, known: true };
@@ -920,22 +923,27 @@ function cycleSummary_(cycle) {
 function allowanceOf_(rows, cycle, s, plan) {
   var moves = (plan || []).filter(function (p) { return p.kind === 'Move' && p.to === s.allowanceAccount; });
   if (!moves.length) moves = [{ id: 'allowance', amount: s.allowance, day: null }];
-  var now = allowanceCycle_(rows, cycle, s, moves);
-  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves);
+  var people = peopleSet_();
+  var now = allowanceCycle_(rows, cycle, s, moves, people);
+  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves, people);
   var carryIn = Math.round(Math.min(prev.topUps, Math.max(0, s.allowance + prev.topUps - prev.used)) * 100) / 100;
   var pot = s.allowance + now.topUps + carryIn;
   return { used: now.used, topUps: now.topUps, carryIn: carryIn, pot: pot, left: pot - now.used };
 }
 
-function allowanceCycle_(rows, cycle, s, moves) {
+function allowanceCycle_(rows, cycle, s, moves, people) {
   var acc = s.allowanceAccount, hub = s.emergencyAccount;
-  var spent = 0, refunds = 0, topUps = 0;
+  var spent = 0, refunds = 0, topUps = 0, lent = 0;
+  people = people || {};
   rows.forEach(function (r) {
     if (String(r[C['Cycle']]) !== cycle) return;
     var aed = Number(r[C['Amount (AED)']]) || 0, type = r[C['Type']], from = r[C['Account']], to = r[C['To account']];
     var source = String(r[C['Source']] || '');
     if (type === 'Spend' && from === acc) spent += aed;
     else if (type === 'Income' && from === acc && r[C['Category']] === 'Refund') refunds += aed;
+    // lending to a person (or their share of a split) from the allowance card uses allowance; being paid back is a top-up
+    else if (type === 'Transfer' && from === acc && people[to]) lent += aed;
+    else if (type === 'Transfer' && to === acc && people[from]) topUps += aed;
     else if (type === 'Transfer' && acc !== hub) {
       if (from === hub && to === acc) {
         var planned = moves.some(function (p) {
@@ -950,7 +958,18 @@ function allowanceCycle_(rows, cycle, s, moves) {
     }
   });
   topUps = Math.max(0, topUps);
-  return { spent: spent, refunds: refunds, topUps: topUps, used: Math.max(0, spent - refunds) };
+  return { spent: spent, refunds: refunds, topUps: topUps, lent: lent, used: Math.max(0, spent + lent - refunds) };
+}
+
+/** People (money owed): account names listed in the app's `people` extra, as { name: true }.
+    Empty when there's no Extras tab or no people, so older sheets behave exactly as before. */
+function peopleSet_() {
+  var set = {};
+  try {
+    var p = readExtras_().people;
+    (p && Array.isArray(p.names) ? p.names : []).forEach(function (n) { if (typeof n === 'string' && n) set[n] = true; });
+  } catch (err) { /* unreadable extras: no people */ }
+  return set;
 }
 
 function shiftCycle_(cycle, delta) {

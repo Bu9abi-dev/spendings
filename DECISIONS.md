@@ -4,6 +4,23 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Money owed (`people.js`, `people-ui.js`), as the council decided:** a person is an account (so the sheet's
+  Accounts tab, rename-follow-through and unique names come for free) flagged in the `people` extra
+  (`{ v: 1, names: [...] }`). `balances()` still counts them; `ACCOUNTS` leaves them out (balance bar, pay pickers,
+  Settings → Accounts, Match with bank, Insights), and `moneyTotal()` keeps them out of All your money, Where your
+  money is and the report's total. Allowance: a Transfer from the allowance card to a person adds to `used` (as
+  `lent`); one from a person into it is a top-up. Mirrored in Code.gs so the Shortcut's "left of your allowance"
+  agrees. A split is the Spend cut to your share plus a Transfer of theirs with id `${spendId}-split` and source
+  `Split` (ids survive the sheet round trip and no column changes); their share is rounded down to the fil, so the
+  leftover fil is yours, in the entry's own currency (each half is then priced in AED separately, so a USD split can
+  differ from the whole by a fil in AED). One person per split; a split payment can't be split again (edit their
+  half instead). "Change both" copies date, currency and card to the other half, never the amount. A removed person
+  stays in `people` (so last cycle's loans still count as allowance used) and re-adding the name brings them back.
+  People take Accounts-tab rows, and the script keeps 20, so adding stops at 20 accounts and people together.
+  Settle up defaults to the main account. Code.gs: `mapCard_` and `ownAccountIn_` skip people, because `mapCard_`
+  also matches a card by account name as a substring (a person called "Visa" or "Al" could have caught a card);
+  with no Extras tab nothing changes. Bulk delete in Activity only warns that the other half stays.
+
 - **Subscriptions (`recurring.js`, Insights card + one Home notice):** a place counts when its charges repeat weekly
   (6-8 days, needs 4 charges), monthly (26-35) or yearly (350-380), amounts within 15% of the previous charge, so a
   small price rise stays one subscription ("was X"). Two monthly or yearly charges are enough only if they match
