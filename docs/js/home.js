@@ -13,6 +13,7 @@ import { detectRecurring, subscriptionNotice } from './recurring.js';
 import { budgetRows, budgetNudge, budgetNotice } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
 import { owedLineHTML } from './people-ui.js';
+import { weeklyHomeNotices } from './weekly-ui.js';
 
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
 export const dirham = (cls = '') => `<svg class="dh ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15h3.2c4.6 0 7.8-3.1 7.8-7.5S14.8 4.5 10.2 4.5H7z"/><path d="M3.2 10.2h17.3M3.2 13.8h17.3"/></svg>`;
@@ -117,13 +118,14 @@ function label(m, f) {
   return `${a.name} <span class="lens-role">· ${f === m.hub ? 'pay lands here' : f === m.s.allowanceAccount ? 'allowance' : a.role.toLowerCase()}</span>`;
 }
 
-/* Pace: how this cycle's allowance spending compares with an even spread over the cycle. */
+/* Pace: how this cycle's allowance spending compares with an even spread over the cycle.
+   The state (and its tolerance) comes from allowancePace in model.js, shared with Insights and the "runs out" alert. */
 function paceLine(m) {
-  const { delta, daysLeft: dl } = m.pace, tol = Math.max(15, m.sum.allowancePot * 0.03);
+  const { delta, daysLeft: dl, state: st } = m.pace;
   const perDay = dl > 0 && m.safe > 0 ? ` · ${fmt(m.safe / dl, { whole: true })} a day for ${dl} ${dl === 1 ? 'day' : 'days'}` : '';
-  if (m.allowLeft < 0) return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
-  if (delta > tol) return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
-  if (delta < -tol) return `<span class="pace-good">On track · ${fmt(-delta, { whole: true })} under pace</span>${perDay}`;
+  if (st === 'spent') return `<span class="pace-bad">${fmt(-m.allowLeft, { whole: true })} over the allowance</span>`;
+  if (st === 'over') return `<span class="pace-bad">${fmt(delta, { whole: true })} over pace</span>${perDay}`;
+  if (st === 'under') return `<span class="pace-good">On track · ${fmt(-delta, { whole: true })} under pace</span>${perDay}`;
   return `<span class="pace-good">On track</span>${perDay}`;
 }
 
@@ -192,9 +194,9 @@ export function renderHome(h) {
 }
 
 /** At most one quiet line on Home, the most urgent of: an overdue buy-now-pay-later payment, a category over its limit, a subscription that just
-    started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit. Each feature decides whether it has
+    started charging, a plan payment due within 7 days, a subscription due within 3 days, a category close to its limit, what people owe you, and (Mondays and Tuesdays) last week's summary. Allowance running out early (pace:out) sits just above a category close to its limit. Each feature decides whether it has
     something to say (…Notice); Home only picks one, so notices never stack up. */
-const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'budget:near', 'owed'];
+const NOTICE_ORDER = ['bnpl:overdue', 'budget:over', 'sub:new', 'bnpl:due', 'sub:due', 'pace:out', 'budget:near', 'owed', 'week:summary'];
 function homeNotice(m, whereShown) {
   const isCurrent = m.cyc === cycleOf(new Date(), m.s.cycleStart);
   // Ask the features in rank order and stop at the first that can't be outranked, so a higher-ranked winner
@@ -212,9 +214,10 @@ function homeNotice(m, whereShown) {
   const s = subscriptionNotice(detectRecurring(state.entries, state.settings, { ignored: getExtra('recurring', { v: 1, ignored: [] }).ignored || [] }));
   if (s) found.push({ rank: `sub:${s.priority}`, html: `<button type="button" class="sub-line${s.priority === 'new' ? ' warn' : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(s.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
   if (bn) found.push(bn);
-  // what people owe sits in "Where your money is" when that card is on screen; otherwise it's the last of the notices,
-  // so it is only worked out when nothing else has anything to say
-  if (!found.length && !whereShown) {
+  found.push(...weeklyHomeNotices(m, isCurrent)); // allowance running out early; last week's summary on Mondays and Tuesdays
+  // what people owe sits in "Where your money is" when that card is on screen; otherwise it's the last of the notices
+  // except the weekly summary, so it is only worked out when nothing ranked above it has anything to say
+  if (!whereShown && found.every((f) => f.rank === 'week:summary')) {
     const owed = owedLineHTML();
     if (owed) found.push({ rank: 'owed', html: owed });
   }

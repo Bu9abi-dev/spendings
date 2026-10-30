@@ -324,12 +324,13 @@ export function allowanceOf(entries, cycle, settings, plan) {
 /** Everything the screens need for one cycle. Cached per cycle (Insights asks for six, Home for one, on every redraw).
     Invalidated by: a new entries array, a change to the settings or plan that matters here, or the account list changing.
     The result is shared, so callers must not edit it. */
-let summaries = null;
+let summaries = []; // the last three (entries, settings) combinations, newest first: Home's filtered balances and Report vs Insights alternate
 export function summarize(entries, cycle, settings, plan = []) {
   const sig = `${settingsSig(settings)}#${planSig(plan)}#${listsVersion}`;
-  if (!summaries || summaries.entries !== entries || summaries.sig !== sig) summaries = { entries, sig, byCycle: new Map() };
-  let r = summaries.byCycle.get(cycle);
-  if (!r) summaries.byCycle.set(cycle, (r = computeSummary(entries, cycle, settings, plan)));
+  let rec = summaries.find((x) => x.entries === entries && x.sig === sig);
+  if (!rec) { rec = { entries, sig, byCycle: new Map() }; summaries = [rec, ...summaries].slice(0, 3); }
+  let r = rec.byCycle.get(cycle);
+  if (!r) rec.byCycle.set(cycle, (r = computeSummary(entries, cycle, settings, plan)));
   return r;
 }
 function computeSummary(entries, cycle, settings, plan) {
@@ -392,14 +393,15 @@ export function toCSV(entries) {
 /* ───────────────────────── Balances ───────────────────────── */
 
 /** What each account holds now (AED). matchedAt = last time it was matched to the bank.
-    Cached (one answer for the latest entries). Invalidated by: a new entries array, a different usdRate, the account list
+    Cached (the last three answers). Invalidated by: a new entries array, a different usdRate, the account list
     changing. The Map is shared, so callers must not edit it. */
-let balMemo = null;
+let balMemo = []; // the last three answers, newest first (Home also asks about a filtered slice of the entries)
 export function balances(entries, settings) {
   const sig = `${settings.usdRate}#${listsVersion}`;
-  if (balMemo && balMemo.entries === entries && balMemo.sig === sig) return balMemo.result;
+  const hit = balMemo.find((x) => x.entries === entries && x.sig === sig);
+  if (hit) return hit.result;
   const result = computeBalances(entries, settings);
-  balMemo = { entries, sig, result };
+  balMemo = [{ entries, sig, result }, ...balMemo].slice(0, 3);
   return result;
 }
 function computeBalances(entries, settings) {
@@ -498,6 +500,57 @@ export function hubFlow(entries, cycle, hub, settings) {
   return { sources, outs, inTotal, outTotal };
 }
 
+/* ───────────────────────── Allowance pace ─────────────────────────
+   One definition, read by Home's pace line, the Insights "Allowance pace" card and the Home "runs out" alert,
+   always from the same summary (the one homeNumbers adjusts for spending before tracking began), so they can't
+   disagree. Pace compares what's used with an even spread of the pot over the cycle, with a tolerance band.
+   The "runs out" projection only exists when the state is 'over', so the alert can never sit beside "On track". */
+
+export const PACE_RULES = {
+  tolMin: 15, tolShare: 0.03, // within max(15, 3% of the pot) of an even spread counts as on track
+  alertFromDay: 7,            // no projection before the 7th day of the cycle
+  minDays: 3,                 // ...nor before allowance spending on at least 3 different days
+  lumpShare: 0.25,            // one payment over 25% of the pot uses the pot up, but doesn't set the daily rate
+  earlyDays: 3,               // only worth saying when it runs out at least 3 days before the cycle's last day
+};
+export const paceTolerance = (pot) => Math.max(PACE_RULES.tolMin, (pot || 0) * PACE_RULES.tolShare);
+const dayIndex = (key) => { const [y, m, d] = key.split('-').map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
+/** Whole Dubai days from day key `a` to day key `b` (b − a). */
+export const daysBetween = (a, b) => Math.round(dayIndex(b) - dayIndex(a));
+
+/** Where this cycle's allowance stands against an even spread. `sum` is a cycle summary (use homeNumbers' m.sum
+    for the current cycle). Returns { expected, spent, delta, tol, state, daysLeft, runsOut } where state is
+    'spent' (over the allowance), 'over' (over pace by more than tol), 'on' or 'under', and runsOut is
+    { outDay, early, perDay } (the day the allowance runs out at the steady daily rate, days before the cycle's
+    last day, and that rate) or null. */
+export function allowancePace(sum, cycle, settings, now = new Date()) {
+  const { start, end } = cycleBounds(cycle, settings.cycleStart);
+  const len = (end - start) / 864e5;
+  const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
+  const pot = sum.allowancePot || 0, used = sum.allowanceUsed || 0;
+  const expected = (pot * elapsed) / len;
+  const delta = used - expected, tol = paceTolerance(pot);
+  const state = sum.allowanceLeft < 0 ? 'spent' : delta > tol ? 'over' : delta < -tol ? 'under' : 'on';
+  const pace = { expected, spent: used, delta, tol, state, daysLeft: daysLeft(cycle, settings.cycleStart, now), runsOut: null };
+  if (state !== 'over' || now < start || now >= end || Math.floor(elapsed) + 1 < PACE_RULES.alertFromDay || !(elapsed > 0)) return pace;
+  // the steady rate: what's used, less any single payment bigger than a quarter of the pot, over the days so far
+  const lump = pot * PACE_RULES.lumpShare, days = new Set();
+  let lumps = sum.spentBefore > lump ? sum.spentBefore : 0;
+  for (const e of sum.entries || []) {
+    if (e.type !== 'Spend' || e.account !== settings.allowanceAccount) continue;
+    const v = toAED(e, settings);
+    if (!(v > 0)) continue;
+    days.add(dayKey(e.date));
+    if (v > lump) lumps += v;
+  }
+  const perDay = (used - lumps) / elapsed, left = pot - used;
+  if (days.size < PACE_RULES.minDays || !(perDay > 0) || !(left > 0)) return pace;
+  const outDay = dayKey(new Date(now.getTime() + (left / perDay) * 864e5));
+  const early = daysBetween(outDay, dayKey(new Date(end.getTime() - 1)));
+  if (early >= PACE_RULES.earlyDays) pace.runsOut = { outDay, early, perDay };
+  return pace;
+}
+
 /* ───────────────────────── Home numbers ───────────────────────── */
 
 /** The numbers Home shows: total money, Safe to spend and pace. Pure, so the checks run it too. */
@@ -525,11 +578,7 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   let safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
   // one account doing both jobs: you can't safely spend more than its free money
   if (allowAcc === hub) safe = Math.min(safe, Math.max(0, hubB.free));
-  const { start, end } = cycleBounds(cyc, s.cycleStart);
-  const len = (end - start) / 864e5;
-  const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
-  const expected = (sum.allowancePot * elapsed) / len;
-  const pace = { expected, spent: sum.allowanceUsed, delta: sum.allowanceUsed - expected, daysLeft: daysLeft(cyc, s.cycleStart, now) };
+  const pace = allowancePace(sum, cyc, s, now);
   const allowanceUnmoved = !!allowMove && (!allowMove.due || dayKey(now) >= dayKey(allowMove.due));
   return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved, spentBefore };
 }

@@ -38,7 +38,18 @@ timeline
         v23 : Savings goals : Net worth : Investments by hand
         v24 : Split a bill : People : Owed to you
         v25 : Setup guide : Sign in with Google (off until set up) : Never overwrites
+        v26 : Your week : Allowance pace alert : One pace rule
 ```
+
+---
+
+## v26: Your week and the pace alert
+**30 October 2026** · no sheet update needed
+
+- **Your week**: on Mondays and Tuesdays, Home's line says what you spent last week compared with a usual week. Tap it for the top categories, your biggest payment, and what's coming up this week (subscriptions and buy-now-pay-later payments), with budgets for the cycle.
+- **Allowance pace alert**: when your allowance would run out days before payday at the rate you're spending, Home says so, with roughly how much a day and the date. One big purchase alone doesn't set it off, and it starts a week into the cycle. Tap it to see the pace chart; it then stays quiet unless things get worse.
+- Home, Insights and the alert now use the same pace rule, so they never disagree.
+- Insights has a small **Last week** card.
 
 ---
 

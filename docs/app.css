@@ -1573,3 +1573,19 @@ a.su-api { display: flex; margin: 4px var(--gutter) 0; width: calc(100% - 2 * va
 .nw-sub { margin: 0 0 4px; }
 .gl-btn { min-height: 44px; min-width: 44px; }
 #gf-accts .chip { height: 44px; }
+
+/* ───── Your week (weekly summary) ───── */
+.wk-line { min-height: 44px; }
+.wk-line > span { white-space: normal; line-height: 1.3; }
+.wk-line.warn { background: color-mix(in srgb, var(--warn) 10%, var(--bg-2)); }
+.wk-sheet { padding-bottom: 24px; }
+.wk-hero { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px var(--gutter) 14px; text-align: center; }
+.wk-hero span { font-size: 13px; color: var(--label-2); font-weight: 500; }
+.wk-hero b { font: 700 34px/1.1 var(--font-display); letter-spacing: -0.03em; }
+.wk-hero small { font-size: 14px; color: var(--label-2); }
+.wk-pace { display: flex; align-items: center; gap: 8px; margin: 0 var(--gutter) 6px; padding: 10px 14px; border-radius: 16px; font-size: 14px; color: var(--label); background: color-mix(in srgb, var(--warn) 10%, var(--bg-2)); }
+.wk-pace .i { color: var(--warn); flex: none; }
+.wk-card .tm-list { display: grid; gap: 10px; }
+.wk-open { display: flex; align-items: center; justify-content: center; gap: 4px; width: 100%; min-height: 44px; margin-top: 8px; }
+.wk-open .chev { color: var(--label-3); }
+@media (prefers-reduced-motion: reduce) { .wk-line { transition: none; } .wk-card .hb-track i { animation: none; } }

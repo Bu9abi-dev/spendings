@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **30 Oct 2026**, at **v25**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **30 Oct 2026**, at **v26**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -61,16 +61,15 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v25, 30 Oct 2026)
+## 5. Current state (v26, 30 Oct 2026)
 
-**Live on main** (newest first): v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 
 **In flight** (branches pushed, not merged):
-- `claude/weekly`: weekly summary + allowance pace alert; council asked for one shared pace definition (Home, Insights
-  and the alert must agree), no alert from one lumpy purchase, dismissible, lower rank. Fixes in progress.
+- `claude/perf2`: performance pass (memoise per-render maths, view transition on slow CPUs, Activity cap).
 
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New
@@ -98,7 +97,7 @@ for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** not
 
 ## 7. Session log (newest first)
 
-### 30 Oct 2026 · loop session (v15 → v25)
+### 30 Oct 2026 · loop session (v15 → v26)
 - Took over six wave-1 threads that had hit their usage limit. Ran councils over every branch, applied fixes, merged:
   activity filters (v15), smart categories (v16), monthly report (v17), custom categories (v18, asked for by
   Abdullah), budgets (v19), subscriptions + one Home notice (v20), outbox race fix (v21, found while fixing a flaky
@@ -106,5 +105,6 @@ for lists (never copy `SPEND_CATEGORIES` at import time); Home shows **one** not
 - Design council chose "people as accounts" for money owed; built, reviewed, fixed and merged as v24.
 - Abdullah asked for a first-time setup tutorial with Sign in with Google that creates the sheet and script:
   built, security-reviewed (key race, never-overwrite), merged as v25 with Google off until a client ID is set.
-- Weekly summary + pace alert built; council sent the pace alert back.
+- Weekly summary + pace alert: council sent the pace alert back (three pace rules disagreed); one shared
+  `allowancePace` in model.js now; merged as v26.
 - Abdullah asked for this file.

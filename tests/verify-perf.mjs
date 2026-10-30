@@ -179,12 +179,42 @@ for (let i = 0; i < 30; i++) {
   last = n;
 }
 const foot = await p.evaluate(() => !!document.querySelector('.activity-list .group-foot'));
+// a redraw (an entry changing, Select mode) keeps the rows drawn and your place in the list
+await p.evaluate(() => window.scrollTo(0, 0));
+await p.fill('.search input', 'a'); // a different search starts the list over, then clearing it starts again at 40 rows
+await p.fill('.search input', '');
+await p.waitForTimeout(300);
+for (let i = 0; i < 20 && (await p.evaluate(() => document.querySelectorAll('#view .entry').length)) < 220; i++) {
+  await p.evaluate(() => window.scrollBy(0, 900));
+  await p.waitForTimeout(150);
+}
+const mark = await p.evaluate(() => {
+  const rows = [...document.querySelectorAll('#view .entry')];
+  const r = rows[Math.min(180, rows.length - 1)];
+  r.scrollIntoView({ block: 'center' });
+  return { id: r.dataset.id, n: rows.length };
+});
+await p.waitForTimeout(200);
+const where = (id) => p.evaluate((id) => { const r = document.querySelector(`#view .entry[data-id="${id}"]`); return r ? Math.round(r.getBoundingClientRect().top) : null; }, id);
+const top0 = await where(mark.id);
+await p.evaluate(async () => { const s = await import('/js/store.js'); s.restoreEntry(s.state.entries[300]); });
+await p.waitForTimeout(300);
+const afterEmit = { top: await where(mark.id), n: await p.evaluate(() => document.querySelectorAll('#view .entry').length) };
+await p.evaluate(() => document.querySelector('[data-act="select"]').click());
+await p.waitForTimeout(300);
+const afterSelect = { top: await where(mark.id), n: await p.evaluate(() => document.querySelectorAll('#view .entry').length) };
+await p.evaluate(() => document.querySelector('[data-act="select-done"]').click());
+await p.waitForTimeout(200);
+console.log(`place: row ${mark.n} drawn before; top ${top0} -> ${afterEmit.top} (entry changed, ${afterEmit.n} rows) -> ${afterSelect.top} (select mode, ${afterSelect.n} rows)`);
+
 console.log(`activity rows: first paint ${first}, after scrolling ${last}, footer ${foot}`);
 
 console.log(`entries ${N}, CPU x${THROTTLE}, rows shown for "${text}": ${shown}`);
 for (const k of Object.keys(BUDGET)) console.log(`${k.padEnd(11)} ${String(Math.round(res[k])).padStart(5)} ms   (budget ${BUDGET[k]})`);
 await b.close();
 assert.deepEqual(errors, [], 'no page errors');
+assert.ok(mark.n >= 200 && mark.n < 400 && afterEmit.n >= mark.n && afterSelect.n >= mark.n, `a redraw keeps the rows already drawn (${mark.n} -> ${afterEmit.n}, ${afterSelect.n})`);
+assert.ok(top0 != null && Math.abs(afterEmit.top - top0) <= 2 && Math.abs(afterSelect.top - top0) <= 2, `the row stays where it was (${top0} -> ${afterEmit.top}, ${afterSelect.top})`);
 assert.ok(first <= 120, `Activity draws a screenful first, not all 400 (${first})`);
 assert.ok(last === 400 && foot, `scrolling draws the rest, up to the 400 cap with its footer (${last})`);
 if (!REPORT) for (const k of Object.keys(BUDGET)) assert.ok(res[k] <= BUDGET[k], `${k} ${Math.round(res[k])} ms is over the ${BUDGET[k]} ms budget`);

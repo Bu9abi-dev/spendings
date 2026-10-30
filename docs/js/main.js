@@ -19,12 +19,13 @@ import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import {
-  renderActivity, refreshActivity, hydrateActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
+  renderActivity, refreshActivity, hydrateActivity, resetActivityRows, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
 import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
+import { weeklyClick } from './weekly-ui.js';
 import { openSetup, shouldAutoOpen } from './setup.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
@@ -389,6 +390,7 @@ function go(next) {
   const t = document.getElementById('toast');
   if (!t.hidden) { t.classList.remove('show'); setTimeout(() => { t.hidden = true; }, 250); }
   if (next === tab) { window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
+  if (next === 'activity') resetActivityRows();
   if (tab === 'activity') endSelect(); // leaving Activity drops a half-made selection
   tab = next;
   history.replaceState(null, '', `#${tab}`);
@@ -442,7 +444,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || goalsClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || weeklyClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();

@@ -85,6 +85,10 @@ function summaryBar(all) {
    `more` holds what is still to draw for the list currently on screen; it is reset on every redraw. */
 const FIRST_ROWS = 40, CHUNK_ROWS = 60;
 let more = null, moreObserver = null;
+// How many rows have been drawn for the current search/filter. A redraw (selection, a sync, an edit, a delete) draws at least
+// that many again, so the list keeps its length and you keep your place. Reset when the filter or search changes, or the tab is entered afresh.
+let drawnRows = 0, drawnFor = '';
+export function resetActivityRows() { drawnRows = 0; drawnFor = ''; }
 
 const dayHTML = ([k, items], sel) => {
   const spent = items.filter((e) => e.type === 'Spend').reduce((a, e) => a + toAED(e, state.settings), 0);
@@ -96,6 +100,7 @@ function daysHTML(groups, from, rows) {
   const sel = activitySelect.on ? activitySelect.ids : null;
   let html = '', n = 0, i = from;
   while (i < groups.length && n < rows) { html += dayHTML(groups[i], sel); n += groups[i][1].length; i++; }
+  drawnRows = Math.max(drawnRows, (from ? drawnRows : 0) + n); // rows on screen so far
   return [html, i];
 }
 
@@ -110,7 +115,11 @@ export function activityList(all = matches()) {
   for (const e of list) { const k = dayKey(e.date); if (!days.has(k)) days.set(k, []); days.get(k).push(e); }
   const groups = [...days];
   const foot = all.length > SHOW_MAX ? `<p class="group-foot">Showing the newest ${SHOW_MAX} of ${all.length}. The total above covers all of them.</p>` : '';
-  const [html, next] = daysHTML(groups, 0, typeof IntersectionObserver === 'function' ? FIRST_ROWS : Infinity);
+  const key = JSON.stringify(activityFilter);
+  if (key !== drawnFor) { drawnFor = key; drawnRows = 0; }
+  const want = Math.max(FIRST_ROWS, drawnRows);
+  drawnRows = 0;
+  const [html, next] = daysHTML(groups, 0, typeof IntersectionObserver === 'function' ? want : Infinity);
   if (next >= groups.length) return html + foot;
   more = { groups, next, foot };
   return `${html}<div class="act-more" aria-hidden="true"></div>`;
