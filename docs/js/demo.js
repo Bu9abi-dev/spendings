@@ -83,6 +83,19 @@ export function demoEntries(settings) {
     if (back === 0) out.push({ ...base, id: `d-refund-${cycle}`, date: new Date(start.getTime() + 4 * day).toISOString(), type: 'Income', amount: 89, account: 'ADCB', category: 'Refund', merchant: 'Noon', note: 'Returned headphones', source: 'App' });
   }
 
+  // payments that repeat, so the Subscriptions card has something to show. Dated back from today, every
+  // 30 days: [merchant, amount, days since the latest charge, how many charges, the newest n charges after a price rise of 30]
+  for (const [merchant, amount, ago, times, rose] of [
+    ['Netflix', 56, 11, 5], ['Spotify', 21.99, 4, 5], ['Fitness First', 249, 20, 5, 2],
+    ['Disney+', 29.99, 3, 2],               // started charging a month ago: flagged as new
+    ['Shahid VIP', 25, 52, 3],              // stopped two months ago: shown as maybe cancelled
+  ]) {
+    for (let k = 0; k < times; k++) {
+      const price = k < (rose || 0) ? amount + 30 : amount;
+      out.push({ ...base, id: `d-sub-${merchant}-${k}`, date: new Date(now.getTime() - (ago + 30 * k) * day).toISOString(), type: 'Spend', amount: price, account: 'ADIB', category: 'Bills & Subscriptions', merchant, source: 'Apple Pay' });
+    }
+  }
+
   // the owner checks their banks now and then: recent exact matches
   for (const [acc, d] of [['ADIB', 3], ['ADCB', 1], ['BOTIM', 9], ['Cash', 12]]) {
     out.push({ ...base, id: `d-match-${acc}`, date: new Date(now.getTime() - d * day).toISOString(), type: 'Adjustment', amount: 0, account: acc, note: 'Matched with bank', source: 'App' });

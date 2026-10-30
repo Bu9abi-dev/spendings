@@ -13,7 +13,7 @@ import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } fro
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import { renderActivity, activityList, activityFilter } from './activity.js';
-import { renderInsights, shiftInsights } from './insights.js';
+import { renderInsights, shiftInsights, subsClick } from './insights.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -374,6 +374,7 @@ document.addEventListener('click', async (ev) => {
   }
   const kind = t.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return render(); }
+  if (subsClick(t)) { haptic(); return; }
   const cyc = t.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
   const mode = t.closest('[data-theme-mode]');

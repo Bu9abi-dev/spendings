@@ -4,6 +4,15 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 30 Oct 2026
 
+- **Subscriptions (`recurring.js`, Insights card + one Home line):** a place counts when its charges repeat
+  weekly (6-8 days), monthly (26-35) or yearly (350-380) with amounts within 15% of the previous charge, so a
+  small price rise stays one subscription (it shows "was X"). Weekly needs 3 charges, because two weekly shop
+  visits are a coincidence; two monthly or yearly charges are enough, but with only two they must match within
+  5% (otherwise two similar grocery trips would show up). Only Spend counts. Names are matched ignoring case,
+  digits, a trailing city and a "PAYPAL *" prefix. "New" = first charge from that place in the last 40 days;
+  "maybe cancelled" = next payment over 7 days overdue, left out of the monthly total. "Not a subscription"
+  saves the place in the Extras key `recurring` (`{ v: 1, ignored: [...] }`), with undo and a "Show again".
+  Home shows at most one line: a new subscription that charged this week, else one due in 3 days.
 - **Charts (v14, PR #7):** the trend maths lives in a pure `trends.js` so it's testable and stays out of other
   branches' way. Refunds aren't netted against days or places, matching "Spent". "Usual" isn't pro-rated for the
   current cycle (bills land on fixed days); the card says "so far" instead. Pick a day by press-and-slide so the

@@ -5,9 +5,10 @@ import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, accountMeta, cycleName, cycleRange, daysLeft,
   balances, homeNumbers, whereRows, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED,
 } from './model.js';
-import { state, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
+import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
+import { detectRecurring, homeNote } from './recurring.js';
 
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
 export const dirham = (cls = '') => `<svg class="dh ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15h3.2c4.6 0 7.8-3.1 7.8-7.5S14.8 4.5 10.2 4.5H7z"/><path d="M3.2 10.2h17.3M3.2 13.8h17.3"/></svg>`;
@@ -170,7 +171,14 @@ export function renderHome(h) {
       </div>
     </section>
     ${!m.matched && !isDemo() ? `<button type="button" class="match-all" data-act="match-all">${icon('sync', { size: 20 })}<span><b>Set your balances</b><span>Type what each bank app shows. Takes a minute, once.</span></span>${icon('chevR', { size: 18, cls: 'chev' })}</button>` : ''}
+    ${subscriptionLine()}
     <div class="lens-detail">${detail(m, focus)}</div>`;
+}
+
+/** One quiet line when a subscription just started charging or is due within 3 days. Tap to see them all. */
+function subscriptionLine() {
+  const note = homeNote(detectRecurring(state.entries, state.settings, { ignored: getExtra('recurring', { v: 1, ignored: [] }).ignored || [] }));
+  return note ? `<button type="button" class="sub-line${note.tone ? ` ${note.tone}` : ''}" data-go="insights" data-anchor="subs">${icon('calendar', { size: 16 })}<span>${esc(note.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` : '';
 }
 
 function detail(m, f) {
