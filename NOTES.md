@@ -41,6 +41,7 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/views.js` | Shared bits: entry row, sync badge, large title + undo button, demo banner. |
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
 | `docs/js/charts.js` | SVG charts. |
+| `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature

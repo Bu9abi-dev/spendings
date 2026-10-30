@@ -1283,6 +1283,15 @@ html.sheet-open body::after { opacity: 0; }
 .conn-details[open] > summary .chev { transform: rotate(180deg); }
 .conn-details .chev { transition: transform 0.25s var(--ease-out); margin-left: auto; }
 
+/* ───── Monthly report (the page itself is styled by REPORT_CSS in js/report.js) ───── */
+.report-link { margin-bottom: 14px; }
+.report-switch { margin: 2px var(--gutter) 10px; flex: none; }
+.report-scroll { padding: 0 var(--gutter) 12px; }
+.report-paper .rp-page { box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08), 0 8px 24px rgba(0, 0, 0, 0.06); }
+.report-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px var(--gutter) 6px; flex: none; }
+.report-actions .btn-primary { flex: 1 1 100%; padding: 0 14px; }
+.report-actions .btn-tinted { flex: 1; padding: 0 10px; white-space: nowrap; }
+.report-actions .btn-primary { white-space: nowrap; }
 /* Bulk delete: the first few entries it will remove */
 .del-list { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 15px; color: var(--label-2); }
 .del-list li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }

@@ -17,7 +17,8 @@ import {
   renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
-import { renderInsights, shiftInsights } from './insights.js';
+import { renderInsights, shiftInsights, insightsShown } from './insights.js';
+import { openReport } from './report.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -123,6 +124,7 @@ function renderSettings() {
     <section class="group">
       <button type="button" class="row link-row" data-act="reset"><span class="row-icon" style="--tint:var(--neg)">${icon('trash', { size: 20 })}</span><span class="row-main"><span class="row-title danger-text">Reset sheet</span><span class="row-sub">Erase every entry and start fresh</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <button type="button" class="row link-row" data-act="export"><span class="row-icon" style="--tint:var(--tint-text)">${icon('download', { size: 20 })}</span><span class="row-main"><span class="row-title">Export CSV</span><span class="row-sub">Every entry, for backup</span></span></button>
+      <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span><span class="row-main"><span class="row-title">Monthly report</span><span class="row-sub">Any cycle as a PDF or CSV</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <label class="row toggle-row"><span class="row-icon" style="--tint:var(--series-7)">${icon('sparkle', { size: 20 })}</span>
         <span class="row-main"><span class="row-title">Demo data</span><span class="row-sub">Look around with made-up numbers</span></span>
         <input type="checkbox" switch class="switch" name="demo" ${isDemo() ? 'checked' : ''}></label>
@@ -452,6 +454,7 @@ document.addEventListener('click', async (ev) => {
   if (act === 'demo') { setDemo(true); toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) }); }
   if (act === 'exit-demo') { setDemo(false); render(); }
   if (act === 'export') exportCSV();
+  if (act === 'report') openReport(tab === 'insights' ? insightsShown() : undefined);
   if (act === 'undo') doUndo();
   if (act === 'reset') openReset();
   if (act === 'connect') connect(t.closest('[data-act]'));
