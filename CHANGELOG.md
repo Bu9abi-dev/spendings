@@ -36,7 +36,20 @@ timeline
         v21 : Changes never lost on a slow connection
         v22 : Buy now, pay later : Payments linked by themselves : Due before payday
         v23 : Savings goals : Net worth : Investments by hand
+        v24 : Split a bill : People : Owed to you
 ```
+
+---
+
+## v24: Money owed and split bills
+**30 October 2026** · sheet update optional
+
+- **Split a bill**: open any payment (including Apple Pay ones) and tap "Split with someone". Pick the friend, then Half, Third or your own amount. The payment becomes your share, and their share is noted as money they owe you. Only your share counts as spending, in Insights, budgets and the report.
+- **People** (Settings → People): friends you split with or lend to. Lending is a transfer to them; a friend paying for you is a payment "paid by" them.
+- Home shows **"Owed to you / You owe"** under "Where your money is". What friends owe isn't counted as your money, and lending from your allowance card comes out of Safe to spend until they pay you back.
+- **Settle up** fills in the repayment, back to the account you lent from.
+- Editing or deleting one half of a split asks about the other half, so the bill always adds up. Net worth adds what friends owe you.
+- The sheet part (optional, with the next script update): a bank alert for a bill you've already split isn't logged twice, and Apple Pay card matching ignores people's names.
 
 ---
 

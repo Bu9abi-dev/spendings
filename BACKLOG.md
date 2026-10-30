@@ -7,7 +7,6 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 6 | Money owed and split bills | `claude/owed` | people as accounts, Split on an entry |
 | 7 | First-time setup + Sign in with Google | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
 
 ## Next
@@ -27,6 +26,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v24 · Money owed and split bills (people as accounts, Split, Settle up)
 - v23 · Savings goals and net worth (manual investments, BNPL owed subtracted)
 - v22 · Buy now, pay later: plans, auto-linked payments, due before payday, Home notice
 - v21 · Safer syncing: a change saved while another is sending is never dropped
