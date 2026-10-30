@@ -107,7 +107,8 @@ for (let i = 0; i < 3; i++) {
     return performance.now() - t0;
   }));
   await p.evaluate(() => document.querySelector('.sheet [data-act="cancel"]')?.click());
-  await p.waitForTimeout(600);
+  await p.waitForSelector('.sheet', { state: 'detached' }); // closing takes longer on a slow CPU; an open sheet makes the page inert
+  await p.waitForTimeout(200);
 }
 res.addSheet = med(addRuns);
 
