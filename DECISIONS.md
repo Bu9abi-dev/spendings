@@ -195,3 +195,17 @@ Choices made while running the app on my own, newest first, with the reason for 
   to the total shown. Rows that round to 0 are hidden.
 - **Allowance account = main account is handled, not blocked.** Settings allows it, so Safe to spend is
   now subtracted from Emergency money instead of counted twice.
+
+- **Weekly summary and allowance pace alert** (`weekly.js`, `weekly-ui.js`). A week is Monday to Sunday by Dubai days; "last
+  week" is the last full one. Spent is Spend only and gross, the same rule as Insights (transfers out, refunds not netted),
+  checked against `summarize` in the test. The "usual week" is the median of the six weeks before it that have any spending,
+  and needs at least three of them, otherwise it is null and the line just says what was spent. Within 5% reads as "about the
+  usual". "Coming up this week" runs from today to the next Monday plus anything overdue, and only reuses `detectRecurring`,
+  `dueBetween`/`bnplSummary` and `budgetRows` (budgets at 80% or more). The pace alert uses Home's own pot and used numbers
+  (`allowancePot`, `allowanceUsed`, so lending and refunds count as everywhere else): used divided by days gone is the daily
+  rate, and it fires only from 3 days into the cycle, only when the allowance is not already spent, and only when it runs out
+  on a day before the cycle's last day (the 26th). Home ranks it just after "budget over" (`pace:out`); the week summary is the
+  lowest rank (`week:summary`, after `owed`), shows on Mondays and Tuesdays only and only if last week had spending.
+  Opening the summary saves `{ v: 1, seen: <week key> }` in the `weekly` extra with `undoable: false`: the Undo button would
+  otherwise offer to "undo" having read a summary, and it would sit on top of the real last change. It still syncs like any
+  extra, so it does not reappear on another device. Tapping the pace line opens Insights on the Allowance pace card.

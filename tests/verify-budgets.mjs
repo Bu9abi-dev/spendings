@@ -83,6 +83,8 @@ const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 await p.goto(`${URL}?demo=1#insights`);
 await p.waitForSelector('.panel');
+// the allowance pace alert (weekly.js) is a Home line too; give the allowance room so it doesn't outrank what this test checks
+await p.evaluate(async () => { const st = await import('/js/store.js'); st.state.settings = { ...st.state.settings, allowance: 1e6 }; });
 ok(await p.isVisible('.budgets-card.empty-budgets'), 'Insights shows a prompt while no budget is set');
 await p.click('.tabbar [data-tab="home"]');
 await p.waitForSelector('.lens');

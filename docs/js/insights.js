@@ -13,6 +13,7 @@ import { bnplInsightsPanel } from './bnpl-ui.js';
 import { detectRecurring, monthlyTotal, daysUntil } from './recurring.js';
 import { budgetRows, budgetsCard } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
+import { weeklyCard } from './weekly-ui.js';
 
 let insightsCycle = null;
 
@@ -176,6 +177,8 @@ export function renderInsights() {
 
     ${budgetsCard(budgetRows(sum.byCategory, currentLimits()), { isCurrent })}
 
+    ${isCurrent ? weeklyCard() : ''}
+
     <section class="panel">
       <h3 class="panel-title">Day by day</h3>
       <p class="panel-sub">Spending from every account. Moving money between your accounts isn’t spending, so it’s left out.</p>
@@ -193,7 +196,7 @@ export function renderInsights() {
 
     ${subscriptionsCard()}
 
-    <section class="panel">
+    <section class="panel" id="pace">
       <h3 class="panel-title">Allowance pace</h3>
       <p class="panel-sub">${esc(s.allowanceAccount)} spending, day by day, against an even spread of AED ${fmt(sum.allowancePot, { whole: true })}.
         ${isCurrent && cumulative[today] != null ? `<b class="${paceDelta > 0 ? 'pace-bad' : 'pace-good'}">${paceDelta > 0 ? `AED ${fmt(paceDelta, { whole: true })} over pace` : `On track · AED ${fmt(-paceDelta, { whole: true })} under pace`}</b>` : ''}</p>

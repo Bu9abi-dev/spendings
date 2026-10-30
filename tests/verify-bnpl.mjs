@@ -161,6 +161,11 @@ const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
 await p.goto(`${BASE}/?demo=1#home`);
 await p.waitForSelector('.lens');
+// the allowance pace alert (weekly.js) is a Home line too; give the allowance room so it doesn't outrank what this test checks
+await p.evaluate(async () => { const st = await import('/js/store.js'); st.state.settings = { ...st.state.settings, allowance: 1e6 }; });
+await p.click('.tabbar [data-tab="insights"]');
+await p.click('.tabbar [data-tab="home"]');
+await p.waitForSelector('.lens');
 const app = (fn, arg) => p.evaluate(async ([src, a]) => {
   const [st, m, bn] = await Promise.all([import('/js/store.js'), import('/js/model.js'), import('/js/bnpl.js')]);
   return new Function('st', 'm', 'bn', 'a', `return (${src})(st, m, bn, a)`)(st, m, bn, a);
