@@ -49,7 +49,11 @@ export const INCOME_CATEGORIES = [];
 const ALL_CATEGORIES = { Spend: [], Income: [] };
 export const CATEGORY_ICONS = ['fork', 'car', 'basket', 'ticket', 'bag', 'plane', 'bolt', 'heart', 'gift', 'briefcase', 'wallet', 'cash', 'card', 'store', 'home', 'calendar', 'note', 'sparkle', 'dots'];
 
-/** cfg is the `categories` extra: { v: 1, custom: [{ id, type, icon }], hidden: [id], names: { id: label } } */
+/** Key for a category in the hidden/names settings. "Other" is both a spending and a money-in category,
+    so money-in ones are prefixed to keep the two apart. */
+export const categoryKey = (id, type = 'Spend') => (type === 'Income' ? `Income:${id}` : id);
+
+/** cfg is the `categories` extra: { v: 1, custom: [{ id, type, icon }], hidden: [key], names: { key: label } } */
 export function setCategoryList(cfg) {
   const c = cfg && typeof cfg === 'object' ? cfg : {};
   const hidden = new Set(Array.isArray(c.hidden) ? c.hidden : []);
@@ -60,7 +64,7 @@ export function setCategoryList(cfg) {
       .filter((x) => (x.type || 'Spend') === type && !defaults.some((d) => d.id === x.id))
       // your own categories share the grey "other" colour: the eight-colour palette is checked for colour blindness
       .map((x) => ({ id: x.id, short: x.id, icon: CATEGORY_ICONS.includes(x.icon) ? x.icon : 'dots', slot: 0, custom: true }));
-    const all = [...defaults, ...mine].map((x) => ({ ...x, short: names[x.id] || x.short, label: names[x.id] || x.id, hidden: hidden.has(x.id) }));
+    const all = [...defaults, ...mine].map((x) => { const k = categoryKey(x.id, type); return { ...x, short: names[k] || x.short, label: names[k] || x.id, hidden: hidden.has(k) }; });
     ALL_CATEGORIES[type].splice(0, ALL_CATEGORIES[type].length, ...all);
     shown.splice(0, shown.length, ...all.filter((x) => !x.hidden));
   }
@@ -439,6 +443,16 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved, spentBefore };
 }
 
+/** Whole numbers for `values` that add up to `target` (default: their rounded total): round every one
+    down, then give the leftover units to the biggest fractions (largest remainder). */
+export function apportion(values, target = Math.round(values.reduce((a, v) => a + v, 0))) {
+  const shown = values.map((v) => Math.floor(v));
+  let spare = target - shown.reduce((a, v) => a + v, 0);
+  values.map((v, i) => i).sort((a, b) => (values[b] - Math.floor(values[b])) - (values[a] - Math.floor(values[a])))
+    .forEach((i) => { if (spare > 0) { shown[i]++; spare--; } });
+  return shown;
+}
+
 /** "Where your money is": every part of the total, so the numbers visibly add up. */
 export function whereRows(m) {
   const all = [];
@@ -462,14 +476,7 @@ export function whereRows(m) {
     const a = accountMeta(id);
     add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
   }
-  // whole numbers that add up to the rounded total: round each row, then nudge the rows that
-  // rounding moved furthest (by a dirham each) until the rows add up to the total shown
-  // (the rows are every part of the total, so their exact sum is the total)
-  const target = Math.round(m.total);
-  all.forEach((r) => { r.shown = Math.round(r.v); });
-  let diff = target - all.reduce((a, r) => a + r.shown, 0);
-  const byGap = [...all].sort((a, b) => (b.v - b.shown) - (a.v - a.shown)); // most under-rounded first
-  for (let i = 0; diff > 0 && i < byGap.length; i++, diff--) byGap[i].shown++;
-  for (let i = byGap.length - 1; diff < 0 && i >= 0; i--, diff++) byGap[i].shown--;
+  // whole numbers that add up to the rounded total (largest remainder)
+  apportion(all.map((r) => r.v)).forEach((n, i) => { all[i].shown = n; });
   return all.filter((r) => r.shown !== 0);
 }

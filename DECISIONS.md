@@ -26,6 +26,18 @@ Choices made while running the app on my own, newest first, with the reason for 
 - **Release bumps after a thread's PR go straight to main** as a version + changelog commit, so I don't push to
   another thread's branch while it may still be working on it.
 
+- **Bulk edits are one undo step.** `batch(label, fn)` in store.js groups the changes: one undo entry, one
+  save, one redraw and one sync at the end. Undo replays the reversals backwards. Each entry still goes to
+  the sheet as its own add/update/delete, so Code.gs didn't change (a bulk delete of 50 is 50 quick calls).
+- **Activity filter totals count spending and income only.** Transfers and bank matches move money, they
+  aren't spending (money rule). Refunds show under "In", as they are income entries.
+- **Amount filters compare AED value**, so a USD entry is filtered by what it cost in dirhams.
+- **A transfer matches the account filter on either side**, so "ADCB" shows the allowance landing.
+- **Bulk category change only touches spending and income entries.** Transfers and bank matches have no
+  category; the sheet says how many stay as they are. Spending and income get their own category rows.
+- **Select mode hides the tab bar and + button** and puts Category and Delete in their place (like Photos).
+  Leaving the Activity tab drops the selection. Filters stay until cleared, so coming back keeps the view.
+
 - **Council on the foundation PR, lighter format.** Five advisors ran; they agreed so closely that I wrote the
   synthesis myself instead of spending six more agents on peer review and a chairman. Full council (with
   peer review) stays the rule for wave-1 features. Transcript: council/council-transcript-2026-10-30-foundation.md.
@@ -33,6 +45,16 @@ Choices made while running the app on my own, newest first, with the reason for 
   anything the old script could have stored. Tracked per key, not with one flag.
 - **Same account for allowance and main: Safe to spend is capped at that account's free money.** Otherwise
   Safe to spend could exceed the money that exists. Abdullah uses two accounts, so this changes nothing for him.
+
+- **Monthly report is one HTML page with its own light "paper" styles**, not a PDF library. iPhone Safari
+  turns any page into a PDF from the print sheet, so "Save as PDF" prints just the report (the app is hidden
+  while printing). Because print can be unreliable from a Home Screen app, **Share** also hands the report
+  over as a stand-alone web page file (Save to Files, AirDrop, or Print from there). No new dependency, works offline.
+- **The report counts money like the rest of the app**: transfers listed apart and never as spending,
+  refunds shown separately and taken off "Spent", bank matches only change "Total money". "Total money
+  at the end" uses only entries dated before the cycle ended. Budgets are read from Extras `budgets` as
+  `{ Category: 600 }` or `{ Category: { limit: 600 } }`, so it works with either shape the budgets branch picks.
+- **Per-cycle CSV uses the same columns as the full export**, so the two files line up in a spreadsheet.
 
 - **Review step uses the council skill.** The `council:council` skill is installed, so major features
   go through it before merging. Smaller fixes get an Opus code-review subagent instead.

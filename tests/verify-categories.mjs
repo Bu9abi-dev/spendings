@@ -24,6 +24,17 @@ const food = categoryMeta('Food & Drinks');
 ok(food.id === 'Food & Drinks' && food.label === 'Eating out' && food.short === 'Eating out', 'a rename changes the label, never the id the sheet stores');
 setCategoryList({ custom: [{ id: 'Groceries', type: 'Spend', icon: 'gift' }] });
 ok(allCategories('Spend').filter((c) => c.id === 'Groceries').length === 1 && categoryMeta('Groceries').icon === 'basket', 'a custom category can\'t duplicate a built-in one');
+setCategoryList({ hidden: ['Income:Other'], names: { 'Income:Gift': 'Presents' } });
+ok(SPEND_CATEGORIES.some((c) => c.id === 'Other') && !INCOME_CATEGORIES.some((c) => c.id === 'Other'), 'hiding money-in "Other" leaves spending "Other" alone');
+ok(categoryMeta('Gift', 'Income').label === 'Presents' && categoryMeta('Family & Gifts').label === 'Family & Gifts', 'a money-in rename stays on the money-in side');
+setCategoryList({ custom: [{ id: 'Coffee', type: 'Spend', icon: 'fork' }], hidden: ['Groceries'] });
+{
+  const { learn, suggestFor } = await import('../docs/js/categorize.js');
+  const at = (m, c) => ({ id: m + c, type: 'Spend', merchant: m, category: c, status: 'OK', amount: 10, date: '2026-10-01T10:00:00Z' });
+  const idx = learn([at('Starbucks', 'Coffee'), at('Starbucks', 'Coffee'), at('Lulu', 'Groceries'), at('Lulu', 'Groceries')]);
+  ok(suggestFor('STARBUCKS ABU DHABI', idx)?.category === 'Coffee', 'smart categories learn and suggest your own category');
+  ok(suggestFor('Lulu', idx)?.category !== 'Groceries', 'a hidden category is never suggested');
+}
 setCategoryList({ custom: 'junk', hidden: 5, names: null });
 ok(SPEND_CATEGORIES.length === DEFAULT_SPEND_CATEGORIES.length, 'a damaged setting is ignored, not fatal');
 setCategoryList(null);

@@ -842,9 +842,11 @@ function matchCategory_(text) {
   for (var id in names) {
     if (String(names[id]).toLowerCase() === t && cats.indexOf(id) >= 0) return id;
   }
-  for (var j = 0; j < cats.length; j++) {
-    var first = cats[j].toLowerCase().split(/[ &]/)[0];
-    if (first && t.indexOf(first) >= 0) return cats[j];
+  // loose first-word match for the built-in names only ("food" → Food & Drinks); your own short names
+  // like "Car" would otherwise catch "Carrefour"
+  for (var j = 0; j < SPEND_CATEGORIES.length; j++) {
+    var first = SPEND_CATEGORIES[j].toLowerCase().split(/[ &]/)[0];
+    if (first && t.indexOf(first) >= 0) return SPEND_CATEGORIES[j];
   }
   return '';
 }
@@ -1011,11 +1013,12 @@ function ensureCycleTab_(cycle, force) {
   sh.getRange('B8').setFontColor(TINT);
 
   sh.getRange('D3:F3').setValues([['Spending by category', 'AED', 'Share']]);
-  var catRows = SPEND_CATEGORIES.map(function (c, i) {
+  var cats = spendCategories_(); // built-ins plus your own from the app
+  var catRows = cats.map(function (c, i) {
     var r = 4 + i;
-    return [c, '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + cat + ',"' + c + '")', '=IF($B$5=0,0,E' + r + '/$B$5)'];
+    return [c, '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + cat + ',"' + String(c).replace(/"/g, '""') + '")', '=IF($B$5=0,0,E' + r + '/$B$5)'];
   });
-  catRows.push(['Uncategorised', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + cat + ',"")', '=IF($B$5=0,0,E' + (4 + SPEND_CATEGORIES.length) + '/$B$5)']);
+  catRows.push(['Uncategorised', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + cat + ',"")', '=IF($B$5=0,0,E' + (4 + cats.length) + '/$B$5)']);
   sh.getRange(4, 4, catRows.length, 3).setValues(catRows);
   sh.getRange(4, 5, catRows.length, 1).setNumberFormat('#,##0.00');
   sh.getRange(4, 6, catRows.length, 1).setNumberFormat('0%');
@@ -1048,7 +1051,7 @@ function ensureCycleTab_(cycle, force) {
   sh.setHiddenGridlines(true);
 
   var chart = sh.newChart().asPieChart()
-    .addRange(sh.getRange(4, 4, SPEND_CATEGORIES.length, 2))
+    .addRange(sh.getRange(4, 4, cats.length, 2))
     .setPosition(3, 8, 0, 0)
     .setOption('pieHole', 0.55)
     .setOption('title', 'Where the money went')

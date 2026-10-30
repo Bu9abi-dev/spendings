@@ -12,6 +12,9 @@ import { largeTitle, demoBanner } from './views.js';
 let insightsCycle = null;
 const currentCycle = () => cycleOf(new Date(), state.settings.cycleStart);
 
+/** The cycle Insights is showing (the monthly report opens on it). */
+export const insightsShown = () => insightsCycle || currentCycle();
+
 /** Step the cycle shown by -1 or +1; never past the current one. */
 export function shiftInsights(delta) {
   insightsCycle = shiftCycle(insightsCycle || currentCycle(), delta);
@@ -24,7 +27,7 @@ export function renderInsights() {
   const isCurrent = cyc === currentCycle();
   const sum = summarize(state.entries, cyc, s, state.plan);
 
-  const main = SPEND_CATEGORIES.filter((c) => c.slot);
+  const main = allCategories('Spend').filter((c) => c.slot); // hidden built-ins keep their colour, so the donut matches the legend
   // everything without its own colour: Family, Other, your own and hidden categories, and Needs category
   const otherTotal = [...sum.byCategory].filter(([k]) => !main.some((c) => c.id === k)).reduce((a, [, v]) => a + v, 0);
   const slices = [...main.map((c) => ({ label: c.short, value: sum.byCategory.get(c.id) || 0, color: seriesColor(c.slot) })), { label: 'Other', value: otherTotal, color: 'var(--series-other)' }];
@@ -93,6 +96,11 @@ export function renderInsights() {
       <div class="cs-label"><b>${cycleName(cyc, false)}</b><span>${cycleRange(cyc, s.cycleStart)}</span></div>
       <button type="button" class="icon-btn" data-cyc="1" aria-label="Next cycle" ${isCurrent ? 'disabled' : ''}>${icon('chevR', { size: 20 })}</button>
     </div>
+
+    <section class="group report-link">
+      <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span>
+        <span class="row-main"><span class="row-title">${cycleName(cyc, true)} report</span><span class="row-sub">Save it as a PDF or CSV</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
+    </section>
 
     <section class="panel">
       <h3 class="panel-title">Where it went</h3>

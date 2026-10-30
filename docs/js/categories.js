@@ -2,7 +2,7 @@
 // Saved in the `categories` extra as { v: 1, custom: [{ id, type, icon }], hidden: [id], names: { id: label } }.
 // A category's id is what the sheet stores, so it never changes: renaming only changes the label the app shows,
 // and hiding only takes it out of the pickers. Past entries always keep their category.
-import { allCategories, CATEGORY_ICONS, DEFAULT_SPEND_CATEGORIES, DEFAULT_INCOME_CATEGORIES, seriesColor } from './model.js';
+import { allCategories, categoryKey, CATEGORY_ICONS, DEFAULT_SPEND_CATEGORIES, DEFAULT_INCOME_CATEGORIES, seriesColor } from './model.js';
 import { state, getExtra, saveExtra } from './store.js';
 import { openSheet, haptic, toast, esc } from './ui.js';
 import { icon } from './icons.js';
@@ -19,7 +19,7 @@ const warnIcon = () => icon('warn', { size: 18 });
 /** Settings block: one row per category (hidden ones dimmed), then "Add a category". */
 export function categoriesSettingsBlock() {
   // only say something when there's something to say, so the list stays short
-  const sub = (c) => [c.hidden ? 'Hidden' : '', c.custom ? 'Yours' : '', c.label !== c.id ? `Saved as “${esc(c.id)}”` : ''].filter(Boolean).join(' · ');
+  const sub = (c) => [c.hidden ? 'Hidden' : '', c.custom ? 'Yours' : '', c.label !== c.id ? `Original name: ${esc(c.id)}` : ''].filter(Boolean).join(' · ');
   const row = (c, type) => `<button type="button" class="row link-row cat-row${c.hidden ? ' is-hidden' : ''}" data-cat-edit="${esc(c.id)}" data-cat-type="${type}">
       <span class="row-icon" style="--tint:${type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 20 })}</span>
       <span class="row-main"><span class="row-title">${esc(c.label || c.id)}</span>${sub(c) ? `<span class="row-sub">${sub(c)}</span>` : ''}</span>
@@ -53,6 +53,7 @@ export function openCategory(id, type = 'Spend') {
   let kind = type;
   const used = existing ? usedBy(existing.id, type) : 0;
   const builtIn = existing && isBuiltIn(existing.id, type);
+  const key = existing ? categoryKey(existing.id, type) : '';
 
   openSheet({
     label: existing ? `Edit ${existing.label}` : 'New category', tall: false,
@@ -89,8 +90,8 @@ export function openCategory(id, type = 'Spend') {
         if (act === 'delete') {
           const c = config();
           c.custom = c.custom.filter((x) => !(x.id === existing.id && (x.type || 'Spend') === type));
-          c.hidden = c.hidden.filter((x) => x !== existing.id);
-          delete c.names[existing.id];
+          c.hidden = c.hidden.filter((x) => x !== key);
+          delete c.names[key];
           saveExtra(KEY, c, `Deleted ${existing.label}`);
           haptic(); close();
           toast(`Deleted ${esc(existing.label)}`, { icon: icon('check', { size: 18 }), tone: 'good' });
@@ -103,10 +104,12 @@ export function openCategory(id, type = 'Spend') {
           const c = config();
           if (existing) {
             // a custom category is renamed by label too, so its id (in the sheet) stays put
-            if (nm === existing.id) delete c.names[existing.id]; else c.names[existing.id] = nm;
+            if (nm === existing.id) delete c.names[key]; else c.names[key] = nm;
             const shown = $('#cf-shown').checked;
-            c.hidden = c.hidden.filter((x) => x !== existing.id);
-            if (!shown) c.hidden.push(existing.id);
+            // keep at least one category to pick from
+            if (!shown && !existing.hidden && allCategories(type).filter((x) => !x.hidden).length <= 1) { toast('Keep at least one category showing', { tone: 'warn', icon: warnIcon() }); return; }
+            c.hidden = c.hidden.filter((x) => x !== key);
+            if (!shown) c.hidden.push(key);
             if (existing.custom) c.custom = c.custom.map((x) => (x.id === existing.id && (x.type || 'Spend') === type ? { ...x, icon: cat.icon } : x));
             saveExtra(KEY, c, `Changed ${existing.label}`);
           } else {
