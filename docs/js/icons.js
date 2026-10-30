@@ -21,6 +21,7 @@ const P = {
   transfer: '<path d="M4 8.5h14M14.5 5 18 8.5 14.5 12M20 15.5H6M9.5 12 6 15.5 9.5 19"/>',
   in: '<path d="M12 4.5v13M6.5 12l5.5 5.5 5.5-5.5"/><path d="M5 20h14"/>',
   out: '<path d="M12 19.5v-13M6.5 12 12 6.5l5.5 5.5"/><path d="M5 4h14"/>',
+  filter: '<path d="M4 7h16M7 12h10M10 17h4"/>',
   search: '<circle cx="10.5" cy="10.5" r="6"/><path d="m15 15 5 5"/>',
   chevL: '<path d="M14.5 5.5 8 12l6.5 6.5"/>',
   chevR: '<path d="m9.5 5.5 6.5 6.5-6.5 6.5"/>',

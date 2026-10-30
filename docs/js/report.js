@@ -2,6 +2,7 @@
 // merchants, allowance, budgets), saved as a PDF from the iPhone's print or share sheet, plus that
 // cycle's entries as CSV. The report is plain HTML with its own light "paper" styles, so the
 // preview, the printout and the shared file all look the same.
+import { cleanMerchant } from './categorize.js';
 import {
   categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts,
 } from './model.js';
@@ -18,7 +19,7 @@ const catColor = (id) => SERIES[categoryMeta(id)?.slot || 0] || SERIES[0];
 const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.id || id);
 
 /** Shop name without store/MCC numbers or the city: "CARREFOUR MCC 5411 ABU DHABI" → "CARREFOUR". */
-// switch to categorize.cleanMerchant once smart-categories lands
+// tidies a bank-style name for display; grouping uses categorize.cleanMerchant, shared with Needs review
 function cleanShop(m) {
   let t = String(m || '').trim().replace(/\s+/g, ' ');
   for (let prev = ''; prev !== t;) {
@@ -27,7 +28,7 @@ function cleanShop(m) {
   }
   return t;
 }
-const merchantKey = (m) => cleanShop(m).toLowerCase();
+const merchantKey = (m) => cleanMerchant(m) || cleanShop(m).toLowerCase();
 const shopName = (m) => { const t = cleanShop(m); return t && t === t.toUpperCase() ? t.toLowerCase().replace(/(^|\s)\S/g, (c) => c.toUpperCase()) : t; };
 
 /** A budget limit: a positive number of dirhams, otherwise none. */

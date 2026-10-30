@@ -453,6 +453,84 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 }
 .fchip.on { background: var(--label); color: var(--bg-2); }
 
+/* search + Filter button on one line */
+.search-row { display: flex; align-items: center; gap: 8px; margin: 0 var(--gutter); }
+.search-row .search { flex: 1; min-width: 0; margin: 0; }
+.filter-btn {
+  position: relative; flex: none;
+  width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center;
+  background: var(--fill-3); color: var(--label);
+  transition: background-color 0.2s, color 0.2s, transform 0.16s var(--ease-out);
+}
+.filter-btn:active { transform: scale(0.92); }
+.filter-btn.on { background: var(--tint); color: var(--on-tint); }
+.filter-count {
+  position: absolute; top: -3px; right: -3px;
+  min-width: 18px; height: 18px; padding: 0 5px; border-radius: 9px;
+  font-size: 12px; font-weight: 700; line-height: 18px; text-align: center;
+  background: var(--label); color: var(--bg-2);
+}
+/* filters that are on, each removable with one tap */
+.active-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 10px var(--gutter) 0; }
+.af-pill {
+  height: 30px; padding: 0 9px 0 12px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: 14px; font-weight: 500;
+  background: color-mix(in srgb, var(--tint) 14%, transparent); color: var(--tint-text);
+}
+.af-clear { font-size: 15px; padding: 4px 6px; }
+/* filtered total, or the Select mode controls */
+.act-bar {
+  display: flex; align-items: center; gap: 14px;
+  min-height: 34px; padding: 8px calc(var(--gutter) + 4px) 0;
+  font-size: 14px; color: var(--label-2);
+}
+.act-sum { flex: 1; min-width: 0; }
+.act-sum b { color: var(--label); font-weight: 600; }
+.act-sum b.in { color: var(--good); }
+.act-bar .text-btn { font-size: 16px; }
+/* Select mode: a tick circle on each row */
+.pick {
+  flex: none; width: 24px; height: 24px; border-radius: 50%;
+  display: grid; place-items: center;
+  border: 1.5px solid var(--label-3);
+  transition: background-color 0.15s, border-color 0.15s;
+}
+.entry.picked .pick { background: var(--tint); border-color: var(--tint); color: var(--on-tint); }
+.entry.picked { background: color-mix(in srgb, var(--tint) 7%, transparent); }
+/* while selecting, the action bar takes the tab bar's place */
+.tabbar, .fab { transition: opacity 0.2s, transform 0.25s var(--ease-out); }
+html.selecting .tabbar, html.selecting .fab { opacity: 0; pointer-events: none; transform: translateY(24px); }
+@media (min-width: 640px) { html.selecting .tabbar { transform: translateX(calc(-50% - 36px)) translateY(24px); } }
+.bulk-bar.glass {
+  position: fixed; z-index: 31;
+  left: var(--gutter); right: var(--gutter);
+  bottom: calc(var(--safe-b) + 6px);
+  height: var(--tabbar-h);
+  border-radius: 999px;
+  display: flex; padding: 4px;
+  max-width: 460px; margin: 0 auto;
+}
+.bulk-btn {
+  flex: 1; border-radius: 999px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
+  font-size: 12px; font-weight: 600; color: var(--tint-text);
+  transition: transform 0.16s var(--ease-out), opacity 0.2s;
+}
+.bulk-btn.danger { color: var(--neg); }
+.bulk-btn:disabled { opacity: 0.35; }
+.bulk-btn:active:not(:disabled) { transform: scale(0.94); }
+/* Filter, category and delete sheets */
+.filter-form .group-title { font-size: 15px; font-weight: 600; color: var(--label-2); padding: 20px calc(var(--gutter) + 4px) 8px; }
+.filter-form .filter-chips { padding-top: 0; flex-wrap: wrap; }
+.filter-form .custom-dates { margin-top: 10px; }
+.input-row input[type="date"] { color: var(--tint-text); min-height: 24px; }
+.bulk-cat { padding: 0 var(--gutter) 24px; display: grid; gap: 8px; }
+.bulk-cat .group-title { font-size: 15px; font-weight: 600; color: var(--label-2); padding: 8px 4px 0; }
+.bulk-cat .group-foot { padding: 6px 4px 0; }
+.group-foot.center { text-align: center; padding: 0; }
+
 /* ───── Insights ───── */
 .cycle-switch {
   display: flex; align-items: center; justify-content: space-between;
@@ -697,6 +775,7 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .cat:active .cat-icon { transform: scale(0.9); }
 .cat.on .cat-icon { background: var(--cat); color: #fff; transform: scale(1.06); box-shadow: 0 4px 14px color-mix(in srgb, var(--cat) 40%, transparent); }
 .cat-name { font-size: 12px; font-weight: 500; color: var(--label-2); white-space: nowrap; }
+.cat.sug .cat-icon { box-shadow: inset 0 0 0 2px var(--cat); }
 .cat.on .cat-name { color: var(--label); font-weight: 650; }
 
 .keypad-wrap { flex: none; padding: 8px 8px 8px; background: var(--kbd-tray); }
@@ -745,6 +824,26 @@ button.row:active, a.row:active { background: var(--fill-3); transition: none; }
 .rc-cat:active { transform: scale(0.94); }
 .rc-cat.on { background: var(--cat); color: #fff; }
 .rc-cat.on .i { color: #fff; }
+/* smarter categories: the suggestion on each card, and "file all" at the top */
+.rc-cat.sug { box-shadow: inset 0 0 0 1.5px var(--cat); }
+.rc-suggest {
+  width: 100%; margin-bottom: 10px; padding: 10px 12px; border-radius: 16px;
+  display: flex; align-items: center; gap: 10px; text-align: left;
+  background: color-mix(in srgb, var(--cat) 16%, var(--bg-2));
+  transition: transform 0.15s var(--ease-out);
+}
+.rc-suggest:active { transform: scale(0.98); }
+.rs-icon { width: 34px; height: 34px; border-radius: 50%; flex: none; display: grid; place-items: center; background: var(--cat); color: #fff; }
+.rs-text { display: flex; flex-direction: column; min-width: 0; }
+.rs-text b { font-size: 16px; font-weight: 600; }
+.rs-text span { font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rc-hint { margin: -2px 0 10px; font-size: 13px; color: var(--label-2); }
+.rc-accept-all {
+  height: 46px; border-radius: 16px; display: flex; align-items: center; justify-content: center; gap: 8px;
+  font-size: 16px; font-weight: 600; color: var(--on-tint); background: var(--tint);
+  transition: transform 0.15s var(--ease-out);
+}
+.rc-accept-all:active { transform: scale(0.98); }
 
 /* shortcut guide */
 .guide { padding: 0 var(--gutter) 30px; }
@@ -1193,3 +1292,8 @@ html.sheet-open body::after { opacity: 0; }
 .report-actions .btn-primary { flex: 1 1 100%; padding: 0 14px; }
 .report-actions .btn-tinted { flex: 1; padding: 0 10px; white-space: nowrap; }
 .report-actions .btn-primary { white-space: nowrap; }
+/* Bulk delete: the first few entries it will remove */
+.del-list { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 15px; color: var(--label-2); }
+.del-list li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.del-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.del-list li.more { justify-content: center; }

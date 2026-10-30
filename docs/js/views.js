@@ -4,11 +4,15 @@ import { state, isConnected, isDemo, undo, canUndo, lastAction } from './store.j
 import { toast, haptic, esc } from './ui.js';
 import { icon } from './icons.js';
 
-export function entryRow(e) {
+/** One entry as a list row. Pass { selected } in Activity's Select mode to draw a tick circle instead of swipe-to-delete. */
+export function entryRow(e, pick) {
+  const sel = pick ? ` selecting${pick.selected ? ' picked' : ''}` : '';
+  const aria = pick ? ` aria-pressed="${!!pick.selected}"` : '';
+  const tick = pick ? `<span class="pick" aria-hidden="true">${pick.selected ? icon('check', { size: 15 }) : ''}</span>` : '';
   if (e.type === 'Adjustment') {
     const v = +e.amount || 0;
-    return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry adj" type="button" data-id="${esc(e.id)}">
-    <span class="row-icon" style="--tint:${accountMeta(e.account).color}">${icon('sync', { size: 20 })}</span>
+    return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry adj${sel}" type="button" data-id="${esc(e.id)}"${aria}>
+    ${tick}<span class="row-icon" style="--tint:${accountMeta(e.account).color}">${icon('sync', { size: 20 })}</span>
     <span class="row-main"><span class="row-title">Checked with bank</span><span class="row-sub">${esc(e.account)} · ${timeLabel(e.date)}</span></span>
     <span class="row-amt num tr">${v === 0 ? '✓ matched' : `${v > 0 ? '+' : '−'}${fmt(Math.abs(v), { fixed: true })}`}</span>
   </button></div>`;
@@ -24,8 +28,8 @@ export function entryRow(e) {
   else if (e.merchant) bits.push(`${esc(e.account)} → ${esc(e.toAccount)}`);
   bits.push(timeLabel(e.date));
   const amt = `${isIn ? '+' : ''}${e.currency === 'USD' ? '$' : ''}${fmt(e.amount, { fixed: true })}`;
-  return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry${e.status === 'Review' ? ' review' : ''}" type="button" data-id="${esc(e.id)}">
-    <span class="row-icon" style="--tint:${tint}">${icon(ic, { size: 20 })}</span>
+  return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>Delete</span></button><button class="row entry${e.status === 'Review' ? ' review' : ''}${sel}" type="button" data-id="${esc(e.id)}"${aria}>
+    ${tick}<span class="row-icon" style="--tint:${tint}">${icon(ic, { size: 20 })}</span>
     <span class="row-main"><span class="row-title">${esc(title)}</span><span class="row-sub">${bits.join(' · ')}${e.note ? ` · <span class="row-note">${esc(e.note)}</span>` : ''}</span></span>
     <span class="row-amt num ${isIn ? 'in' : isTr ? 'tr' : ''}">${amt}${e.currency === 'USD' ? `<small>≈ AED ${fmt(toAED(e, state.settings), { fixed: true })}</small>` : ''}</span>
   </button></div>`;

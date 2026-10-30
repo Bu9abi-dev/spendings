@@ -35,7 +35,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/store.js` | State, localStorage cache, offline outbox, Apps Script client, undo history, Extras (`getExtra`/`saveExtra`). |
 | `docs/js/main.js` | Router, Settings tab, review sheet, Shortcut guide, global click/keyboard/swipe handlers. |
 | `docs/js/home.js` | Home tab (balance bar, account lenses, payday plan, match with bank). |
-| `docs/js/activity.js` | Activity tab (search, filter chips, day groups). |
+| `docs/js/activity.js` | Activity tab (search, chips, Filter sheet, filtered total, Select mode for bulk recategorise/delete). |
+| `docs/js/filters.js` | Pure Activity filter matching and totals (tested in Node by `tests/verify-activity.mjs`). |
 | `docs/js/insights.js` | Insights tab (donut, allowance pace, accounts, income, six cycles). |
 | `docs/js/views.js` | Shared bits: entry row, sync badge, large title + undo button, demo banner. |
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
