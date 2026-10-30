@@ -4,10 +4,11 @@
 // A week is Monday to Sunday by Dubai days (dayKey from model.js). "Last week" is the last FULL week,
 // so on a Monday it is the one that ended yesterday. Spent counts Spend entries only and is gross, exactly like
 // Insights: transfers are never spending, and a refund is income, so it is not netted off.
-import { dayKey, toAED, categoryMeta, cycleOf, summarize, fmt, daysBetween } from './model.js';
+import { dayKey, toAED, categoryMeta, cycleOf, summarize, fmt, daysBetween, amtAED } from './model.js';
 import { detectRecurring } from './recurring.js';
 import { dueBetween, bnplSummary, addDays, shortDay } from './bnpl.js';
 import { budgetRows } from './budgets.js';
+import { t } from './i18n.js';
 
 export const USUAL_WEEKS = 6;   // how many earlier full weeks make up "the usual week"
 export const MIN_WEEKS = 3;     // fewer weeks with spending than this and there is no usual yet
@@ -70,7 +71,7 @@ export function usualWeek(totals, lastMonday) {
 }
 
 /** Name for a category id on screen (not yet escaped). */
-export const categoryLabel = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.label || id);
+export const categoryLabel = (id) => (id === 'Uncategorised' ? t('row.needsCat') : categoryMeta(id)?.label || id);
 
 /** The three biggest categories of a week: [{ id, label, amount }]. */
 export function topCategories(byCategory, n = 3) {
@@ -127,8 +128,8 @@ export function weeklySummary(ctx) {
 export function paceAlert(pace, now = new Date()) {
   const r = pace?.runsOut;
   if (!r) return null;
-  const when = r.outDay === dayKey(now) ? 'today' : shortDay(r.outDay);
-  return { ...r, text: `At this pace (~AED ${fmt(r.perDay, { whole: true })} a day) your allowance runs out around ${when}, ${r.early} ${r.early === 1 ? 'day' : 'days'} early` };
+  const when = r.outDay === dayKey(now) ? t('home.today') : shortDay(r.outDay);
+  return { ...r, text: t('wk.pace', { amt: amtAED(fmt(r.perDay, { whole: true })), when, n: r.early }) };
 }
 
 /** Has this alert been seen? `seenPace` is the `weekly` extra's `pace`: { cycle, outDay }, saved when the alert was tapped.
@@ -146,9 +147,10 @@ export function summaryDue(now, seen, week = lastFullWeek(now)) {
 
 /** "Last week you spent AED 1,240, 12% more than usual" (plain text; escape it where it goes into HTML).
     With refunds that week it says "AED 1,240 before refunds", since spent is gross. */
-export function summaryLine(spent, vs, money, refunds = 0) {
-  const base = `Last week you spent ${money(spent)}${refunds > 0 ? ' before refunds' : ''}`;
+export function summaryLine(spent, vs, money, refunds = 0, short = false) {
+  // short: "You spent …" for the Insights card, where the heading already says "Last week"
+  const base = `${t(short ? 'wk.youSpent' : 'wk.lastSpent', { amt: money(spent) })}${refunds > 0 ? ` ${t('wk.beforeRefunds')}` : ''}`;
   if (!vs) return base;
-  if (vs.tone === 'same') return `${base}, about the usual`;
-  return `${base}, ${Math.round(Math.abs(vs.pct) * 100)}% ${vs.tone === 'more' ? 'more' : 'less'} than usual`;
+  if (vs.tone === 'same') return t('wk.join', { a: base, b: t('wk.aboutUsual') });
+  return t('wk.join', { a: base, b: t(vs.tone === 'more' ? 'wk.pctMore' : 'wk.pctLess', { pct: Math.round(Math.abs(vs.pct) * 100) }) });
 }

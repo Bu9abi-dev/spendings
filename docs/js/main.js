@@ -1,6 +1,7 @@
 import {
-  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV, entryIds,
+  ACCOUNTS, PEOPLE_ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV, entryIds, amtAED, amtOf,
 } from './model.js';
+import { t, locale, lang, setLang, langPref, onLangChange, isRTL, applyLang } from './i18n.js';
 import {
   state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
 } from './store.js';
@@ -47,13 +48,13 @@ function quickAdd() {
   }
   const top = [...groups.values()].filter((g) => g.n >= 2).sort((a, b) => b.n - a.n).slice(0, 6);
   if (!top.length) return '';
-  return `<h3 class="group-title">Quick add</h3>
-    <div class="quick" role="group" aria-label="Quick add">
+  return `<h3 class="group-title">${t('home.quickAdd')}</h3>
+    <div class="quick" role="group" aria-label="${t('home.quickAdd')}">
       ${top.map(({ e }) => {
         const m = categoryMeta(e.category);
         return `<button type="button" class="quick-chip" data-quick="${esc(e.id)}" style="--tint:${m ? seriesColor(m.slot) : 'var(--label-2)'}">
           <span class="qc-icon">${icon(m ? m.icon : 'dots', { size: 18 })}</span>
-          <span class="qc-text"><b>${esc(e.merchant)}</b><span>${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount)} · ${esc(e.account)}</span></span>
+          <span class="qc-text"><b>${esc(e.merchant)}</b><span>${amtOf(e.amount, e.currency)} · ${esc(e.account)}</span></span>
         </button>`;
       }).join('')}
     </div>`;
@@ -63,102 +64,110 @@ function quickAdd() {
 
 function renderSettings() {
   const s = state.settings, c = state.conn;
-  const syncedAgo = state.sync.at ? relTime(state.sync.at) : 'never';
+  const syncedAgo = state.sync.at ? relTime(state.sync.at) : t('set.never');
   return `
-    ${largeTitle('Settings')}
-    <h3 class="group-title">Google Sheet</h3>
+    ${largeTitle(t('set.title'))}
+    <h3 class="group-title">${t('set.gsheet')}</h3>
     <section class="group form">
       <div class="row status-row">
         <span class="row-icon" style="--tint:${isConnected() ? 'var(--good)' : 'var(--label-3)'}">${icon('sheet', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">${isConnected() ? 'Connected' : 'Not connected'}</span>
-          <span class="row-sub">${isConnected() ? (state.sync.status === 'error' ? `<span class="warn-text">${esc(state.sync.error)}</span>` : `Last synced ${syncedAgo}${state.outbox.length ? ` · ${state.outbox.length} waiting` : ''}`) : 'Paste the Web app URL and app key from your sheet'}</span></span>
+        <span class="row-main"><span class="row-title">${isConnected() ? t('set.connected') : t('set.notConnected')}</span>
+          <span class="row-sub">${isConnected() ? (state.sync.status === 'error' ? `<span class="warn-text">${esc(state.sync.error)}</span>` : `${t('set.lastSynced', { ago: syncedAgo })}${state.outbox.length ? ` · ${t('sync.waiting', { n: state.outbox.length })}` : ''}`) : t('set.pasteUrl')}</span></span>
       </div>
       ${isConnected() && extrasOnPhoneOnly() ? `<div class="row status-row">
         <span class="row-icon" style="--tint:var(--warn)">${icon('warn', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Some settings are only on this phone</span>
-          <span class="row-sub">Paste the new script into Apps Script and deploy a new version. They’ll be saved to your sheet straight after.</span></span>
+        <span class="row-main"><span class="row-title">${t('set.phoneOnly')}</span>
+          <span class="row-sub">${t('set.phoneOnlySub')}</span></span>
       </div>` : ''}
-      ${isConnected() ? '<details class="conn-details"><summary class="row link-row"><span class="row-main"><span class="row-title">Connection details</span></span>' + icon('chevD', { size: 16, cls: 'chev' }) + '</summary>' : ''}
-      <label class="row input-row"><span>Web app URL</span><input name="url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
-      <label class="row input-row"><span>App key</span><input name="token" type="text" placeholder="From Spendings → Show my app key" value="${esc(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      ${isConnected() ? '<details class="conn-details"><summary class="row link-row"><span class="row-main"><span class="row-title">' + t('set.connDetails') + '</span></span>' + icon('chevD', { size: 16, cls: 'chev' }) + '</summary>' : ''}
+      <label class="row input-row"><span>${t('set.webUrl')}</span><input name="url" type="url" inputmode="url" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(c.url)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+      <label class="row input-row"><span>${t('set.appKey')}</span><input name="token" type="text" placeholder="${t('set.keyPh')}" value="${esc(c.token)}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
       <div class="row btn-row">
-        <button type="button" class="btn-tinted" data-act="connect">${icon('link', { size: 18 })}Connect</button>
-        <button type="button" class="btn-tinted" data-act="sync" ${isConnected() ? '' : 'disabled'}>${icon('sync', { size: 18 })}Sync now</button>
+        <button type="button" class="btn-tinted" data-act="connect">${icon('link', { size: 18 })}${t('set.connect')}</button>
+        <button type="button" class="btn-tinted" data-act="sync" ${isConnected() ? '' : 'disabled'}>${icon('sync', { size: 18 })}${t('set.syncNow')}</button>
       </div>
       ${isConnected() ? '</details>' : ''}
-      ${state.sheetUrl ? `<a class="row link-row" href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${icon('sheet', { size: 20 })}<span>Open the sheet</span>${icon('chevR', { size: 16, cls: 'chev' })}</a>` : ''}
+      ${state.sheetUrl ? `<a class="row link-row" href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${icon('sheet', { size: 20 })}<span>${t('set.openSheet')}</span>${icon('chevR', { size: 16, cls: 'chev' })}</a>` : ''}
       <button type="button" class="row link-row" data-act="setup-guide">
         <span class="row-icon" style="--tint:var(--tint-text)">${icon('sparkle', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Set up step by step</span><span class="row-sub">${isConnected() ? 'The welcome guide again' : 'Your cards, your money and your sheet'}</span></span>
+        <span class="row-main"><span class="row-title">${t('set.stepByStep')}</span><span class="row-sub">${isConnected() ? t('set.welcomeAgain') : t('set.cardsMoney')}</span></span>
         ${icon('chevR', { size: 16, cls: 'chev' })}
       </button>
     </section>
-    <p class="group-foot">The app key is like a password for your sheet. It stays on this phone and in your Shortcut, never in the app’s code.</p>
+    <p class="group-foot">${t('set.keyFoot')}</p>
 
     <h3 class="group-title">Apple Pay</h3>
     <section class="group">
       <button type="button" class="row link-row" data-act="shortcut">
         <span class="row-icon" style="--tint:var(--tint-text)">${icon('bell', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Log Apple Pay payments</span><span class="row-sub">Set up the Shortcut · 5 min</span></span>
+        <span class="row-main"><span class="row-title">${t('set.logApplePay')}</span><span class="row-sub">${t('set.setupShortcut')}</span></span>
         ${icon('chevR', { size: 16, cls: 'chev' })}
       </button>
     </section>
 
-    <h3 class="group-title">Appearance</h3>
+    <h3 class="group-title">${t('set.appearance')}</h3>
     <section class="group appearance">
       ${appearanceBlock()}
     </section>
 
-    <h3 class="group-title" id="accounts">Accounts</h3>
-    <section class="group">${accountsSettingsBlock()}</section>
-    <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
-
-    <h3 class="group-title" id="people">People</h3>
-    <section class="group">${peopleSettingsBlock()}</section>
-    <p class="group-foot">Friends you split bills with or lend to. What they owe isn’t counted as your money; Home shows it under “Where your money is”.${extrasOnPhoneOnly() && PEOPLE_ACCOUNTS.length ? ' <span class="people-script-hint">Updating your sheet’s script also makes Apple Pay card matching ignore people.</span>' : ''}</p>
-
-    ${goalsSettingsBlock()}
-    <h3 class="group-title" id="categories">Categories</h3>
-    <section class="group">${categoriesSettingsBlock()}</section>
-    <p class="group-foot">Add your own, rename any, or hide ones you don’t use. Old entries always keep their category.</p>
-
-    <h3 class="group-title" id="plan">Payday plan</h3>
-    <section class="group plan-settings">${planSettingsBlock()}</section>
-    <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
-
-    <h3 class="group-title" id="bnpl">Buy now, pay later</h3>
-    <section class="group">${bnplSettingsBlock()}</section>
-    <p class="group-foot">What you still owe Tabby, Tamara and the like. It’s not spending until an instalment is paid.</p>
-    <h3 class="group-title" id="budgets">Category limits</h3>
-    <section class="group">${budgetsSettingsBlock()}</section>
-    <p class="group-foot">A spending limit for a category in each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
-
-    <h3 class="group-title">Budget</h3>
-    <section class="group form">
-      <button type="button" class="row link-row" data-go="settings" data-anchor="plan"><span class="row-main"><span class="row-title">Allowance per cycle</span><span class="row-sub">Set by the allowance move in your payday plan</span></span><b class="num">${fmt(s.allowance, { whole: true })}</b>${icon('chevR', { size: 16, cls: 'chev' })}</button>
-      <label class="row input-row"><span>Allowance card</span><select name="allowanceAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.allowanceAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
-      <label class="row input-row"><span>Main account (pay lands)</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
-      <label class="row input-row"><span>Cycle starts on the</span><select name="cycleStart">${Array.from({ length: 28 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${d === s.cycleStart ? 'selected' : ''}>${ordinal(d)}</option>`).join('')}</select></label>
-      <label class="row input-row"><span>USD → AED</span><input name="usdRate" type="number" inputmode="decimal" step="0.0001" min="0" value="${s.usdRate}"></label>
+    <h3 class="group-title" id="language">${t('set.language')}</h3>
+    <section class="group appearance">
+      <div class="lang-seg" role="radiogroup" aria-label="${t('set.language')}">
+        ${[['en', 'English', 'en'], ['ar', 'العربية', 'ar'], ['auto', t('set.langAuto'), '']].map(([k, l, lg]) => `<button type="button" role="radio" aria-checked="${langPref() === k}" data-lang="${k}"${lg ? ` lang="${lg}"` : ''}>${l}</button>`).join('')}
+      </div>
+      <p class="group-foot" style="padding:0">${t('set.langFoot')}</p>
     </section>
 
-    <h3 class="group-title">Privacy</h3>
+    <h3 class="group-title" id="accounts">${t('set.accounts')}</h3>
+    <section class="group">${accountsSettingsBlock()}</section>
+    <p class="group-foot">${t('set.accountsFoot')}</p>
+
+    <h3 class="group-title" id="people">${t('set.people')}</h3>
+    <section class="group">${peopleSettingsBlock()}</section>
+    <p class="group-foot">${t('set.peopleFoot')}${extrasOnPhoneOnly() && PEOPLE_ACCOUNTS.length ? ' <span class="people-script-hint">' + t('set.peopleHint') + '</span>' : ''}</p>
+
+    ${goalsSettingsBlock()}
+    <h3 class="group-title" id="categories">${t('set.categories')}</h3>
+    <section class="group">${categoriesSettingsBlock()}</section>
+    <p class="group-foot">${t('set.catFoot')}</p>
+
+    <h3 class="group-title" id="plan">${t('set.plan')}</h3>
+    <section class="group plan-settings">${planSettingsBlock()}</section>
+    <p class="group-foot">${t('set.planFoot')}</p>
+
+    <h3 class="group-title" id="bnpl">${t('set.bnpl')}</h3>
+    <section class="group">${bnplSettingsBlock()}</section>
+    <p class="group-foot">${t('set.bnplFoot')}</p>
+    <h3 class="group-title" id="budgets">${t('set.limits')}</h3>
+    <section class="group">${budgetsSettingsBlock()}</section>
+    <p class="group-foot">${t('set.limitsFoot')}</p>
+
+    <h3 class="group-title">${t('set.budget')}</h3>
+    <section class="group form">
+      <button type="button" class="row link-row" data-go="settings" data-anchor="plan"><span class="row-main"><span class="row-title">${t('set.allowancePer')}</span><span class="row-sub">${t('set.allowanceSet')}</span></span><b class="num">${fmt(s.allowance, { whole: true })}</b>${icon('chevR', { size: 16, cls: 'chev' })}</button>
+      <label class="row input-row"><span>${t('set.allowanceCard')}</span><select name="allowanceAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.allowanceAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
+      <label class="row input-row"><span>${t('set.mainAcc')}</span><select name="emergencyAccount">${ACCOUNTS.map((a) => `<option ${a.id === s.emergencyAccount ? 'selected' : ''}>${a.id}</option>`).join('')}</select></label>
+      <label class="row input-row"><span>${t('set.cycleStarts')}</span><select name="cycleStart">${Array.from({ length: 28 }, (_, i) => i + 1).map((d) => `<option value="${d}" ${d === s.cycleStart ? 'selected' : ''}>${ordinal(d)}</option>`).join('')}</select></label>
+      <label class="row input-row"><span>${t('set.usdAed')}</span><input name="usdRate" type="number" inputmode="decimal" step="0.0001" min="0" value="${s.usdRate}"></label>
+    </section>
+
+    <h3 class="group-title">${t('set.privacy')}</h3>
     <section class="group">
       <label class="row toggle-row"><span class="row-icon" style="--tint:var(--good)">${icon('faceid', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Lock with Face ID</span><span class="row-sub">Asks when you open the app</span></span>
+        <span class="row-main"><span class="row-title">${t('set.faceId')}</span><span class="row-sub">${t('set.faceIdSub')}</span></span>
         <input type="checkbox" switch class="switch" name="lock" ${state.prefs.lock ? 'checked' : ''}></label>
     </section>
 
-    <h3 class="group-title">Data</h3>
+    <h3 class="group-title">${t('set.data')}</h3>
     <section class="group">
-      <button type="button" class="row link-row" data-act="reset"><span class="row-icon" style="--tint:var(--neg)">${icon('trash', { size: 20 })}</span><span class="row-main"><span class="row-title danger-text">Reset sheet</span><span class="row-sub">Erase every entry and start fresh</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
-      <button type="button" class="row link-row" data-act="export"><span class="row-icon" style="--tint:var(--tint-text)">${icon('download', { size: 20 })}</span><span class="row-main"><span class="row-title">Export CSV</span><span class="row-sub">Every entry, for backup</span></span></button>
-      <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span><span class="row-main"><span class="row-title">Monthly report</span><span class="row-sub">Any cycle as a PDF or CSV</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
+      <button type="button" class="row link-row" data-act="reset"><span class="row-icon" style="--tint:var(--neg)">${icon('trash', { size: 20 })}</span><span class="row-main"><span class="row-title danger-text">${t('set.reset')}</span><span class="row-sub">${t('set.resetSub')}</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
+      <button type="button" class="row link-row" data-act="export"><span class="row-icon" style="--tint:var(--tint-text)">${icon('download', { size: 20 })}</span><span class="row-main"><span class="row-title">${t('set.export')}</span><span class="row-sub">${t('set.exportSub')}</span></span></button>
+      <button type="button" class="row link-row" data-act="report"><span class="row-icon" style="--tint:var(--tint-text)">${icon('note', { size: 20 })}</span><span class="row-main"><span class="row-title">${t('set.report')}</span><span class="row-sub">${t('set.reportSub')}</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
       <label class="row toggle-row"><span class="row-icon" style="--tint:var(--series-7)">${icon('sparkle', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Demo data</span><span class="row-sub">Look around with made-up numbers</span></span>
+        <span class="row-main"><span class="row-title">${t('set.demo')}</span><span class="row-sub">${t('set.demoSub')}</span></span>
         <input type="checkbox" switch class="switch" name="demo" ${isDemo() ? 'checked' : ''}></label>
     </section>
-    <p class="group-foot center">Spendings · your data lives in your own Google Sheet.</p>`;
+    <p class="group-foot center">${t('set.foot')}</p>`;
 }
 
 
@@ -167,16 +176,16 @@ function appearanceBlock() {
   const acc = ACCENTS.find((x) => x.id === a.accent);
   const changed = a.theme !== DEFAULT_APPEARANCE.theme || a.accent !== DEFAULT_APPEARANCE.accent;
   return `
-    <div class="ap-label">Theme</div>
-    <div class="theme-seg" role="radiogroup" aria-label="Theme">
-      ${[['system', 'Automatic'], ['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => `<button type="button" role="radio" aria-checked="${a.theme === k}" data-theme-mode="${k}">${l}</button>`).join('')}
+    <div class="ap-label">${t('set.theme')}</div>
+    <div class="theme-seg" role="radiogroup" aria-label="${t('set.theme')}">
+      ${[['system', t('set.auto')], ['light', t('set.light')], ['dark', t('set.dark')]].map(([k, l]) => `<button type="button" role="radio" aria-checked="${a.theme === k}" data-theme-mode="${k}">${l}</button>`).join('')}
     </div>
-    <div class="ap-label">Accent <b>${acc.name}</b></div>
-    <div class="swatches" role="radiogroup" aria-label="Accent colour">
+    <div class="ap-label">${t('set.accent')} <b>${acc.name}</b></div>
+    <div class="swatches" role="radiogroup" aria-label="${t('set.accentColour')}">
       ${ACCENTS.map((x) => `<button type="button" role="radio" class="swatch accent-swatch" aria-checked="${x.id === a.accent}" aria-label="${x.name}" data-accent="${x.id}" style="--sw:${x.l[0]}; --sw-top:${x.l[3]}">${icon('check', { size: 16 })}</button>`).join('')}
     </div>
-    <p class="group-foot" style="padding:0">Used for buttons, the tab bar and the allowance liquid.</p>
-    ${changed ? '<button type="button" class="text-btn reset-btn" data-act="reset-look">Reset colours</button>' : ''}`;
+    <p class="group-foot" style="padding:0">${t('set.accentFoot')}</p>
+    ${changed ? '<button type="button" class="text-btn reset-btn" data-act="reset-look">' + t('set.resetLook') + '</button>' : ''}`;
 }
 
 function setAppearance(patch) {
@@ -188,13 +197,13 @@ function setAppearance(patch) {
   render();
 }
 
-const ordinal = (n) => n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
-function relTime(t) {
-  const m = Math.round((Date.now() - t) / 60000);
-  if (m < 1) return 'just now';
-  if (m < 60) return `${m} min ago`;
+const ordinal = (n) => lang() === 'ar' ? String(n) : n + (n % 10 === 1 && n !== 11 ? 'st' : n % 10 === 2 && n !== 12 ? 'nd' : n % 10 === 3 && n !== 13 ? 'rd' : 'th');
+function relTime(ts) {
+  const m = Math.round((Date.now() - ts) / 60000);
+  if (m < 1) return t('time.now');
+  if (m < 60) return t('time.min', { n: m });
   const h = Math.round(m / 60);
-  return h < 24 ? `${h} h ago` : new Date(t).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return h < 24 ? t('time.hr', { n: h }) : new Date(ts).toLocaleDateString(locale(), { day: 'numeric', month: 'short' });
 }
 
 /* ───────────────────────── Review sheet ───────────────────────── */
@@ -213,24 +222,24 @@ function openReview() {
 
   const body = () => {
     const list = items();
-    if (!list.length) return `<div class="empty">${icon('check', { size: 30 })}<p>All sorted.</p></div>`;
+    if (!list.length) return `<div class="empty">${icon('check', { size: 30 })}<p>${t('rev.allSorted')}</p></div>`;
     const guess = guesses();
     const sure = list.filter((e) => confident(guess.get(e.id)));
     const all = sure.length >= 2
-      ? `<button type="button" class="rc-accept-all" data-act="accept-all">${icon('sparkle', { size: 18 })}File ${sure.length} with their suggestions</button>` : '';
+      ? `<button type="button" class="rc-accept-all" data-act="accept-all">${icon('sparkle', { size: 18 })}${t('rev.fileSug', { n: sure.length })}</button>` : '';
     return all + list.map((e) => {
       const g = guess.get(e.id);
       const n = twins(e, list).length + 1;
       const group = g && g.confidence === 'high' && n > 1; // "file all" only when sure
-      const why = !g ? '' : g.confidence === 'low' ? 'Guess from the shop name' : `${g.confidence === 'medium' ? 'Maybe like' : 'Like'} ${esc(g.like)}${g.times > 1 ? ` · ${g.times} times` : ''}`;
+      const why = !g ? '' : g.confidence === 'low' ? t('rev.guess') : `${t(g.confidence === 'medium' ? 'rev.maybeLike' : 'rev.like', { what: esc(g.like) })}${g.times > 1 ? ` · ${t('rev.times', { n: g.times })}` : ''}`;
       const meta = g && categoryMeta(g.category);
       const sug = g ? `<button type="button" class="rc-suggest" data-cat="${esc(g.category)}"${group ? ' data-all="1"' : ''} style="--cat:${seriesColor(meta.slot)}">
           <span class="rs-icon">${icon(meta.icon, { size: 18 })}</span>
-          <span class="rs-text"><b>${group ? `File all ${n} as ${esc(meta.short)}` : `File as ${esc(g.category)}`}</b><span>${why}</span></span>
-        </button>` : n > 1 ? `<p class="rc-hint">${n} payments from this shop. Pick a category and you can file them all.</p>` : '';
+          <span class="rs-text"><b>${group ? t('rev.fileAll', { n, what: esc(meta.short) }) : t('rev.fileAs', { what: esc(meta.label) })}</b><span>${why}</span></span>
+        </button>` : n > 1 ? `<p class="rc-hint">${t('rev.hint', { n })}</p>` : '';
       return `<article class="review-card" data-id="${esc(e.id)}">
-      <div class="rc-head"><div><b>${esc(e.merchant || 'Unknown merchant')}</b><span>${esc(accountMeta(e.account).name)} · ${dayLabel(dayKey(e.date))}, ${timeLabel(e.date)}</span></div>
-      <span class="num rc-amt">${e.currency === 'USD' ? '$' : 'AED '}${fmt(e.amount, { fixed: true })}</span></div>
+      <div class="rc-head"><div><b>${esc(e.merchant || t('rev.unknownShop'))}</b><span>${esc(accountMeta(e.account).name)} · ${dayLabel(dayKey(e.date))}, ${timeLabel(e.date)}</span></div>
+      <span class="num rc-amt">${amtOf(e.amount, e.currency, { fixed: true })}</span></div>
       ${sug}
       <div class="rc-cats">${pickerCategories(e.type, e.category).map((c) => `<button type="button" class="rc-cat${g && g.category === c.id ? ' sug' : ''}" data-cat="${esc(c.id)}" style="--cat:${e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot)}">${icon(c.icon, { size: 16 })}${esc(c.short)}</button>`).join('')}</div>
     </article>`;
@@ -238,16 +247,16 @@ function openReview() {
   };
 
   openSheet({
-    label: 'Needs review',
-    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">Needs review</h2><button class="text-btn strong" data-act="done" type="button">Done</button></header>
-      <p class="sheet-lede">Tap a category to file each payment. The app learns from what you file, even when the bank spells the shop differently.</p>
+    label: t('rev.needs'),
+    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">${t('rev.needs')}</h2><button class="text-btn strong" data-act="done" type="button">${t('common.done')}</button></header>
+      <p class="sheet-lede">${t('rev.lede')}</p>
       <div class="sheet-scroll review-list">${body()}</div>`,
     onMount(sheet, close) {
       const redraw = () => { const l = sheet.querySelector('.review-list'); if (l) l.innerHTML = body(); };
       // file several at once, undone together in one step
       const fileMany = (pairs, label) => {
         batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })));
-        toast(`${esc(label)}. Undo puts ${pairs.length > 1 ? `these ${pairs.length}` : 'it'} back.`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { doUndo(); redraw(); } });
+        toast(t('rev.undoPuts', { what: esc(label), n: pairs.length }), { icon: icon('check', { size: 18 }), tone: 'good', action: t('common.undo'), onAction: () => { doUndo(); redraw(); } });
       };
       sheet.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-act="done"]')) return close();
@@ -255,7 +264,7 @@ function openReview() {
           haptic();
           const guess = guesses();
           const pairs = items().filter((e) => confident(guess.get(e.id))).map((e) => [e.id, guess.get(e.id).category]);
-          fileMany(pairs, `Filed ${pairs.length} payments`);
+          fileMany(pairs, t('rev.filedN', { n: pairs.length }));
           return redraw();
         }
         const b = ev.target.closest('.rc-cat, .rc-suggest');
@@ -268,7 +277,7 @@ function openReview() {
         haptic();
         // "File all N" on the suggestion: this one and its twins together
         if (b.dataset.all && others.length) {
-          fileMany([e, ...others].map((x) => [x.id, cat]), `Filed ${others.length + 1} from ${e.merchant} as ${categoryMeta(cat)?.short || cat}`);
+          fileMany([e, ...others].map((x) => [x.id, cat]), t('rev.filedFrom', { n: others.length + 1, shop: e.merchant, what: categoryMeta(cat)?.short || cat }));
           return redraw();
         }
         updateEntry(e.id, { category: cat });
@@ -276,14 +285,14 @@ function openReview() {
         // picked by hand and the same shop has more waiting: offer to file those too
         if (others.length) {
           // this toast's button files the others (its own undo step); the header Undo still undoes the one you just picked
-          toast(`Filed as ${esc(categoryMeta(cat, e.type)?.short || cat)}`, {
-            icon: icon('check', { size: 18 }), tone: 'good', action: `File ${others.length} more`,
-            onAction: () => { fileMany(others.map((x) => [x.id, cat]), `Filed ${others.length} more from ${e.merchant}`); redraw(); },
+          toast(t('rev.filedAs', { what: esc(categoryMeta(cat, e.type)?.short || cat) }), {
+            icon: icon('check', { size: 18 }), tone: 'good', action: t('rev.fileMore', { n: others.length }),
+            onAction: () => { fileMany(others.map((x) => [x.id, cat]), t('rev.filedMore', { n: others.length, shop: e.merchant })); redraw(); },
           });
         }
         const h = card.offsetHeight;
         if (reduceMotion()) return redraw();
-        card.animate([{ opacity: 1, height: `${h}px`, transform: 'none' }, { opacity: 0, height: '0px', marginBlock: '0', paddingBlock: '0', transform: 'translateX(40px)' }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = redraw;
+        card.animate([{ opacity: 1, height: `${h}px`, transform: 'none' }, { opacity: 0, height: '0px', marginBlock: '0', paddingBlock: '0', transform: `translateX(${isRTL() ? -40 : 40}px)` }], { duration: 320, easing: 'cubic-bezier(.2,.8,.2,1)', fill: 'forwards' }).onfinish = redraw;
       });
     },
   });
@@ -292,36 +301,36 @@ function openReview() {
 /* ───────────────────────── Shortcut guide ───────────────────────── */
 
 function openShortcutGuide() {
-  const url = state.conn.url || 'your Web app URL (see Settings)';
-  const key = state.conn.token || 'your app key';
+  const url = state.conn.url || t('guide.yourUrl');
+  const key = state.conn.token || t('guide.yourKey');
   const cats = [...SPEND_CATEGORIES.map((c) => c.id), 'Decide later'];
-  const copy = (label, value) => `<div class="copy-row"><div><span>${label}</span><code>${esc(value)}</code></div><button type="button" class="icon-btn" data-copy="${esc(value)}" aria-label="Copy ${label}">${icon('copy', { size: 18 })}</button></div>`;
+  const copy = (label, value) => `<div class="copy-row"><div><span>${label}</span><code>${esc(value)}</code></div><button type="button" class="icon-btn" data-copy="${esc(value)}" aria-label="${t('guide.copy', { what: label })}">${icon('copy', { size: 18 })}</button></div>`;
   openSheet({
-    label: 'Apple Pay Shortcut',
-    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">Apple Pay Shortcut</h2><button class="text-btn strong" data-act="done" type="button">Done</button></header>
+    label: t('guide.title'),
+    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">${t('guide.title')}</h2><button class="text-btn strong" data-act="done" type="button">${t('common.done')}</button></header>
     <div class="sheet-scroll guide">
-      <p class="sheet-lede">After every Apple Pay payment, your iPhone asks for a category and saves the payment straight to your sheet. You don’t need to open the app.</p>
-      ${copy('Web app URL', url)}
-      ${copy('App key', key)}
+      <p class="sheet-lede">${t('guide.lede')}</p>
+      ${copy(t('set.webUrl'), url)}
+      ${copy(t('set.appKey'), key)}
       <ol class="steps">
-        <li><b>Open Shortcuts → Automation → New Automation</b> (the <b>+</b> button) and choose <b>Transaction</b>.</li>
-        <li>Under <b>Cards</b>, pick <b>ADIB</b>, <b>ADCB</b> and <b>BOTIM</b>. Leave all categories on. Choose <b>Run Immediately</b> and turn <b>off</b> “Notify When Run”. Tap <b>Next</b> → <b>Create New Shortcut</b>.</li>
-        <li>Add <b>Choose from List</b>. For the list, tap it and type these items, one per line:<div class="cat-list">${cats.map((c) => `<code>${esc(c)}</code>`).join('')}</div>Set the prompt to <b>What was it for?</b>.</li>
-        <li>Add <b>Get Contents of URL</b>. Set the URL to your <b>Web app URL</b>. Tap <b>Show More</b>: Method <b>POST</b>, Request Body <b>JSON</b>, then add these fields (all <b>Text</b>):
-          <table class="fields"><tr><td>token</td><td>your app key</td></tr><tr><td>source</td><td><code>applepay</code></td></tr><tr><td>amount</td><td>Shortcut Input → <b>Amount</b></td></tr><tr><td>merchant</td><td>Shortcut Input → <b>Merchant</b></td></tr><tr><td>card</td><td>Shortcut Input → <b>Card</b> (or <b>Name</b>)</td></tr><tr><td>category</td><td><b>Chosen Item</b></td></tr></table></li>
-        <li>Add <b>Get Dictionary Value</b>: get <b>Value</b> for key <code>message</code> in <b>Contents of URL</b>.</li>
-        <li>Add <b>Show Notification</b> with <b>Dictionary Value</b> as the text. Done ✓</li>
+        <li>${t('guide.s1')}</li>
+        <li>${t('guide.s2')}</li>
+        <li>${t('guide.s3a')}<div class="cat-list">${cats.map((c) => `<code>${esc(c)}</code>`).join('')}</div>${t('guide.s3b')}</li>
+        <li>${t('guide.s4')}
+          <table class="fields"><tr><td lang="en">token</td><td>${t('guide.yourKey')}</td></tr><tr><td lang="en">source</td><td><code>applepay</code></td></tr><tr><td lang="en">amount</td><td lang="en">Shortcut Input → <b>Amount</b></td></tr><tr><td lang="en">merchant</td><td lang="en">Shortcut Input → <b>Merchant</b></td></tr><tr><td lang="en">card</td><td lang="en">Shortcut Input → <b>Card</b> (or <b>Name</b>)</td></tr><tr><td lang="en">category</td><td lang="en"><b>Chosen Item</b></td></tr></table></li>
+        <li>${t('guide.s5')}</li>
+        <li>${t('guide.s6')}</li>
       </ol>
-      <div class="tip-card">${icon('sparkle', { size: 18 })}<p><b>Want it zero-tap?</b> Skip step 3 and send <code>Decide later</code> as the category. Merchants you’ve filed before are categorised automatically. The rest wait in <b>Needs review</b>.</p></div>
-      <div class="tip-card">${icon('check', { size: 18 })}<p><b>Testing it?</b> Tap <b>▶</b> on the Shortcut. The notification says <b>Connected ✓</b> and nothing is logged, because there was no real payment.</p></div>
-      <div class="tip-card">${icon('warn', { size: 18 })}<p>If you pay with no signal, the Shortcut can’t reach the sheet and shows an error. Add that payment with <b>+</b> later.</p></div>
+      <div class="tip-card">${icon('sparkle', { size: 18 })}<p>${t('guide.tip1')}</p></div>
+      <div class="tip-card">${icon('check', { size: 18 })}<p>${t('guide.tip2')}</p></div>
+      <div class="tip-card">${icon('warn', { size: 18 })}<p>${t('guide.tip3')}</p></div>
     </div>`,
     onMount(sheet, close) {
       sheet.addEventListener('click', async (ev) => {
         if (ev.target.closest('[data-act="done"]')) return close();
         const b = ev.target.closest('[data-copy]');
         if (!b) return;
-        try { await navigator.clipboard.writeText(b.dataset.copy); haptic(); toast('Copied', { icon: icon('check', { size: 18 }), tone: 'good' }); } catch { toast('Couldn’t copy. Press and hold the text instead.'); }
+        try { await navigator.clipboard.writeText(b.dataset.copy); haptic(); toast(t('guide.copied'), { icon: icon('check', { size: 18 }), tone: 'good' }); } catch { toast(t('guide.noCopy')); }
       });
     },
   });
@@ -372,7 +381,7 @@ function render(reason) {
     if (prevVal != null) {
       v.dataset.value = prevVal;
       const unit = v.dataset.unit;
-      rollNumber(v, target, (n) => (unit === 'pct' ? `${Math.round(n)}%` : `AED ${fmt(n, { whole: true })}`));
+      rollNumber(v, target, (n) => (unit === 'pct' ? `${Math.round(n)}%` : `${amtAED(fmt(n, { whole: true }))}`));
     }
   }
   document.querySelectorAll('.tabbar [data-tab]').forEach((b) => {
@@ -387,8 +396,8 @@ let lastSwapMs = 0;
 const SLOW_SWAP_MS = 80; // milliseconds a tab swap may take before the cross-fade is skipped
 function go(next) {
   if (!TABS.includes(next)) return;
-  const t = document.getElementById('toast');
-  if (!t.hidden) { t.classList.remove('show'); setTimeout(() => { t.hidden = true; }, 250); }
+  const toastEl = document.getElementById('toast');
+  if (!toastEl.hidden) { toastEl.classList.remove('show'); setTimeout(() => { toastEl.hidden = true; }, 250); }
   if (next === tab) { window.scrollTo({ top: 0, behavior: reduceMotion() ? 'auto' : 'smooth' }); return; }
   if (next === 'activity') resetActivityRows();
   if (tab === 'activity') endSelect(); // leaving Activity drops a half-made selection
@@ -443,9 +452,9 @@ window.addEventListener('scroll', () => {
 /* ───────────────────────── Events ───────────────────────── */
 
 document.addEventListener('click', async (ev) => {
-  const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || weeklyClick(t) || goalsClick(t))) return;
-  const goBtn = t.closest('[data-go]');
+  const tg = ev.target;
+  if (view.contains(tg) && (homeClick(tg) || accountsClick(tg) || peopleClick(tg) || categoriesClick(tg) || budgetsClick(tg) || bnplClick(tg) || weeklyClick(tg) || goalsClick(tg))) return;
+  const goBtn = tg.closest('[data-go]');
   if (goBtn) {
     haptic();
     if (goBtn.dataset.anchor === 'subs') showCurrentInsights();
@@ -454,63 +463,65 @@ document.addEventListener('click', async (ev) => {
     if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
     return;
   }
-  const tabBtn = t.closest('.tabbar [data-tab]');
+  const tabBtn = tg.closest('.tabbar [data-tab]');
   if (tabBtn) { haptic(); return go(tabBtn.dataset.tab); }
-  if (t.closest('.fab')) { haptic(); return openEntry(); }
-  if (tab === 'activity' && view.contains(t) && activityClick(t)) return;
-  const quick = t.closest('[data-quick]');
+  if (tg.closest('.fab')) { haptic(); return openEntry(); }
+  if (tab === 'activity' && view.contains(tg) && activityClick(tg)) return;
+  const quick = tg.closest('[data-quick]');
   if (quick) {
     const e = state.entries.find((x) => x.id === quick.dataset.quick);
     haptic();
     if (e) openEntry(null, { type: 'Spend', amount: e.amount, currency: e.currency, account: e.account, category: e.category, merchant: e.merchant });
     return;
   }
-  const del = t.closest('.swipe-del');
+  const del = tg.closest('.swipe-del');
   if (del) { swipeDelete(del.closest('.swipe')); return; }
-  if (openSwipe && !t.closest('.swipe.open')) { closeSwipe(); return; }
-  const row = t.closest('.entry[data-id]');
+  if (openSwipe && !tg.closest('.swipe.open')) { closeSwipe(); return; }
+  const row = tg.closest('.entry[data-id]');
   if (row && view.contains(row) && openSwipe) { closeSwipe(); return; }
   if (row && view.contains(row)) {
     const e = state.entries.find((x) => x.id === row.dataset.id);
-    if (e?.type === 'Adjustment') toast('Swipe left to remove a bank match', { icon: icon('sync', { size: 18 }) });
+    if (e?.type === 'Adjustment') toast(t('misc.swipeAdj'), { icon: icon('sync', { size: 18 }) });
     else if (e) openEntry(e);
     return;
   }
-  const kind = t.closest('[data-kind]');
+  const kind = tg.closest('[data-kind]');
   if (kind) { activityFilter.kind = kind.dataset.kind; haptic(); return refreshActivityChips(kind); }
-  if (subsClick(t)) { haptic(); return; }
-  const cyc = t.closest('[data-cyc]');
+  if (subsClick(tg)) { haptic(); return; }
+  const cyc = tg.closest('[data-cyc]');
   if (cyc) { shiftInsights(+cyc.dataset.cyc); haptic(); return render(); }
-  const mode = t.closest('[data-theme-mode]');
+  const lg = tg.closest('[data-lang]');
+  if (lg) { haptic(); setLang(lg.dataset.lang); return render(); }
+  const mode = tg.closest('[data-theme-mode]');
   if (mode) return setAppearance({ theme: mode.dataset.themeMode });
-  const accent = t.closest('[data-accent]');
+  const accent = tg.closest('[data-accent]');
   if (accent) return setAppearance({ accent: accent.dataset.accent });
-  const act = t.closest('[data-act]')?.dataset.act;
-  if (!act || !view.contains(t)) return;
+  const act = tg.closest('[data-act]')?.dataset.act;
+  if (!act || !view.contains(tg)) return;
   if (act === 'reset-look') return setAppearance({ ...DEFAULT_APPEARANCE });
   if (act === 'sync') { haptic(); await sync(); if (state.sync.status === 'error') toast(state.sync.error, { icon: icon('warn', { size: 18 }), tone: 'warn' }); }
   if (act === 'review') openReview();
   if (act === 'shortcut') openShortcutGuide();
   if (act === 'setup-guide') { haptic(); openGuide(); }
-  if (act === 'demo') { setDemo(true); toast('Showing demo data', { icon: icon('sparkle', { size: 18 }) }); }
+  if (act === 'demo') { setDemo(true); toast(t('misc.showingDemo'), { icon: icon('sparkle', { size: 18 }) }); }
   if (act === 'exit-demo') { setDemo(false); render(); }
   if (act === 'export') exportCSV();
   if (act === 'report') openReport(tab === 'insights' ? insightsShown() : undefined);
   if (act === 'undo') doUndo();
   if (act === 'reset') openReset();
-  if (act === 'connect') connect(t.closest('[data-act]'));
+  if (act === 'connect') connect(tg.closest('[data-act]'));
 });
 
 /* Activity: Select mode, the Filter sheet and filter pills. Returns true when it handled the tap. */
-function activityClick(t) {
+function activityClick(tg) {
   const redraw = () => refreshActivity(view);
   if (activitySelect.on) {
-    const row = t.closest('.entry[data-id]');
+    const row = tg.closest('.entry[data-id]');
     if (row) { haptic(); toggleSelected(row.dataset.id); redraw(); return true; }
   }
-  const clear = t.closest('[data-clear]');
+  const clear = tg.closest('[data-clear]');
   if (clear) { haptic(); clearFilter(clear.dataset.clear); redraw(); return true; }
-  const act = t.closest('[data-act]')?.dataset.act;
+  const act = tg.closest('[data-act]')?.dataset.act;
   if (act === 'filters') { haptic(); openFilters(redraw); return true; }
   if (act === 'select') { haptic(); closeSwipe(); startSelect(); redraw(); return true; }
   if (act === 'select-done') { haptic(); endSelect(); redraw(); return true; }
@@ -527,14 +538,14 @@ function refreshActivityChips(on) {
 async function connect(btn) {
   const url = view.querySelector('input[name="url"]').value.trim();
   const token = view.querySelector('input[name="token"]').value.trim();
-  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { toast('That doesn’t look like a Web app URL. It starts with https://script.google.com/', { icon: icon('warn', { size: 18 }), tone: 'warn' }); return; }
-  if (!token) { toast('Paste your app key too', { icon: icon('warn', { size: 18 }), tone: 'warn' }); return; }
+  if (!/^https:\/\/script\.google(usercontent)?\.com\//.test(url)) { toast(t('misc.badUrl'), { icon: icon('warn', { size: 18 }), tone: 'warn' }); return; }
+  if (!token) { toast(t('misc.pasteKey'), { icon: icon('warn', { size: 18 }), tone: 'warn' }); return; }
   btn.disabled = true; btn.classList.add('busy');
   try {
     const r = await ping(url, token);
     setConnection(url, token);
     if (isDemo()) setDemo(false);
-    toast(r.message || 'Connected', { icon: icon('check', { size: 18 }), tone: 'good' });
+    toast(r.message || t('set.connected'), { icon: icon('check', { size: 18 }), tone: 'good' });
     await sync();
     render();
   } catch (e) {
@@ -550,16 +561,16 @@ function openGuide() {
 function openReset() {
   const n = state.entries.length;
   openSheet({
-    label: 'Reset sheet', tall: false,
-    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">Cancel</button><h2 class="sheet-title">Reset sheet</h2><span class="icon-btn-spacer"></span></header>
+    label: t('set.reset'), tall: false,
+    html: `<header class="sheet-head"><button class="text-btn" data-act="cancel" type="button">${t('common.cancel')}</button><h2 class="sheet-title">${t('set.reset')}</h2><span class="icon-btn-spacer"></span></header>
       <div class="reset-body">
         <div class="reset-icon">${icon('trash', { size: 28 })}</div>
-        <p class="reset-lede">This erases <b>${n} ${n === 1 ? 'entry' : 'entries'}</b>, the merchants the app learned, and the month tabs.</p>
+        <p class="reset-lede">${t('reset.erases', { n })}</p>
         <ul class="reset-keep">
-          <li>${icon('check', { size: 16 })}Your accounts, payday plan and settings stay.</li>
-          <li>${icon('check', { size: 16 })}${isConnected() && !isDemo() ? 'The sheet saves a hidden backup tab first, so nothing is truly lost.' : 'Export a CSV first if you want a copy.'}</li>
+          <li>${icon('check', { size: 16 })}${t('reset.stay')}</li>
+          <li>${icon('check', { size: 16 })}${isConnected() && !isDemo() ? t('reset.backup') : t('reset.exportFirst')}</li>
         </ul>
-        <button type="button" class="hold-btn" data-hold><span class="hold-fill" aria-hidden="true"></span><span class="hold-label">Hold to erase everything</span></button>
+        <button type="button" class="hold-btn" data-hold><span class="hold-fill" aria-hidden="true"></span><span class="hold-label">${t('reset.hold')}</span></button>
       </div>`,
     onMount(sheet, close) {
       sheet.querySelector('[data-act="cancel"]').onclick = () => close();
@@ -569,12 +580,12 @@ function openReset() {
         ev.preventDefault();
         haptic();
         anim = fill.animate([{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 1600, easing: 'linear', fill: 'forwards' });
-        label.textContent = 'Keep holding…';
+        label.textContent = t('reset.keep');
         anim.onfinish = () => {
           haptic();
           resetAll();
           close();
-          toast('Sheet reset · starting fresh', { icon: icon('check', { size: 18 }), tone: 'good' });
+          toast(t('reset.done'), { icon: icon('check', { size: 18 }), tone: 'good' });
         };
       };
       const stop = () => {
@@ -582,10 +593,10 @@ function openReset() {
         const p = anim.currentTime / 1600;
         anim.cancel();
         fill.animate([{ transform: `scaleX(${p})` }, { transform: 'scaleX(0)' }], { duration: 260, easing: 'cubic-bezier(0.23, 1, 0.32, 1)' });
-        label.textContent = 'Hold to erase everything';
+        label.textContent = t('reset.hold');
       };
       btn.addEventListener('pointerdown', start);
-      ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => btn.addEventListener(t, stop));
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((ty) => btn.addEventListener(ty, stop));
       btn.addEventListener('keydown', (ev) => { if ((ev.key === ' ' || ev.key === 'Enter') && !ev.repeat) start(ev); });
       btn.addEventListener('keyup', (ev) => { if (ev.key === ' ' || ev.key === 'Enter') stop(); });
     },
@@ -615,8 +626,8 @@ view.addEventListener('change', async (ev) => {
   if (el.name === 'lock') {
     haptic();
     if (el.checked) {
-      if (!(await lockSupported())) { el.checked = false; toast('Face ID isn’t available in this browser. Open the app from your Home Screen.', { tone: 'warn', icon: icon('warn', { size: 18 }) }); return; }
-      try { await enableLock(); toast('Face ID lock is on', { icon: icon('faceid', { size: 18 }), tone: 'good' }); } catch { el.checked = false; toast('Face ID wasn’t set up', { tone: 'warn', icon: icon('warn', { size: 18 }) }); }
+      if (!(await lockSupported())) { el.checked = false; toast(t('lockT.na'), { tone: 'warn', icon: icon('warn', { size: 18 }) }); return; }
+      try { await enableLock(); toast(t('lockT.on'), { icon: icon('faceid', { size: 18 }), tone: 'good' }); } catch { el.checked = false; toast(t('lockT.notSet'), { tone: 'warn', icon: icon('warn', { size: 18 }) }); }
     } else disableLock();
   }
 });
@@ -649,9 +660,12 @@ window.addEventListener('resize', () => moveDroplet());
 /* ───── Swipe left on an entry to delete (iOS list behaviour) ───── */
 let openSwipe = null, swipeDrag = null, swallowClick = false;
 const REVEAL = 88;
+// In Arabic (right to left) the row slides the other way, like iOS: swipe right to delete. The maths below
+// is written for left-to-right; swipeSign flips what goes in (finger movement) and what comes out (transform).
+const swipeSign = () => (isRTL() ? -1 : 1);
 function setX(row, x, animate) {
   row.style.transition = animate && !reduceMotion() ? 'transform 0.38s cubic-bezier(0.23, 1, 0.32, 1)' : 'none';
-  row.style.transform = x ? `translateX(${x}px)` : '';
+  row.style.transform = x ? `translateX(${x * swipeSign()}px)` : '';
 }
 function closeSwipe() { if (!openSwipe) return; setX(openSwipe.querySelector('.entry'), 0, true); openSwipe.classList.remove('open'); openSwipe = null; }
 function swipeDelete(wrap) {
@@ -665,15 +679,15 @@ function swipeDelete(wrap) {
     const reset = () => { setX(wrap.querySelector('.entry'), 0, true); wrap.classList.remove('open'); if (openSwipe === wrap) openSwipe = null; };
     askLinked(removed, 'delete', (how) => {
       reset();
-      batch(`Deleted ${money(removed.amount, removed.currency)}${how === 'both' ? ' and its other half' : ''}`, () => { deleteEntry(removed.id); if (how === 'both') deleteEntry(other.id); });
-      toast(`Deleted ${money(removed.amount, removed.currency)}${how === 'both' ? ' and its other half' : ''}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
+      batch(t(how === 'both' ? 'del.both' : 'del.one', { amt: money(removed.amount, removed.currency) }), () => { deleteEntry(removed.id); if (how === 'both') deleteEntry(other.id); });
+      toast(t(how === 'both' ? 'del.both' : 'del.one', { amt: money(removed.amount, removed.currency) }), { action: t('common.undo'), onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
     }, reset);
     return;
   }
   const finish = () => {
     openSwipe = null;
     deleteEntry(removed.id);
-    toast(`Deleted ${money(removed.amount, removed.currency)}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
+    toast(t('del.one', { amt: money(removed.amount, removed.currency) }), { action: t('common.undo'), onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
   };
   if (reduceMotion()) return finish();
   const row = wrap.querySelector('.entry');
@@ -689,7 +703,7 @@ view.addEventListener('pointerdown', (e) => {
 view.addEventListener('pointermove', (e) => {
   const d = swipeDrag;
   if (!d || e.pointerId !== d.id) return;
-  const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+  const dx = (e.clientX - d.x0) * swipeSign(), dy = e.clientY - d.y0;
   if (!d.on) {
     if (Math.abs(dy) > 8 && Math.abs(dy) > Math.abs(dx)) { swipeDrag = null; return; }
     if (Math.abs(dx) < 8) return;
@@ -702,7 +716,7 @@ view.addEventListener('pointermove', (e) => {
   if (x < -w * 0.75) x = -w * 0.75 + (x + w * 0.75) * 0.3; // resist past the full-swipe point
   setX(d.row, x, false);
   d.wrap.classList.toggle('armed', x < -w * 0.55);
-  d.v = (e.clientX - d.last[1]) / Math.max(1, e.timeStamp - d.last[0]) * 1000;
+  d.v = (e.clientX - d.last[1]) * swipeSign() / Math.max(1, e.timeStamp - d.last[0]) * 1000;
   d.last = [e.timeStamp, e.clientX];
 });
 const endSwipe = (e) => {
@@ -711,7 +725,7 @@ const endSwipe = (e) => {
   if (!d || !d.on) return;
   swallowClick = true;
   setTimeout(() => { swallowClick = false; }, 60);
-  const x = new DOMMatrix(getComputedStyle(d.row).transform).m41;
+  const x = new DOMMatrix(getComputedStyle(d.row).transform).m41 * swipeSign();
   const w = d.wrap.offsetWidth;
   d.wrap.classList.remove('armed');
   if (x < -w * 0.55 || (d.v < -1400 && x < -REVEAL)) return swipeDelete(d.wrap);
@@ -746,8 +760,20 @@ document.addEventListener('keydown', (ev) => {
   if (ev.key === 'n' || ev.key === 'N' || ev.key === '+') { ev.preventDefault(); openEntry(); }
   else if (/^[1-4]$/.test(ev.key)) go(TABS[+ev.key - 1]);
   else if (ev.key === '/') { ev.preventDefault(); go('activity'); setTimeout(() => view.querySelector('.search input')?.focus(), 60); }
-  else if (tab === 'home' && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft')) { ev.preventDefault(); stepFocus(ev.key === 'ArrowRight' ? 1 : -1); }
+  else if (tab === 'home' && (ev.key === 'ArrowRight' || ev.key === 'ArrowLeft')) { ev.preventDefault(); stepFocus((ev.key === 'ArrowRight') !== isRTL() ? 1 : -1); }
 });
+
+/* The few words in index.html (tab names, the + button, the toast's label) follow the language too. */
+function paintChrome() {
+  document.querySelectorAll('.tabbar [data-tab] span').forEach((s) => { s.textContent = t(`tab.${s.parentElement.dataset.tab}`); });
+  document.querySelector('.tabbar')?.setAttribute('aria-label', t('tab.sections'));
+  document.querySelector('.fab')?.setAttribute('aria-label', t('tab.add'));
+  document.getElementById('toast')?.setAttribute('aria-label', t('tab.message'));
+}
+// switching language redraws everything: the chrome, the open tab, and the droplet under the (mirrored) tab bar
+onLangChange(() => { paintChrome(); render(); });
+applyLang();
+paintChrome();
 
 bindHomeGestures(view);
 render();

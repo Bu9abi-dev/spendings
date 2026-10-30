@@ -42,7 +42,17 @@ timeline
         v27 : Faster Activity and search : Same numbers
         v28 : Budget line in the Apple Pay notification : Smarter script check
         v29 : VoiceOver : Contrast : Larger Text
+        v30 : Arabic and right to left : Match iPhone
 ```
+
+---
+
+## v30: Arabic
+**30 October 2026** · no sheet update needed
+
+- **Arabic**: Settings → Language → العربية (or "Match iPhone"). The whole app switches to Arabic and right to left: tabs, sheets, Home lines, charts, the report and the setup guide. Amounts read «120 د.إ», with Western digits like UAE bank apps, and month names are in Arabic.
+- Your own names (shops, accounts, your categories) stay as you wrote them. Built-in categories and plan items show in Arabic until you rename them. Your sheet keeps the English names, so nothing changes there.
+- Please read Home, Settings and the setup guide in Arabic and say if any wording feels off.
 
 ---
 

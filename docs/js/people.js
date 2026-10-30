@@ -3,6 +3,7 @@
 // Their balance is what is owed: > 0 they owe you, < 0 you owe them. A split is the Spend cut down to
 // your share plus a Transfer of their share from the same account to them, with the id `${spendId}-split`.
 import { peopleBalances, isPerson, PEOPLE_ACCOUNTS, ACCOUNTS, fmt, money, toAED } from './model.js';
+import { t } from './i18n.js';
 
 export { peopleBalances, isPerson, PEOPLE_ACCOUNTS };
 
@@ -137,7 +138,7 @@ export function lentFrom(entries, name, fallback) {
 }
 
 /** The Settle up sheet's title: "Ahmed pays you back" / "You pay Ahmed". */
-export const settleUpTitle = (name, balance) => (balance > 0 ? `${name} pays you back` : `You pay ${name}`);
+export const settleUpTitle = (name, balance) => (balance > 0 ? t('ppl.paysBack', { name }) : t('ppl.youPay', { name }));
 
 /** The pre-filled Transfer that settles a person's balance: they pay you back into `account` (where the
     money was lent from, see lentFrom), or you pay them from it. null when nothing is owed. */
@@ -152,14 +153,14 @@ export function settleUpPreset(name, balance, mainAccount) {
 /** "Owed to you AED 50 · You owe AED 20", leaving out a side that is zero; '' when nothing is owed. */
 export function owedText({ owedToYou, youOwe }) {
   const bits = [];
-  if (owedToYou >= 0.005) bits.push(`Owed to you ${money(owedToYou)}`);
-  if (youOwe >= 0.005) bits.push(`You owe ${money(youOwe)}`);
+  if (owedToYou >= 0.005) bits.push(t('rp.owedToYou', { amt: money(owedToYou) }));
+  if (youOwe >= 0.005) bits.push(t('rp.youOwe', { amt: money(youOwe) }));
   return bits.join(' · ');
 }
 
 /** One person's balance in words. */
 export function balanceWords(balance) {
-  if (balance >= 0.005) return { tone: 'in', text: `owes you ${fmt(balance, { fixed: true })}` };
-  if (balance <= -0.005) return { tone: 'out', text: `you owe ${fmt(-balance, { fixed: true })}` };
-  return { tone: '', text: 'settled' };
+  if (balance >= 0.005) return { tone: 'in', text: t('ppl.owesYou', { amt: fmt(balance, { fixed: true }) }) };
+  if (balance <= -0.005) return { tone: 'out', text: t('ppl.youOweL', { amt: fmt(-balance, { fixed: true }) }) };
+  return { tone: '', text: t('ppl.settled') };
 }

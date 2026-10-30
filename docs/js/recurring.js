@@ -2,8 +2,9 @@
 // roughly weekly, monthly or yearly). Pure functions (no DOM, no store), so tests can run them.
 //
 // Only Spend counts. Transfers move your own money and income isn't a payment, so both are left out.
-import { toAED, dayKey } from './model.js';
+import { toAED, dayKey, amtAED } from './model.js';
 import { merchantKey } from './categorize.js';
+import { t } from './i18n.js';
 
 const CADENCES = [
   // gap in days between two charges, how many charges we need, and how many months' worth one charge is
@@ -122,11 +123,11 @@ export const daysUntil = (key, now = new Date()) => Math.round(Date.parse(`${key
  * Pure, so a later change can pick one notice among several kinds. Returns { priority, text }.
  */
 export function subscriptionNotice(subs, now = new Date()) {
-  const aed = (v) => `AED ${Math.round(v * 100) / 100}`;
+  const aed = (v) => amtAED(String(Math.round(v * 100) / 100));
   const fresh = subs.find((s) => s.isNew && !s.isLate && daysUntil(s.last, now) >= -7);
-  if (fresh) return { priority: 'new', text: `${fresh.name} is a new subscription: ${aed(fresh.amount)}` };
+  if (fresh) return { priority: 'new', text: t('sub.new', { name: fresh.name, amt: aed(fresh.amount) }) };
   const due = subs.find((s) => !s.isLate && daysUntil(s.next, now) >= 0 && daysUntil(s.next, now) <= 3);
   if (!due) return null;
   const d = daysUntil(due.next, now);
-  return { priority: 'due', text: `${due.name} ${aed(due.amount)} is due ${d === 0 ? 'today' : d === 1 ? 'tomorrow' : `in ${d} days`}` };
+  return { priority: 'due', text: t('sub.due', { name: due.name, amt: aed(due.amount), when: d === 0 ? t('home.today') : d === 1 ? t('bn.tomorrow') : t('sub.inDays', { n: d }) }) };
 }

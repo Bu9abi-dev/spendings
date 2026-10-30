@@ -5,12 +5,12 @@
 import { cleanMerchant } from './categorize.js';
 import { detectRecurring, monthlyTotal } from './recurring.js';
 import {
-  categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts,
-  isPerson, moneyTotal, peopleBalances,
-} from './model.js';
+  categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts, shortDay, dayKey,
+  isPerson, moneyTotal, peopleBalances, amtAED} from './model.js';
 import { state, getExtra } from './store.js';
 import { openSheet, toast, haptic, esc } from './ui.js';
 import { icon } from './icons.js';
+import { t, lang, dir } from './i18n.js';
 
 /* ───────────────────────── The numbers (pure) ───────────────────────── */
 
@@ -18,7 +18,7 @@ import { icon } from './icons.js';
 const SERIES = ['#8e8e93', '#2a78d6', '#eb6834', '#1baf7a', '#eda100', '#e87ba4', '#008300', '#4a3aa7', '#e34948'];
 // Name and colour come from the category list (custom categories too); unknown ones are grey.
 const catColor = (id) => SERIES[categoryMeta(id)?.slot || 0] || SERIES[0];
-const catName = (id) => (id === 'Uncategorised' ? 'Needs category' : categoryMeta(id)?.label || id);
+const catName = (id) => (id === 'Uncategorised' ? t('row.needsCat') : categoryMeta(id)?.label || id);
 
 /** Shop name without store/MCC numbers or the city: "CARREFOUR MCC 5411 ABU DHABI" → "CARREFOUR". */
 // tidies a bank-style name for display; grouping uses categorize.cleanMerchant, shared with Needs review
@@ -57,7 +57,7 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
   whole.kept = whole.income - whole.spent;
   const rowsOf = (items, top, restLabel) => {
     const head = items.slice(0, top), restV = items.slice(top).reduce((a, x) => a + x.value, 0);
-    const rows = items.length > top ? [...head, { id: restLabel, name: 'Everything else', value: restV, rest: true }] : head;
+    const rows = items.length > top ? [...head, { id: restLabel, name: t('ins.everythingElse'), value: restV, rest: true }] : head;
     const shown = apportion(rows.map((x) => x.value), whole.spent), pct = apportion(rows.map((x) => (spent ? (x.value / spent) * 100 : 0)), spent ? 100 : 0);
     return rows.map((x, i) => ({ ...x, shown: shown[i], pct: pct[i] }));
   };
@@ -73,7 +73,7 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
     if (e.type === 'Transfer') { moved += toAED(e, s); moves++; continue; }
     if (e.type !== 'Spend') continue;
     const k = merchantKey(e.merchant) || '(no merchant)';
-    const g = shops.get(k) || shops.set(k, { id: k, name: shopName(e.merchant) || 'No merchant', value: 0, count: 0, category: e.category }).get(k);
+    const g = shops.get(k) || shops.set(k, { id: k, name: shopName(e.merchant) || t('rp.noMerchant'), value: 0, count: 0, category: e.category }).get(k);
     g.value += toAED(e, s);
     g.count++;
   }
@@ -116,9 +116,8 @@ export function cycleCSV(entries, cycle) {
 
 /* ───────────────────────── The page ───────────────────────── */
 
-const aed = (n) => `AED ${fmt(n, { whole: true })}`; // whole dirhams; exact amounts are in the CSV
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const day = (d) => { const p = dubaiParts(d); return `${p.d} ${MON[p.m - 1]}`; };
+const aed = (n) => `${amtAED(fmt(n, { whole: true }))}`; // whole dirhams; exact amounts are in the CSV
+const day = (d) => shortDay(dayKey(d));
 const bar = (w, color) => `<span class="rp-bar"><i style="width:${Math.max(0, Math.min(100, w * 100)).toFixed(1)}%;background:${color}"></i></span>`;
 /** "↑ 120" / "↓ 40" against last cycle, for spending (up is the bad direction). */
 const change = (now, before) => {
@@ -139,59 +138,59 @@ export function reportHTML(r, settings) {
 
   return `<article class="rp-page">
     <header class="rp-head">
-      <div><p class="rp-kicker">Spendings · monthly report</p><h1>${cycleName(r.cycle, true)} ${r.cycle.slice(0, 4)}</h1>
-        <p class="rp-muted">${cycleRange(r.cycle, settings.cycleStart)}${r.isCurrent ? ' · cycle still running, numbers so far' : ''}</p></div>
+      <div><p class="rp-kicker">${t('rp.kicker')}</p><h1>${cycleName(r.cycle, true)} ${r.cycle.slice(0, 4)}</h1>
+        <p class="rp-muted">${cycleRange(r.cycle, settings.cycleStart)}${r.isCurrent ? ` · ${t('rp.running')}` : ''}</p></div>
     </header>
 
     <div class="rp-tiles">
-      ${tile('Money in', r.whole.income, 'rp-in')}
-      ${tile('Spent', r.whole.spent)}
-      ${tile(r.whole.kept >= 0 ? 'Kept' : 'Overspent', Math.abs(r.whole.kept), r.whole.kept >= 0 ? 'rp-in' : 'rp-neg')}
-      ${tile('Refunds (money back)', r.whole.refunds)}
-      ${tile(r.isCurrent ? 'Total money now' : 'Total money at the end', r.totalMoney)}
+      ${tile(t('ins.moneyIn'), r.whole.income, 'rp-in')}
+      ${tile(t('act.spent'), r.whole.spent)}
+      ${tile(r.whole.kept >= 0 ? t('rp.kept') : t('rp.overspent'), Math.abs(r.whole.kept), r.whole.kept >= 0 ? 'rp-in' : 'rp-neg')}
+      ${tile(t('rp.refunds'), r.whole.refunds)}
+      ${tile(r.isCurrent ? t('rp.totalNow') : t('rp.totalEnd'), r.totalMoney)}
     </div>
-    <p class="rp-note">${r.count} ${r.count === 1 ? 'entry' : 'entries'}.
-      Spent is everything paid out; refunds count as money in, not taken off Spent.${r.prevSpent > 0 ? `Last cycle you spent ${aed(r.prevSpent)}.` : ''}
-      ${r.review ? `<b>${r.review} still need a category.</b>` : ''}</p>
+    <p class="rp-note">${t('act.entries', { n: r.count })}.
+      ${t('rp.spentIs')}${r.prevSpent > 0 ? ` ${t('rp.lastSpent', { amt: aed(r.prevSpent) })}` : ''}
+      ${r.review ? `<b>${t('rp.needCat', { n: r.review })}</b>` : ''}</p>
 
-    ${section(`Allowance · ${esc(a.account)}`, `
+    ${section(t('rp.allowance', { acc: esc(a.account) }), `
       <div class="rp-allow">${bar(a.pot ? a.used / a.pot : 0, a.used > a.pot ? '#c4332b' : '#2a78d6')}
-        <p><b>${aed(a.used)}</b> used of <b>${aed(a.pot)}</b> · ${a.left >= 0 ? `${aed(a.left)} left` : `<span class="rp-neg">${aed(-a.left)} over</span>`}</p>
-        ${a.topUps || a.carryIn ? `<p class="rp-muted">Allowance ${aed(a.base)}${a.topUps ? ` + top-ups ${aed(a.topUps)}` : ''}${a.carryIn ? ` + ${aed(a.carryIn)} carried in` : ''}</p>` : ''}
+        <p>${t('rp.usedOf', { used: aed(a.used), pot: aed(a.pot) })} · ${a.left >= 0 ? t('rp.left', { amt: aed(a.left) }) : `<span class="rp-neg">${t('rp.over', { amt: aed(-a.left) })}</span>`}</p>
+        ${a.topUps || a.carryIn ? `<p class="rp-muted">${t('rp.allowBase', { amt: aed(a.base) })}${a.topUps ? ` + ${t('rp.topUps', { amt: aed(a.topUps) })}` : ''}${a.carryIn ? ` + ${t('rp.carriedIn', { amt: aed(a.carryIn) })}` : ''}</p>` : ''}
       </div>`)}
 
-    ${r.subsCount ? `<p class="rp-note">Subscriptions ${aed(r.subsMonthly)}/month across ${r.subsCount}.</p>` : ''}
-    ${section('Where it went', r.categories.length ? `<table class="rp-table">${r.categories.map((c) => `<tr>
+    ${r.subsCount ? `<p class="rp-note">${t('rp.subs', { amt: aed(r.subsMonthly), n: r.subsCount })}</p>` : ''}
+    ${section(t('ins.whereWent'), r.categories.length ? `<table class="rp-table">${r.categories.map((c) => `<tr>
         <td class="rp-name"><i class="rp-dot" style="background:${dot(c)}"></i>${esc(c.name)}</td>
         <td class="rp-wide">${bar(c.value / maxCat, dot(c))}</td>
         <td class="rp-num">${fmt(c.shown)}${c.rest ? '' : change(c.value, c.prev)}</td>
-        <td class="rp-pct">${c.pct}%</td></tr>`).join('')}</table>` : empty('No spending in this cycle.'))}
+        <td class="rp-pct">${c.pct}%</td></tr>`).join('')}</table>` : empty(t('ins.noSpend')))}
 
-    ${r.budgets.length ? section('Budgets', `<table class="rp-table">${r.budgets.map((b) => `<tr>
+    ${r.budgets.length ? section(t('rp.budgets'), `<table class="rp-table">${r.budgets.map((b) => `<tr>
         <td class="rp-name">${esc(b.name)}</td>
         <td class="rp-wide">${bar(b.spent / b.limit, b.spent > b.limit ? '#c4332b' : b.spent >= b.limit * 0.8 ? '#b5530f' : '#2d7a45')}</td>
         <td class="rp-num">${fmt(b.spent, { whole: true })} / ${fmt(b.limit, { whole: true })}</td></tr>`).join('')}</table>`) : ''}
 
-    ${section('Top shops', r.merchants.length ? `<table class="rp-table">${r.merchants.map((m) => `<tr>
+    ${section(t('rp.topShops'), r.merchants.length ? `<table class="rp-table">${r.merchants.map((m) => `<tr>
         <td class="rp-name">${esc(m.name)}${m.count ? `<small>${m.count}×</small>` : ''}</td>
         <td class="rp-wide">${bar(m.value / maxShop, m.rest ? '#c7c7cc' : catColor(m.category))}</td>
-        <td class="rp-num">${fmt(m.shown)}</td></tr>`).join('')}</table>` : empty('No shops yet.'))}
+        <td class="rp-num">${fmt(m.shown)}</td></tr>`).join('')}</table>` : empty(t('rp.noShops')))}
 
-    ${r.biggest.length ? section('Biggest payments', `<table class="rp-table">${r.biggest.map((e) => `<tr>
-        <td class="rp-name">${esc(e.merchant || e.category || 'Payment')}<small>${day(e.date)} · ${esc(e.account)}</small></td>
+    ${r.biggest.length ? section(t('rp.biggest'), `<table class="rp-table">${r.biggest.map((e) => `<tr>
+        <td class="rp-name">${esc(e.merchant || categoryMeta(e.category)?.label || e.category || t('rp.payment'))}<small>${day(e.date)} · ${esc(e.account)}</small></td>
         <td class="rp-num">${fmt(toAED(e, settings), { fixed: true })}</td></tr>`).join('')}</table>`) : ''}
 
     <div class="rp-cols">
-      ${section('Money in', r.byIncome.length ? `<table class="rp-table">${r.byIncome.map(([k, v]) => `<tr><td class="rp-name">${esc(k)}</td><td class="rp-num">${fmt(v, { whole: true })}</td></tr>`).join('')}</table>` : empty('No income logged.'))}
-      ${section('Spent by account', r.byAccount.length ? `<table class="rp-table">${r.byAccount.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.spent, { whole: true })}</td></tr>`).join('')}</table>` : empty('Nothing spent.'))}
+      ${section(t('ins.moneyIn'), r.byIncome.length ? `<table class="rp-table">${r.byIncome.map(([k, v]) => `<tr><td class="rp-name">${esc(categoryMeta(k, 'Income')?.label || k)}</td><td class="rp-num">${fmt(v, { whole: true })}</td></tr>`).join('')}</table>` : empty(t('rp.noIncome')))}
+      ${section(t('rp.byAccount'), r.byAccount.length ? `<table class="rp-table">${r.byAccount.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.spent, { whole: true })}</td></tr>`).join('')}</table>` : empty(t('rp.nothingSpent')))}
     </div>
 
-    ${section(r.isCurrent ? 'Accounts now' : 'Accounts at the end', `<table class="rp-table">${r.accounts.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.balance, { fixed: true })}</td></tr>`).join('')}
-      <tr class="rp-total"><td class="rp-name">Total</td><td class="rp-num">${fmt(r.totalMoney, { fixed: true })}</td></tr></table>
-      ${r.owedToYou || r.youOwe ? `<p class="rp-muted rp-owed">${[r.owedToYou ? `Owed to you ${aed(r.owedToYou)}` : '', r.youOwe ? `You owe ${aed(r.youOwe)}` : ''].filter(Boolean).join(' · ')}. Not counted in the total.</p>` : ''}
-      ${r.moves ? `<p class="rp-muted">${r.moves} ${r.moves === 1 ? 'move' : 'moves'} between accounts (${aed(r.moved)}). Moving money isn’t spending, so it’s not counted above.</p>` : ''}`)}
+    ${section(r.isCurrent ? t('rp.accNow') : t('rp.accEnd'), `<table class="rp-table">${r.accounts.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.balance, { fixed: true })}</td></tr>`).join('')}
+      <tr class="rp-total"><td class="rp-name">${t('rp.total')}</td><td class="rp-num">${fmt(r.totalMoney, { fixed: true })}</td></tr></table>
+      ${r.owedToYou || r.youOwe ? `<p class="rp-muted rp-owed">${[r.owedToYou ? t('rp.owedToYou', { amt: aed(r.owedToYou) }) : '', r.youOwe ? t('rp.youOwe', { amt: aed(r.youOwe) }) : ''].filter(Boolean).join(' · ')}. ${t('rp.notCounted')}</p>` : ''}
+      ${r.moves ? `<p class="rp-muted">${t('rp.moves', { n: r.moves, amt: aed(r.moved) })}</p>` : ''}`)}
 
-    <footer class="rp-foot">Made by Spendings on ${day(new Date())} ${dubaiParts(new Date()).y} · amounts in AED</footer>
+    <footer class="rp-foot">${t('rp.foot', { date: `${day(new Date())} ${dubaiParts(new Date()).y}` })}</footer>
   </article>`;
 }
 
@@ -213,15 +212,15 @@ export const REPORT_CSS = `
 .rp-allow p { margin:6px 0 0; }
 .rp-table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
 .rp-table td { padding:5px 0; vertical-align:middle; }
-.rp-name { max-width:0; width:42%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-right:8px !important; }
-.rp-name small { color:var(--ink-2); margin-left:6px; font-size:12px; }
-.rp-wide { width:34%; padding-right:10px !important; }
-.rp-num { text-align:right; font-weight:600; white-space:nowrap; }
+.rp-name { max-width:0; width:42%; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; padding-inline-end:8px !important; }
+.rp-name small { color:var(--ink-2); margin-inline-start:6px; font-size:12px; }
+.rp-wide { width:34%; padding-inline-end:10px !important; }
+.rp-num { text-align:end; font-weight:600; white-space:nowrap; }
 .rp-num small { display:block; font-weight:500; font-size:11px; }
 .rp-up { color:#c4332b; } .rp-down { color:#2d7a45; }
-.rp-pct { text-align:right; color:var(--ink-2); font-size:12px; width:38px; }
+.rp-pct { text-align:end; color:var(--ink-2); font-size:12px; width:38px; }
 .rp-total td { border-top:1px solid var(--line); font-weight:700; padding-top:7px; }
-.rp-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:7px; vertical-align:1px; }
+.rp-dot { display:inline-block; width:8px; height:8px; border-radius:50%; margin-inline-end:7px; vertical-align:1px; }
 .rp-bar { display:block; height:8px; border-radius:4px; background:#f2f2f7; overflow:hidden; }
 .rp-bar i { display:block; height:100%; border-radius:4px; }
 .rp-allow .rp-bar { height:12px; border-radius:6px; }
@@ -252,8 +251,8 @@ async function deliver(name, text, type) {
 }
 
 /** The report as a stand-alone web page, for sharing. */
-const standalone = (r, html, hint = false) => `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Spendings · ${cycleName(r.cycle, true)} ${r.cycle.slice(0, 4)}</title><style>body{margin:0;background:#fff}${REPORT_CSS}</style></head><body>${hint ? '<p style="font:14px -apple-system,Arial,sans-serif;color:#6e6e73;text-align:center;margin:12px 16px">To save a PDF: tap Share → Print, then pinch out on the preview.</p>' : ''}${html}</body></html>`;
+const standalone = (r, html, hint = false) => `<!doctype html><html lang="${lang()}" dir="${dir()}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Spendings · ${cycleName(r.cycle, true)} ${r.cycle.slice(0, 4)}</title><style>body{margin:0;background:#fff}${REPORT_CSS}</style></head><body>${hint ? `<p style="font:14px -apple-system,Arial,sans-serif;color:#6e6e73;text-align:center;margin:12px 16px">${t('rp.pdfHint')}</p>` : ''}${html}</body></html>`;
 
 /** Is this the Home Screen app, where the print sheet often doesn't open? */
 const standaloneApp = () => navigator.standalone === true || matchMedia('(display-mode: standalone)').matches;
@@ -271,7 +270,7 @@ function openPrintView(r, html) {
 function printReport(r, html) {
   if (typeof window.print !== 'function' || standaloneApp()) {
     const opened = openPrintView(r, html);
-    toast(opened ? 'Use Share → Print → pinch out to save a PDF' : 'Couldn’t open the report. Try Share report instead', { icon: icon('warn', { size: 18 }), tone: opened ? undefined : 'warn' });
+    toast(opened ? t('rp.usePrint') : t('rp.cantOpen'), { icon: icon('warn', { size: 18 }), tone: opened ? undefined : 'warn' });
     return;
   }
   const root = document.createElement('div');
@@ -307,18 +306,18 @@ export function openReport(cycle) {
   let r = build();
 
   openSheet({
-    label: 'Monthly report',
-    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">Monthly report</h2><button class="text-btn strong" data-act="done" type="button">Done</button></header>
+    label: t('set.report'),
+    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">${t('set.report')}</h2><button class="text-btn strong" data-act="done" type="button">${t('common.done')}</button></header>
       <div class="cycle-switch report-switch glass">
-        <button type="button" class="icon-btn" data-rcyc="-1" aria-label="Previous cycle">${icon('chevL', { size: 20 })}</button>
+        <button type="button" class="icon-btn" data-rcyc="-1" aria-label="${t('ins.prev')}">${icon('chevL', { size: 20 })}</button>
         <div class="cs-label"><b></b><span></span></div>
-        <button type="button" class="icon-btn" data-rcyc="1" aria-label="Next cycle">${icon('chevR', { size: 20 })}</button>
+        <button type="button" class="icon-btn" data-rcyc="1" aria-label="${t('ins.next')}">${icon('chevR', { size: 20 })}</button>
       </div>
       <div class="sheet-scroll report-scroll"><div class="report-paper"></div></div>
       <div class="report-actions">
-        <button type="button" class="btn-primary" data-act="pdf">${icon('download', { size: 18 })}Save as PDF</button>
-        <button type="button" class="btn-tinted" data-act="share-report">${icon('link', { size: 18 })}Share report</button>
-        <button type="button" class="btn-tinted" data-act="csv">${icon('sheet', { size: 18 })}Export CSV</button>
+        <button type="button" class="btn-primary" data-act="pdf">${icon('download', { size: 18 })}${t('rp.savePdf')}</button>
+        <button type="button" class="btn-tinted" data-act="share-report">${icon('link', { size: 18 })}${t('rp.shareReport')}</button>
+        <button type="button" class="btn-tinted" data-act="csv">${icon('sheet', { size: 18 })}${t('set.export')}</button>
       </div>`,
     onMount(sheet, close) {
       const paint = () => {
@@ -339,7 +338,7 @@ export function openReport(cycle) {
         if (act === 'share-report') { haptic(); deliver(fileName(cyc, 'html'), standalone(r, reportHTML(r, state.settings)), 'text/html'); }
         if (act === 'csv') {
           haptic();
-          if (!r.count) return toast('No entries in this cycle yet', { icon: icon('warn', { size: 18 }), tone: 'warn' });
+          if (!r.count) return toast(t('rp.noEntries'), { icon: icon('warn', { size: 18 }), tone: 'warn' });
           deliver(fileName(cyc, 'csv'), cycleCSV(state.entries, cyc), 'text/csv');
         }
       });

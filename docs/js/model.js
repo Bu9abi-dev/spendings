@@ -1,4 +1,5 @@
 import { CARD_COLORS } from './theme.js';
+import { t, lang, locale, ltr } from './i18n.js';
 // Domain constants, cycle maths, money formatting and aggregations. No DOM here.
 
 // The account list lives in the sheet's Accounts tab. ACCOUNTS (active) and the archive are
@@ -57,8 +58,15 @@ function refreshAccountLists() {
   ACCOUNTS.splice(0, ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived && !a.person));
   PEOPLE_ACCOUNTS.splice(0, PEOPLE_ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived && a.person));
 }
+// The starting accounts' notes are shown in the current language until you change them (then they're yours).
+const DEFAULT_NOTES = { 'Main · pay lands here': 'acc.note.main', 'Personal allowance': 'acc.note.allowance', 'Extra card': 'acc.note.extra', 'Notes & coins': 'acc.note.cash' };
 export function setAccountList(list) {
-  const view = (a) => ({ id: a.name, name: a.name, role: a.note || '', colorId: a.color, color: colorHex(a.color), wallet: a.wallet || '', archived: !!a.archived });
+  const view = (a) => {
+    const o = { id: a.name, name: a.name, role: a.note || '', colorId: a.color, color: colorHex(a.color), wallet: a.wallet || '', archived: !!a.archived };
+    const k = DEFAULT_NOTES[o.role];
+    if (k) Object.defineProperty(o, 'role', { get: () => t(k), enumerable: true });
+    return o;
+  };
   ALL_ACCOUNTS.splice(0, ALL_ACCOUNTS.length, ...list.map(view));
   refreshAccountLists();
 }
@@ -116,7 +124,17 @@ export function setCategoryList(cfg) {
       .filter((x) => (x.type || 'Spend') === type && !defaults.some((d) => d.id === x.id))
       // your own categories share the grey "other" colour: the eight-colour palette is checked for colour blindness
       .map((x) => ({ id: x.id, short: x.id, icon: CATEGORY_ICONS.includes(x.icon) ? x.icon : 'dots', slot: 0, custom: true }));
-    const all = [...defaults, ...mine].map((x) => { const k = categoryKey(x.id, type); return { ...x, short: names[k] || x.short, label: names[k] || x.id, hidden: hidden.has(k) }; });
+    const all = [...defaults, ...mine].map((x) => {
+      const k = categoryKey(x.id, type);
+      const o = { ...x, short: names[k] || x.short, label: names[k] || x.id, hidden: hidden.has(k), renamed: !!names[k] };
+      // a built-in category you haven't renamed is shown in the current language (strings: cat.<key>, catS.<key>);
+      // its id (what the sheet stores) never changes
+      if (!names[k] && !x.custom) {
+        Object.defineProperty(o, 'label', { get: () => t(`cat.${k}`), enumerable: true });
+        Object.defineProperty(o, 'short', { get: () => t(`catS.${k}`), enumerable: true });
+      }
+      return o;
+    });
     ALL_CATEGORIES[type].splice(0, ALL_CATEGORIES[type].length, ...all);
     shown.splice(0, shown.length, ...all.filter((x) => !x.hidden));
   }
@@ -144,6 +162,14 @@ export const DEFAULT_PLAN = [
   { id: 'fuel', name: 'Fuel', kind: 'Responsibility', amount: 0, day: null, from: 'ADIB', to: '', category: 'Transport & Fuel' },
 ];
 
+/** A plan item's name on screen: the starting items (Salary, Nafis, Allowance, Fuel) are shown in the current
+    language while they keep their original name; a name you typed is yours. */
+// names the app ships (the default plan and the demo's): shown in the current language while unchanged
+const SHIPPED_PLAN_NAMES = { salary: 'Salary', nafis: 'Nafis', allowance: 'Allowance', fuel: 'Fuel', botim: 'BOTIM top-up', bills: 'Car & phone', home: 'Home' };
+export function planName(p) {
+  return p && SHIPPED_PLAN_NAMES[p.id] && SHIPPED_PLAN_NAMES[p.id] === p.name ? t(`plan.${p.id}`) : p?.name || '';
+}
+
 export const DEFAULT_SETTINGS = {
   allowance: 3000,
   allowanceAccount: 'ADCB',
@@ -160,7 +186,7 @@ export function categoryMeta(id, type = 'Spend') {
   return allCategories(type).find((c) => c.id === id) || null;
 }
 export const seriesColor = (slot) => (slot ? `var(--series-${slot})` : 'var(--series-other)');
-export const accountMeta = (id) => ALL_ACCOUNTS.find((a) => a.id === id) || { id, name: id || 'Unknown', role: '', colorId: 'graphite', color: 'var(--series-other)', archived: true };
+export const accountMeta = (id) => ALL_ACCOUNTS.find((a) => a.id === id) || { id, name: id || t('acc.unknown'), role: '', colorId: 'graphite', color: 'var(--series-other)', archived: true };
 
 /** Calendar parts of a date as seen in Dubai. Dubai is UTC+4 all year (no daylight saving), so
     shifting by four hours and reading the UTC parts gives the same answer as a time-zone formatter,
@@ -196,16 +222,27 @@ export function cycleBounds(cycle, startDay = 27) {
   return { start: mk(py, pm, startDay), end: mk(y, m, startDay) };
 }
 
+/* Month names in the current language. Arabic uses Intl ('ar-AE', Western digits); Arabic has no short month
+   names, so short and long are the same there. English keeps the fixed lists (same text as always). */
+const monthFmts = {};
+export function monthName(m, long = false) {
+  if (lang() !== 'ar') return (long ? MONTHS_LONG : MONTHS)[m - 1];
+  const f = monthFmts[locale()] || (monthFmts[locale()] = new Intl.DateTimeFormat(locale(), { month: 'long', timeZone: 'UTC' }));
+  return f.format(Date.UTC(2001, m - 1, 15));
+}
+/** "12 Oct" (or "12 أكتوبر") from a "YYYY-MM-DD" key. */
+export const shortDay = (key) => { const [, m, d] = key.split('-').map(Number); return `${d} ${monthName(m)}`; };
+
 export function cycleName(cycle, long = true) {
   const [y, m] = cycle.split('-').map(Number);
-  return long ? MONTHS_LONG[m - 1] : `${MONTHS[m - 1]} ${y}`;
+  return long ? monthName(m, true) : `${monthName(m)} ${y}`;
 }
 
 export function cycleRange(cycle, startDay = 27) {
   const { start, end } = cycleBounds(cycle, startDay);
   const last = new Date(end.getTime() - 1);
   const a = dubaiParts(start), b = dubaiParts(last);
-  return `${a.d} ${MONTHS[a.m - 1]} – ${b.d} ${MONTHS[b.m - 1]}`;
+  return `${a.d} ${monthName(a.m)} – ${b.d} ${monthName(b.m)}`;
 }
 
 export function daysLeft(cycle, startDay = 27, now = new Date()) {
@@ -235,7 +272,18 @@ export function fmt(n, { fixed = false, whole = false } = {}) {
   if (!fixed && Number.isInteger(v)) return nf0.format(v);
   return nf2.format(v);
 }
-export const money = (n, cur = 'AED', opts) => `${cur} ${fmt(n, opts)}`;
+export const money = (n, cur = 'AED', opts) => amtCur(fmt(n, opts), cur);
+/** A formatted number with its currency: "AED 1,234" (English, unchanged) or, in Arabic, the number first and then
+    the currency with a no-break space, like UAE bank apps: «1,234 د.إ». The number (and its minus sign) is kept
+    left to right inside an isolate, so "−12.50" never turns into "12.50−". */
+export function amtCur(s, cur = 'AED') {
+  if (lang() !== 'ar') return `${cur} ${s}`;
+  return `${ltr(s)}\u00A0${cur === 'USD' ? t('cur.usd') : cur === 'AED' ? t('cur.aed') : cur}`;
+}
+/** "AED " + an already formatted number. */
+export const amtAED = (s) => amtCur(s, 'AED');
+/** An entry's own amount as typed: "$12.50" for USD, "AED 12.50" otherwise. */
+export const amtOf = (n, currency, opts) => (currency === 'USD' ? ltr(`$${fmt(n, opts)}`) : money(n, 'AED', opts));
 /** 456484 → "456.5k", 1250000 → "1.25M"; below 100k stays whole. */
 export function fmtCompact(n) {
   const a = Math.abs(n);
@@ -252,11 +300,11 @@ export function dayKey(date) {
 export function dayLabel(key, now = new Date()) {
   const today = dayKey(now);
   const yest = dayKey(new Date(now.getTime() - 864e5));
-  if (key === today) return 'Today';
-  if (key === yest) return 'Yesterday';
+  if (key === today) return t('day.today');
+  if (key === yest) return t('day.yesterday');
   const [y, m, d] = key.split('-').map(Number);
-  const wd = new Date(Date.UTC(y, m - 1, d)).toLocaleDateString('en-GB', { weekday: 'long', timeZone: 'UTC' });
-  return `${wd}, ${d} ${MONTHS[m - 1]}`;
+  const wd = new Date(Date.UTC(y, m - 1, d)).toLocaleDateString(locale(), { weekday: 'long', timeZone: 'UTC' });
+  return t('day.label', { wd, d, month: monthName(m) });
 }
 
 export function timeLabel(date) {
@@ -603,18 +651,18 @@ export function whereRows(m) {
   // account sits here; any part moved on shows under the account it went to
   const safeHere = same ? m.safe : Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
   const movedOn = Math.max(0, m.safe) - safeHere;
-  add('Safe to spend', safeHere, allowColor, movedOn >= 0.5 ? `in ${m.allowAcc} · ${fmt(movedOn, { whole: true })} more moved to other accounts` : `${m.allowAcc} allowance left`);
-  if (!same) add(`${m.allowAcc} carried over`, m.allowBal - safeHere, allowColor, 'unspent from earlier cycles');
+  add(t('where.safe'), safeHere, allowColor, movedOn >= 0.5 ? t('where.safeSub', { acc: m.allowAcc, n: fmt(movedOn, { whole: true }) }) : t('where.allowLeft', { acc: m.allowAcc }));
+  if (!same) add(t('where.carried', { acc: m.allowAcc }), m.allowBal - safeHere, allowColor, t('where.unspent'));
   // one account doing both jobs: Safe to spend is already part of its free money, so count it once
-  add('Emergency money', m.hubB.free - (same ? safeHere : 0), hubColor, `${m.hub} after responsibilities`);
-  add('Responsibilities', m.hubB.reserved, 'var(--warn)', `held in ${m.hub} until paid`);
-  add('Still to move', m.hubB.toMove, 'var(--label-3)', `waiting in ${m.hub}`);
+  add(t('where.emerg'), m.hubB.free - (same ? safeHere : 0), hubColor, t('where.emergSub', { acc: m.hub }));
+  add(t('where.resp'), m.hubB.reserved, 'var(--warn)', t('where.heldIn', { acc: m.hub }));
+  add(t('where.toMove'), m.hubB.toMove, 'var(--label-3)', t('where.waitingIn', { acc: m.hub }));
   for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);
   // money still sitting in an archived (or unknown) account is part of the total too
   for (const [id, x] of m.bals) {
     if (id === m.hub || id === m.allowAcc || isPerson(id) || ACCOUNTS.some((a) => a.id === id)) continue;
     const a = accountMeta(id);
-    add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
+    add(a.name, x.balance, a.color, a.archived ? t('where.removed') : a.role);
   }
   // whole numbers that add up to the rounded total (largest remainder)
   apportion(all.map((r) => r.v)).forEach((n, i) => { all[i].shown = n; });

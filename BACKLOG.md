@@ -10,8 +10,10 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Next
 
+- **Tests stable under load** (`claude/test-stability`, stopped unfinished on 30 Oct when the session wrapped up):
+  condition waits instead of fixed sleeps, and run-all.sh should exit non-zero when a test fails (it pipes to tail today).
+- **Abdullah to read the Arabic** (Home, Settings, setup guide) and flag wording.
 - **Try Sign in with Google for real** once Abdullah adds a client ID: run the guide in Safari, then the home-screen app; fix whatever real Google does differently from the fakes.
-- **Arabic / English toggle.** Touches every string.
 - **Tests: stable under load.** verify-categorize fails on its first run right after the heavy suites (3 times on 30 Oct),
   passes on rerun. verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
@@ -23,6 +25,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v30 · Arabic / English toggle with right-to-left layout (council-reviewed copy and RTL)
 - v29 · Accessibility: axe serious/critical 45 → 0, VoiceOver labels, dialogs, contrast, Larger Text
 - v28 · Budget line in the Apple Pay notification; features-based old-script check
 - v27 · Performance pass 2: Activity ~4x faster with 3,000 entries, memoised sums, lazy rows

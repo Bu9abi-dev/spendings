@@ -6,8 +6,10 @@ import { openSplit, askLinked } from './people-ui.js';
 import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
+import { t } from './i18n.js';
 
-const TYPE_LABEL = { Spend: 'Spend', Income: 'Income', Transfer: 'Transfer' };
+const TYPE_LABEL = { get Spend() { return t('type.Spend'); }, get Income() { return t('type.Income'); }, get Transfer() { return t('type.Transfer'); } };
+const curLabel = (c) => (c === 'USD' ? t('cur.usd') : c === 'AED' ? t('cur.aed') : c);
 
 function localInputValue(iso) {
   const p = dubaiParts(iso);
@@ -26,21 +28,21 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
 
   const html = `
     <header class="sheet-head">
-      <button class="text-btn" data-act="cancel" type="button">Cancel</button>
-      <h2 class="sheet-title">${existing ? 'Edit entry' : esc(title || 'New entry')}</h2>
-      ${existing ? `<button class="icon-btn danger" data-act="delete" type="button" aria-label="Delete entry">${icon('trash', { size: 20 })}</button>` : '<span class="icon-btn-spacer"></span>'}
+      <button class="text-btn" data-act="cancel" type="button">${t('common.cancel')}</button>
+      <h2 class="sheet-title">${existing ? t('entry.edit') : esc(title || t('entry.new'))}</h2>
+      ${existing ? `<button class="icon-btn danger" data-act="delete" type="button" aria-label="${t('entry.deleteEntry')}">${icon('trash', { size: 20 })}</button>` : '<span class="icon-btn-spacer"></span>'}
     </header>
-    <div class="segmented glass" role="radiogroup" aria-label="Type">
+    <div class="segmented glass" role="radiogroup" aria-label="${t('entry.type')}">
       <span class="seg-thumb" aria-hidden="true"></span>
-      ${['Spend', 'Income', 'Transfer'].map((t) => `<button type="button" role="radio" data-type="${t}">${TYPE_LABEL[t]}</button>`).join('')}
+      ${['Spend', 'Income', 'Transfer'].map((ty) => `<button type="button" role="radio" data-type="${ty}">${TYPE_LABEL[ty]}</button>`).join('')}
     </div>
     <div class="amount-row">
-      <button class="cur-pill" type="button" data-act="currency" aria-label="AED, change currency"></button>
+      <button class="cur-pill" type="button" data-act="currency" aria-label="${t('entry.curChange', { cur: t('cur.aed') })}"></button>
       <span class="amount-box">
         <output class="amount num" aria-live="polite"></output>
-        <input class="amount-input num" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" aria-label="Amount" placeholder="0">
+        <input class="amount-input num" type="text" inputmode="decimal" enterkeyhint="next" autocomplete="off" aria-label="${t('entry.amount')}" placeholder="0">
       </span>
-      <button class="kb-toggle" type="button" data-act="keys" aria-label="Switch keyboard">${icon('keyboard', { size: 20 })}</button>
+      <button class="kb-toggle" type="button" data-act="keys" aria-label="${t('entry.switchKb')}">${icon('keyboard', { size: 20 })}</button>
     </div>
     <p class="amount-sub"></p>
     <div class="sheet-scroll">
@@ -53,36 +55,36 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       <div class="block-label" data-label="account"></div>
       <div class="chips accounts" data-role="account"></div>
       <div class="transfer-to">
-        <div class="block-label">To</div>
+        <div class="block-label">${t('entry.to')}</div>
         <div class="chips accounts" data-role="toAccount"></div>
       </div>
       <div class="cat-wrap">
-        <div class="block-label">Category <span class="suggest" hidden></span></div>
-        <div class="cat-grid" role="radiogroup" aria-label="Category"></div>
+        <div class="block-label">${t('entry.category')} <span class="suggest" hidden></span></div>
+        <div class="cat-grid" role="radiogroup" aria-label="${t('entry.category')}"></div>
       </div>
       <div class="field-group">
         <label class="field">
           ${icon('note', { size: 20 })}
-          <input type="text" name="note" placeholder="Note" autocomplete="off" enterkeyhint="done" maxlength="200" value="${esc(e.note)}">
+          <input type="text" name="note" placeholder="${t('entry.note')}" autocomplete="off" enterkeyhint="done" maxlength="200" value="${esc(e.note)}">
         </label>
         <label class="field date-field">
           ${icon('calendar', { size: 20 })}
-          <input type="datetime-local" name="date" aria-label="Date and time" value="${localInputValue(e.date)}">
+          <input type="datetime-local" name="date" aria-label="${t('entry.dateTime')}" value="${localInputValue(e.date)}">
         </label>
       </div>
       <p class="split-note" hidden></p>
-      ${existing ? `<button type="button" class="dup-btn" data-act="duplicate">${icon('copy', { size: 18 })}Log this again</button>` : ''}
+      ${existing ? `<button type="button" class="dup-btn" data-act="duplicate">${icon('copy', { size: 18 })}${t('entry.logAgain')}</button>` : ''}
     </div>
     <div class="keypad-wrap">
-      <button type="button" class="dup-btn split-btn" data-act="split" hidden>${icon('split', { size: 18 })}Split with someone</button>
-      <div class="keypad" role="group" aria-label="Amount keypad">
-        ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" class="key" data-key="${k}" aria-label="${k === 'del' ? 'Delete digit' : k === '.' ? 'Decimal point' : k}">${k === 'del' ? icon('backspace', { size: 24 }) : k}</button>`).join('')}
+      <button type="button" class="dup-btn split-btn" data-act="split" hidden>${icon('split', { size: 18 })}${t('entry.splitWith')}</button>
+      <div class="keypad" role="group" aria-label="${t('home.keypad')}">
+        ${['1', '2', '3', '4', '5', '6', '7', '8', '9', '.', '0', 'del'].map((k) => `<button type="button" class="key" data-key="${k}" aria-label="${k === 'del' ? t('home.delDigit') : k === '.' ? t('entry.decimal') : k}">${k === 'del' ? icon('backspace', { size: 24 }) : k}</button>`).join('')}
       </div>
       <button class="save-btn" type="button" data-act="save"></button>
     </div>`;
 
   return openSheet({
-    html, label: existing ? 'Edit entry' : 'New entry',
+    html, label: existing ? t('entry.edit') : t('entry.new'),
     onMount(sheet, close) {
       const $ = (s) => sheet.querySelector(s);
       const amountEl = $('.amount'), sub = $('.amount-sub'), save = $('[data-act="save"]');
@@ -110,7 +112,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       const amountInput = $('.amount-input');
       const setNative = (on) => {
         sheet.classList.toggle('native', on);
-        $('.kb-toggle').setAttribute('aria-label', on ? 'Use the app keypad' : 'Use the iPhone keyboard');
+        $('.kb-toggle').setAttribute('aria-label', on ? t('entry.useAppKeypad') : t('entry.useKeyboard'));
         $('.kb-toggle').classList.toggle('on', on);
         if (on) { amountInput.value = amountStr; setTimeout(() => { const f = document.activeElement; if (!f || f === document.body || f === sheet || f.closest('.kb-toggle')) amountInput.focus({ preventScroll: true }); }, 60); }
       };
@@ -131,10 +133,10 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         amountEl.innerHTML = `${fmt(+i || 0, { whole: true })}${d !== undefined ? `<span class="dec">.${d}</span>` : ''}`;
         amountEl.classList.toggle('zero', !amountStr || +amountStr === 0);
         amountEl.classList.toggle('long', shown.length > 7);
-        $('.cur-pill').textContent = e.currency;
-        $('.cur-pill').setAttribute('aria-label', `${e.currency}, change currency`);
+        $('.cur-pill').textContent = curLabel(e.currency);
+        $('.cur-pill').setAttribute('aria-label', t('entry.curChange', { cur: curLabel(e.currency) }));
         e.amount = +amountStr || 0;
-        sub.textContent = e.currency === 'USD' && e.amount ? `≈ ${money(e.amount * state.settings.usdRate, 'AED', { fixed: true })} at ${state.settings.usdRate}` : '';
+        sub.textContent = e.currency === 'USD' && e.amount ? t('entry.approx', { amt: money(e.amount * state.settings.usdRate, 'AED', { fixed: true }), rate: state.settings.usdRate }) : '';
         validate();
       }
 
@@ -142,8 +144,8 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         sheet.dataset.type = e.type;
         if (e.type !== 'Spend') hinted = '';
         moveThumb(true);
-        merchantInput.placeholder = e.type === 'Income' ? 'From (e.g. employer)' : e.type === 'Transfer' ? 'Reason (optional)' : 'Where? (e.g. Carrefour)';
-        $('[data-label="account"]').textContent = e.type === 'Income' ? 'Into' : e.type === 'Transfer' ? 'From' : 'Paid with';
+        merchantInput.placeholder = e.type === 'Income' ? t('entry.fromEmployer') : e.type === 'Transfer' ? t('entry.reason') : t('entry.where');
+        $('[data-label="account"]').textContent = e.type === 'Income' ? t('entry.into') : e.type === 'Transfer' ? t('entry.from') : t('entry.paidWith');
         renderAccounts();
         renderCategories();
         validate();
@@ -162,7 +164,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           };
           const people = peopleFor(role);
           box.innerHTML = ACCOUNTS.map((a) => chip(a, false)).join('')
-            + (people.length ? `<span class="chip-group-label">${role === 'account' && e.type === 'Spend' ? 'People · a friend paid' : 'People'}</span>${people.map((a) => chip(a, true)).join('')}` : '');
+            + (people.length ? `<span class="chip-group-label">${role === 'account' && e.type === 'Spend' ? t('entry.friendPaid') : t('set.people')}</span>${people.map((a) => chip(a, true)).join('')}` : '');
         }
         renderSplit();
       }
@@ -176,8 +178,8 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           const who = personOf(existing) || personOf(partner);
           note.hidden = false;
           note.innerHTML = partner.type === 'Transfer'
-            ? `${icon('split', { size: 16 })}<span>Split with <b>${esc(who)}</b> · their share ${esc(money(partner.amount, partner.currency, { fixed: true }))}</span>`
-            : `${icon('split', { size: 16 })}<span>${esc(who)}’s share of a split · you paid ${esc(money(partner.amount, partner.currency, { fixed: true }))}${partner.merchant ? ` at ${esc(partner.merchant)}` : ''}</span>`;
+            ? `${icon('split', { size: 16 })}<span>${t('entry.splitTheirs', { who: esc(who), amt: esc(money(partner.amount, partner.currency, { fixed: true })) })}</span>`
+            : `${icon('split', { size: 16 })}<span>${t(partner.merchant ? 'entry.shareAt' : 'entry.share', { who: esc(who), amt: esc(money(partner.amount, partner.currency, { fixed: true })), shop: esc(partner.merchant || '') })}</span>`;
         }
         btn.hidden = !!partner || e.type !== 'Spend' || isPerson(e.account);
       }
@@ -207,16 +209,16 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       let saveOk = false, bigOk = false, touchedAccount = !!existing;
       const BIG = 20000;
       function validate() {
-        let label = 'Save', ok = true;
-        if (!(e.amount > 0)) { label = 'Enter an amount'; ok = false; }
-        else if (e.type === 'Transfer' && (!e.toAccount || e.toAccount === e.account)) { label = 'Choose where it went'; ok = false; }
-        else if (e.type !== 'Transfer' && !e.category) { label = 'Choose a category'; ok = false; }
+        let label = t('common.save'), ok = true;
+        if (!(e.amount > 0)) { label = t('entry.enterAmount'); ok = false; }
+        else if (e.type === 'Transfer' && (!e.toAccount || e.toAccount === e.account)) { label = t('entry.chooseWhere'); ok = false; }
+        else if (e.type !== 'Transfer' && !e.category) { label = t('entry.chooseCat'); ok = false; }
         saveOk = ok;
         // not `disabled`: a tap on it should point at what's missing
         save.classList.toggle('off', !ok);
         save.setAttribute('aria-disabled', String(!ok));
         if (e.amount < BIG) bigOk = false;
-        save.textContent = ok ? (existing ? 'Save changes' : `Save ${money(e.amount, e.currency)}`) : label;
+        save.textContent = ok ? (existing ? t('entry.saveChanges') : t('entry.saveAmt', { amt: money(e.amount, e.currency) })) : label;
       }
       function nudge() {
         haptic();
@@ -242,12 +244,12 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         if (g && g.confidence === 'high' && (!e.category || autoPicked)) {
           e.category = g.category; autoPicked = true;
           tag.hidden = false;
-          tag.textContent = g.like && g.like.toLowerCase() !== name.toLowerCase() ? `· like ${g.like}` : `· remembered for ${name}`;
+          tag.textContent = g.like && g.like.toLowerCase() !== name.toLowerCase() ? t('entry.like', { what: g.like }) : t('entry.remembered', { name });
         } else if (g && (!e.category || autoPicked)) {
           // medium or low: only a guess, so ring it and let you pick
           if (autoPicked) { e.category = ''; autoPicked = false; }
           hinted = g.category;
-          tag.hidden = false; tag.textContent = `· maybe ${categoryMeta(g.category)?.short || g.category}?`;
+          tag.hidden = false; tag.textContent = t('entry.maybe', { what: categoryMeta(g.category)?.short || g.category });
         } else if (!g) {
           if (autoPicked) { e.category = ''; autoPicked = false; }
           tag.hidden = true;
@@ -274,7 +276,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       let holdTimer;
       const del = $('[data-key="del"]');
       del.addEventListener('pointerdown', () => { holdTimer = setTimeout(() => { amountStr = ''; renderAmount(); haptic(); }, 550); });
-      ['pointerup', 'pointerleave', 'pointercancel'].forEach((t) => del.addEventListener(t, () => clearTimeout(holdTimer)));
+      ['pointerup', 'pointerleave', 'pointercancel'].forEach((ev2) => del.addEventListener(ev2, () => clearTimeout(holdTimer)));
 
       sheet.addEventListener('keydown', (ev) => {
         if ((ev.metaKey || ev.ctrlKey) && ev.key === 'Enter' && saveOk) { ev.preventDefault(); save.click(); return; }
@@ -285,17 +287,17 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
       });
 
       seg.addEventListener('click', (ev) => {
-        const t = ev.target.closest('[data-type]')?.dataset.type;
-        if (!t || t === e.type) return;
+        const ty = ev.target.closest('[data-type]')?.dataset.type;
+        if (!ty || ty === e.type) return;
         haptic();
-        e.type = t;
+        e.type = ty;
         // sensible defaults for this owner: pay lands in the main account, transfers go main → allowance
         const hub = state.settings.emergencyAccount, allow = state.settings.allowanceAccount;
-        if (!touchedAccount && t === 'Income' && ACCOUNTS.some((a) => a.id === hub)) e.account = hub;
-        if (!touchedAccount && t === 'Transfer' && hub !== allow && ACCOUNTS.some((a) => a.id === hub) && ACCOUNTS.some((a) => a.id === allow)) { e.account = hub; e.toAccount = allow; }
-        if (!touchedAccount && t === 'Spend') e.account = allow;
-        if (t === 'Income' && isPerson(e.account)) e.account = ACCOUNTS.some((a) => a.id === hub) ? hub : ACCOUNTS[0].id;
-        if (t === 'Transfer' && (!e.toAccount || e.toAccount === e.account)) e.toAccount = ACCOUNTS.find((a) => a.id !== e.account).id;
+        if (!touchedAccount && ty === 'Income' && ACCOUNTS.some((a) => a.id === hub)) e.account = hub;
+        if (!touchedAccount && ty === 'Transfer' && hub !== allow && ACCOUNTS.some((a) => a.id === hub) && ACCOUNTS.some((a) => a.id === allow)) { e.account = hub; e.toAccount = allow; }
+        if (!touchedAccount && ty === 'Spend') e.account = allow;
+        if (ty === 'Income' && isPerson(e.account)) e.account = ACCOUNTS.some((a) => a.id === hub) ? hub : ACCOUNTS[0].id;
+        if (ty === 'Transfer' && (!e.toAccount || e.toAccount === e.account)) e.toAccount = ACCOUNTS.find((a) => a.id !== e.account).id;
         renderType();
       });
 
@@ -327,13 +329,13 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         if (act === 'keys') { const on = !sheet.classList.contains('native'); setPrefs({ nativeKeys: on }); setNative(on); haptic(); return; }
         if (act === 'currency') { e.currency = e.currency === 'AED' ? 'USD' : 'AED'; haptic(); renderAmount(); }
         if (act === 'delete') {
-          const done = (removed, both) => toast(`Deleted ${money(removed.amount, removed.currency)}${both ? ' and its other half' : ''}`, { action: 'Undo', onAction: () => undo(), icon: icon('trash', { size: 18 }) });
+          const done = (removed, both) => toast(t(both ? 'del.both' : 'del.one', { amt: money(removed.amount, removed.currency) }), { action: t('common.undo'), onAction: () => undo(), icon: icon('trash', { size: 18 }) });
           const other = splitPartner(existing, state.entries);
           if (!other) { const removed = deleteEntry(existing.id); close(); done(removed); return; }
           // half of a split: the other half can go too, as one undo step
           askLinked(existing, 'delete', (how) => {
             let removed;
-            batch(`Deleted ${money(existing.amount, existing.currency)}${how === 'both' ? ' and its other half' : ''}`, () => {
+            batch(t(how === 'both' ? 'del.both' : 'del.one', { amt: money(existing.amount, existing.currency) }), () => {
               removed = deleteEntry(existing.id);
               if (how === 'both') deleteEntry(other.id);
             });
@@ -351,20 +353,20 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
             // a USD bill: their share priced at the rate, yours the rest of the bill's AED price (kept when unchanged)
             const same = existing && +existing.amount === +fields.amount && existing.currency === fields.currency;
             const prices = splitPrices(same ? toAED(existing, state.settings) : toAED({ amount: fields.amount, currency: fields.currency }, state.settings), theirs, fields.currency, state.settings);
-            batch(`Split ${money(total, fields.currency)} with ${person}`, () => {
+            batch(t('entry.splitUndo', { amt: money(total, fields.currency), who: person }), () => {
               const mineFields = { ...fields, amount: mine, ...(prices ? { amountAED: prices.mineAED } : {}) };
               const spend = existing ? updateEntry(existing.id, mineFields) : addEntry(mineFields);
               addEntry({ ...splitTransfer(spend, person, theirs), ...(prices ? { amountAED: prices.theirsAED } : {}) });
             });
             close();
-            toast(`Split · your share ${money(mine, fields.currency, { fixed: true })}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
+            toast(t('entry.splitDone', { amt: money(mine, fields.currency, { fixed: true }) }), { icon: icon('check', { size: 18 }), tone: 'good', action: t('common.undo'), onAction: () => undo() });
           });
           return;
         }
         if (act === 'save' && !saveOk) { nudge(); return; }
         if (act === 'save' && e.amount >= BIG && !bigOk && !existing) {
           bigOk = true; haptic();
-          save.textContent = `Tap again to save ${money(e.amount, e.currency)}`;
+          save.textContent = t('entry.tapAgain', { amt: money(e.amount, e.currency) });
           if (!reduceMotion()) save.animate([{ transform: 'scale(1)' }, { transform: 'scale(1.03)' }, { transform: 'scale(1)' }], { duration: 260 });
           return;
         }
@@ -377,14 +379,14 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           if (sharedChanged) {
             // half of a split: offer to carry the change to the other half, as one undo step
             askLinked(existing, 'edit', (how) => {
-              batch(`Edited ${money(fields.amount, fields.currency)}${how === 'both' ? ' and its other half' : ''}`, () => {
+              batch(t(how === 'both' ? 'entry.editedBoth' : 'undoL.edited', { what: money(fields.amount, fields.currency) }), () => {
                 if (how !== 'both') { updateEntry(existing.id, fields); return; }
                 const { mine: f1, other: f2 } = bothHalves(existing, fields, other);
                 const saved = updateEntry(existing.id, f1);
                 if (saved) updateEntry(other.id, { ...partnerPatch(saved, other, existing), ...f2 });
               });
               close();
-              toast(`Updated · ${money(fields.amount, fields.currency)}${how === 'both' ? ' · both halves' : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
+              toast(t(how === 'both' ? 'entry.updatedBoth' : 'entry.updated', { amt: money(fields.amount, fields.currency) }), { icon: icon('check', { size: 18 }), tone: 'good', action: t('common.undo'), onAction: () => undo() });
             }, null, fields);
             return;
           }
@@ -393,10 +395,10 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           // say so when this takes a checked account below zero
           if (fields.type !== 'Income') {
             const b = balances(state.entries, state.settings).get(fields.account);
-            if (b?.matchedAt && b.balance < 0) setTimeout(() => toast(`${esc(fields.account)} is now ${money(b.balance, 'AED')}, below zero`, { tone: 'warn', icon: icon('warn', { size: 18 }) }), 1400);
+            if (b?.matchedAt && b.balance < 0) setTimeout(() => toast(t('entry.belowZero', { acc: esc(fields.account), amt: money(b.balance, 'AED') }), { tone: 'warn', icon: icon('warn', { size: 18 }) }), 1400);
           }
           close();
-          toast(`${existing ? 'Updated' : 'Saved'} · ${money(fields.amount, fields.currency)}${fields.category ? ' · ' + fields.category : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => undo() });
+          toast(`${t(existing ? 'entry.updated' : 'entry.saved', { amt: money(fields.amount, fields.currency) })}${fields.category ? ' · ' + esc(categoryMeta(fields.category, fields.type)?.label || fields.category) : ''}`, { icon: icon('check', { size: 18 }), tone: 'good', action: t('common.undo'), onAction: () => undo() });
         }
       });
 

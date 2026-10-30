@@ -1,15 +1,16 @@
 // Hand-drawn SVG charts. Thin marks, 2px surface gaps, recessive axes, a hover/tap layer on each.
-import { fmt } from './model.js';
+import { fmt, amtAED } from './model.js';
+import { t, isRTL } from './i18n.js';
 
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
 /** Donut. slices: [{label, value, color}] in fixed category order. Center shows total or the tapped slice. */
-export function donut(slices, { total, centerLabel = 'Spent', size = 220 } = {}) {
+export function donut(slices, { total, centerLabel = t('act.spent'), size = 220 } = {}) {
   const r = 86, w = 22, cx = 110, cy = 110;
   const sum = slices.reduce((a, s) => a + s.value, 0);
   if (!sum) {
     return `<div class="donut empty"><svg viewBox="0 0 220 220" width="${size}" height="${size}" aria-hidden="true"><circle cx="110" cy="110" r="${r}" fill="none" stroke="var(--fill-3)" stroke-width="${w}"/></svg>
-      <div class="donut-center"><span class="dc-label">Nothing spent yet</span></div></div>`;
+      <div class="donut-center"><span class="dc-label">${t('chart.nothingSpent')}</span></div></div>`;
   }
   let a0 = -Math.PI / 2;
   const gap = slices.length > 1 ? 2 / r : 0; // 2px surface gap
@@ -26,11 +27,11 @@ export function donut(slices, { total, centerLabel = 'Spent', size = 220 } = {})
     const pct = Math.round((s.value / sum) * 100);
     return `<path class="slice" d="${d}" stroke="${s.color}" stroke-width="${w}" fill="none" tabindex="0" role="button"
       data-label="${esc(s.label)}" data-value="${s.value}" data-pct="${pct}" style="--i:${i}"
-      aria-label="${esc(s.label)}: AED ${fmt(s.value)}, ${pct}%"/>`;
+      aria-label="${esc(s.label)}: ${amtAED(fmt(s.value))}, ${pct}%"/>`;
   }).join('');
   return `<div class="donut" data-total="${total ?? sum}" data-center="${esc(centerLabel)}">
-    <svg viewBox="0 0 220 220" width="${size}" height="${size}" role="group" aria-label="Spending by category, ${slices.filter((s) => s.value > 0).length} parts. Each part is a button.">${paths}</svg>
-    <div class="donut-center" aria-live="polite"><span class="dc-label">${esc(centerLabel)}</span><span class="dc-value num">AED ${fmt(total ?? sum, { whole: true })}</span></div>
+    <svg viewBox="0 0 220 220" width="${size}" height="${size}" role="group" aria-label="${t('chart.parts', { n: slices.filter((s) => s.value > 0).length })}">${paths}</svg>
+    <div class="donut-center" aria-live="polite"><span class="dc-label">${esc(centerLabel)}</span><span class="dc-value num">${amtAED(fmt(total ?? sum, { whole: true }))}</span></div>
   </div>`;
 }
 
@@ -40,7 +41,7 @@ export function bindDonut(root) {
     if (!value) return;
     const reset = () => {
       d.querySelectorAll('.slice').forEach((s) => s.classList.remove('dim', 'on'));
-      label.textContent = d.dataset.center; value.textContent = `AED ${fmt(+d.dataset.total, { whole: true })}`;
+      label.textContent = d.dataset.center; value.textContent = `${amtAED(fmt(+d.dataset.total, { whole: true }))}`;
     };
     let current = null;
     d.querySelectorAll('.slice').forEach((s) => {
@@ -49,7 +50,7 @@ export function bindDonut(root) {
         current = s;
         d.querySelectorAll('.slice').forEach((o) => { o.classList.toggle('dim', o !== s); o.classList.toggle('on', o === s); });
         label.textContent = `${s.dataset.label} · ${s.dataset.pct}%`;
-        value.textContent = `AED ${fmt(+s.dataset.value, { whole: true })}`;
+        value.textContent = `${amtAED(fmt(+s.dataset.value, { whole: true }))}`;
       };
       s.addEventListener('click', show);
       s.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); show(); } });
@@ -62,24 +63,27 @@ function paceSummary({ cumulative, pace, labels, todayIndex }) {
   let i = Number.isInteger(todayIndex) && todayIndex >= 0 && todayIndex < cumulative.length ? todayIndex : cumulative.length - 1;
   while (i > 0 && cumulative[i] == null) i--;
   const spent = cumulative[i];
-  if (spent == null) return 'Cumulative spending against the allowance pace. Nothing spent yet.';
+  if (spent == null) return t('chart.paceNothing');
   const diff = Math.round(spent - pace[i]);
-  const rel = Math.abs(diff) < 1 ? 'right on an even pace' : diff > 0 ? `AED ${fmt(diff, { whole: true })} over an even pace` : `AED ${fmt(-diff, { whole: true })} under an even pace`;
-  return `Cumulative spending against the allowance pace. By ${labels[i]}: spent AED ${fmt(spent, { whole: true })}, ${rel} of AED ${fmt(pace[i], { whole: true })}.`;
+  const rel = Math.abs(diff) < 1 ? t('chart.rightOn') : diff > 0 ? t('chart.overEven', { amt: amtAED(fmt(diff, { whole: true })) }) : t('chart.underEven', { amt: amtAED(fmt(-diff, { whole: true })) });
+  return t('chart.paceSaid', { date: labels[i], spent: amtAED(fmt(spent, { whole: true })), rel, pace: amtAED(fmt(pace[i], { whole: true })) });
 }
 
 /** Cumulative spend line vs an even allowance pace line. One axis (AED). */
 export function paceLine({ days, cumulative, pace, todayIndex, labels }) {
   const W = 340, H = 170, L = 8, R = 8, T = 14, B = 22;
   const max = Math.max(1, ...cumulative.filter((v) => v != null), ...pace) * 1.08;
-  const x = (i) => L + (i / Math.max(1, days - 1)) * (W - L - R);
+  // In Arabic time runs right to left (as in iOS charts): day 1 sits on the right. The svg itself is drawn left to
+  // right (direction: ltr in app.css), so the mirroring is done here, in x() and the label anchors.
+  const rtl = isRTL();
+  const x = (i) => { const v = L + (i / Math.max(1, days - 1)) * (W - L - R); return rtl ? W - v : v; };
   const y = (v) => T + (1 - v / max) * (H - T - B);
   const line = (arr) => arr.map((v, i) => (v == null ? null : `${x(i).toFixed(1)},${y(v).toFixed(1)}`)).filter(Boolean).join(' ');
   const pts = cumulative.map((v, i) => (v == null ? null : [x(i), y(v)])).filter(Boolean);
   const area = pts.length ? `M ${pts[0][0]} ${y(0)} L ${pts.map((p) => p.join(' ')).join(' L ')} L ${pts[pts.length - 1][0]} ${y(0)} Z` : '';
   const grid = [0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(max / 1.08 * f)}" y2="${y(max / 1.08 * f)}" class="grid"/>
-    <text x="${W - R}" y="${y(max / 1.08 * f) - 4}" class="axis" text-anchor="end">${fmt(max / 1.08 * f, { whole: true })}</text>`).join('');
-  const ticks = [0, Math.floor((days - 1) / 2), days - 1].map((i) => `<text x="${x(i)}" y="${H - 6}" class="axis" text-anchor="${i === 0 ? 'start' : i === days - 1 ? 'end' : 'middle'}">${labels[i]}</text>`).join('');
+    <text x="${W - R}" y="${y(max / 1.08 * f) - 5}" class="axis" text-anchor="end">${fmt(max / 1.08 * f, { whole: true })}</text>`).join('');
+  const ticks = [0, Math.floor((days - 1) / 2), days - 1].map((i) => `<text x="${x(i)}" y="${H - 6}" class="axis" text-anchor="${i === 0 ? (rtl ? 'end' : 'start') : i === days - 1 ? (rtl ? 'start' : 'end') : 'middle'}">${labels[i]}</text>`).join('');
   const last = pts[pts.length - 1];
   return `<div class="pace-chart" data-days="${days}">
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" class="pace-svg" role="img" aria-label="${esc(paceSummary({ cumulative, pace, labels, todayIndex }))}">
@@ -104,13 +108,14 @@ export function bindPace(root) {
     const days = +el.dataset.days;
     const move = (e) => {
       const r = svg.getBoundingClientRect();
-      const fx = Math.min(1, Math.max(0, (e.clientX - r.left - (8 / 340) * r.width) / (r.width * (324 / 340))));
+      const fx0 = Math.min(1, Math.max(0, (e.clientX - r.left - (8 / 340) * r.width) / (r.width * (324 / 340))));
+      const rtl = isRTL(), fx = rtl ? 1 - fx0 : fx0; // day 1 is on the right in Arabic
       const i = Math.round(fx * (days - 1));
-      const vx = 8 + (i / Math.max(1, days - 1)) * 324;
+      const vx0 = 8 + (i / Math.max(1, days - 1)) * 324, vx = rtl ? 340 - vx0 : vx0;
       xh.setAttribute('x1', vx); xh.setAttribute('x2', vx); xh.setAttribute('visibility', 'visible');
       const spent = data.cumulative[i];
       tip.hidden = false;
-      tip.innerHTML = `<b>${data.labels[i]}</b><span><i class="sw spend"></i>Spent ${spent == null ? 'not yet' : 'AED ' + fmt(spent, { whole: true })}</span><span><i class="sw pace"></i>Even pace AED ${fmt(data.pace[i], { whole: true })}</span>`;
+      tip.innerHTML = `<b>${data.labels[i]}</b><span><i class="sw spend"></i>${t('chart.spentTip', { amt: spent == null ? t('chart.notYet') : amtAED(fmt(spent, { whole: true })) })}</span><span><i class="sw pace"></i>${t('chart.evenTip', { amt: amtAED(fmt(data.pace[i], { whole: true })) })}</span>`;
       const px = (vx / 340) * r.width;
       tip.style.transform = `translateX(${Math.min(r.width - tip.offsetWidth, Math.max(0, px - tip.offsetWidth / 2))}px)`;
     };
@@ -126,9 +131,9 @@ export function bindPace(root) {
 const k = (v) => (v >= 1000 ? `${Math.round(v / 100) / 10}k` : fmt(v, { whole: true }));
 export function inOutBars(rows) {
   const max = Math.max(1, ...rows.flatMap((r) => [r.income, r.spent]));
-  return `<div class="inout" role="table" aria-label="Money in and out per cycle">
+  return `<div class="inout" role="table" aria-label="${t('chart.inOutLabel')}">
     ${rows.map((r) => `<div class="io-col${r.current ? ' current' : ''}" role="row">
-      <div class="io-bars" role="cell" aria-label="${r.label}: in AED ${fmt(r.income, { whole: true })}, out AED ${fmt(r.spent, { whole: true })}">
+      <div class="io-bars" role="cell" aria-label="${t('chart.inOut', { label: r.label, a: amtAED(fmt(r.income, { whole: true })), b: amtAED(fmt(r.spent, { whole: true })) })}">
         <span class="io-bar in" style="--h:${(r.income / max) * 100}%"><em>${k(r.income)}</em></span>
         <span class="io-bar out" style="--h:${(r.spent / max) * 100}%"><em>${k(r.spent)}</em></span>
       </div>
@@ -153,26 +158,26 @@ export function spendBars({ days, weeks, avg, soFar }) {
   const weekMax = Math.max(1, ...weeks.map((w) => w.value));
   const bar = (b, max, cls) => `<button type="button" class="sb-bar ${cls}${b.future ? ' future' : ''}${b.today ? ' today' : ''}"
       style="--h:${(b.value / max) * 100}%" data-label="${esc(b.range || b.label)}" data-value="${b.value}"
-      aria-label="${esc(b.range || b.label)}: AED ${fmt(b.value, { whole: true })}"${b.future ? ' disabled' : ''}>${cls === 'wk' ? `<em class="num">${k(b.value)}</em>` : ''}</button>`;
+      aria-label="${esc(b.range || b.label)}: ${amtAED(fmt(b.value, { whole: true }))}"${b.future ? ' disabled' : ''}>${cls === 'wk' ? `<em class="num">${k(b.value)}</em>` : ''}</button>`;
   const ticks = [0, Math.floor((days.length - 1) / 2), days.length - 1]
     .map((i) => `<span style="--x:${((i + 0.5) / days.length) * 100}%">${esc(days[i].label)}</span>`).join('');
   const avgLine = avg > 0 ? `<i class="sb-avg" style="--y:${(avg / dayMax) * 100}%"></i>` : '';
   // what the readout line says when no bar is picked, one per view
   const defaults = {
-    day: `<i class="sw avg"></i> Average <b class="num">AED ${fmt(avg, { whole: true })}</b> a day${soFar ? ' so far' : ''}`,
-    week: 'Weeks count from the cycle’s first day. Tap one to see it.',
+    day: `<i class="sw avg"></i> ${t(soFar ? 'chart.avgSoFar' : 'chart.avg', { amt: `<b class="num">${amtAED(fmt(avg, { whole: true }))}</b>` })}`,
+    week: t('chart.weeksNote'),
   };
   return `<div class="spend-bars" data-view="${barsView}">
     <template class="sb-default" data-for="day">${defaults.day}</template>
     <template class="sb-default" data-for="week">${defaults.week}</template>
-    <div class="chart-seg" role="radiogroup" aria-label="Show spending by">
-      <button type="button" role="radio" data-bars="day" aria-checked="${barsView === 'day'}">Day</button>
-      <button type="button" role="radio" data-bars="week" aria-checked="${barsView === 'week'}">Week</button>
+    <div class="chart-seg" role="radiogroup" aria-label="${t('chart.showBy')}">
+      <button type="button" role="radio" data-bars="day" aria-checked="${barsView === 'day'}">${t('chart.day')}</button>
+      <button type="button" role="radio" data-bars="week" aria-checked="${barsView === 'week'}">${t('chart.week')}</button>
     </div>
     <p class="sb-readout" aria-live="polite">${defaults[barsView]}</p>
-    <div class="sb-plot sb-days" role="group" aria-label="Spent each day">${avgLine}${days.map((d) => bar(d, dayMax, 'dy')).join('')}</div>
+    <div class="sb-plot sb-days" role="group" aria-label="${t('chart.eachDay')}">${avgLine}${days.map((d) => bar(d, dayMax, 'dy')).join('')}</div>
     <div class="sb-ticks sb-days" aria-hidden="true">${ticks}</div>
-    <div class="sb-plot sb-weeks" role="group" aria-label="Spent each week">${weeks.map((w) => bar(w, weekMax, 'wk')).join('')}</div>
+    <div class="sb-plot sb-weeks" role="group" aria-label="${t('chart.eachWeek')}">${weeks.map((w) => bar(w, weekMax, 'wk')).join('')}</div>
     <div class="sb-wlabels sb-weeks" aria-hidden="true">${weeks.map((w) => `<span>${esc(w.label)}${w.note ? `<small>${esc(w.note)}</small>` : ''}</span>`).join('')}</div>
   </div>`;
 }
@@ -190,7 +195,7 @@ export function bindBars(root) {
       el.querySelectorAll('.sb-bar.on').forEach((o) => o.classList.remove('on'));
       b.classList.add('on');
       el.classList.add('picked');
-      readout.innerHTML = `${esc(b.dataset.label)} · <b class="num">AED ${fmt(+b.dataset.value, { whole: true })}</b>`;
+      readout.innerHTML = `${esc(b.dataset.label)} · <b class="num">${amtAED(fmt(+b.dataset.value, { whole: true }))}</b>`;
     };
     // Day bars are thin on a phone, so a finger picks the nearest bar and can slide along to scrub.
     // A tap on the bar that's already picked clears it.
@@ -212,7 +217,7 @@ export function bindBars(root) {
         pick(b);
       });
       plot.addEventListener('pointermove', (ev) => { if (down) pick(nearest(plot, ev.clientX)); });
-      ['pointerup', 'pointercancel', 'pointerleave'].forEach((t) => plot.addEventListener(t, () => { down = false; }));
+      ['pointerup', 'pointercancel', 'pointerleave'].forEach((ev) => plot.addEventListener(ev, () => { down = false; }));
     });
     el.addEventListener('click', (ev) => {
       const seg = ev.target.closest('[data-bars]');
