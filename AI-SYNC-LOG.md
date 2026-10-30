@@ -69,7 +69,8 @@ budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter 
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 
 **In flight** (branches pushed, not merged):
-- Nothing in flight.
+- `claude/arabic`: Arabic / English toggle (i18n module, RTL). Touches every UI string; merge it before other UI work.
+- `claude/test-stability`: condition waits instead of fixed sleeps; run-all.sh exits non-zero on a failure.
 
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New

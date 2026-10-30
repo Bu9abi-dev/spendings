@@ -7,11 +7,12 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
+| 11 | Arabic / English toggle | `claude/arabic` | i18n module, RTL, Arabic labels for built-in categories |
+| 12 | Tests stable under load | `claude/test-stability` | condition waits; run-all.sh fails on a failing test |
 
 ## Next
 
 - **Try Sign in with Google for real** once Abdullah adds a client ID: run the guide in Safari, then the home-screen app; fix whatever real Google does differently from the fakes.
-- **Arabic / English toggle.** Touches every string.
 - **Tests: stable under load.** verify-categorize fails on its first run right after the heavy suites (3 times on 30 Oct),
   passes on rerun. verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
