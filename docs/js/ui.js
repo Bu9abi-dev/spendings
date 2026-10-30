@@ -1,3 +1,4 @@
+import { t } from './i18n.js';
 // Motion + chrome primitives: spring easings, bottom sheets with drag-to-dismiss, toasts, haptics.
 
 export const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -65,7 +66,7 @@ export function toast(text, { action, onAction, icon = '', tone = '', duration }
   requestAnimationFrame(() => host.classList.add('show'));
   const hide = () => { host.classList.remove('show'); setTimeout(() => { host.hidden = true; }, 300); };
   if (action) host.querySelector('.toast-action').onclick = () => { onAction?.(); hide(); };
-  announce(`${host.querySelector('.toast-text').textContent}${action ? `. ${action} is the next button.` : ''}`);
+  announce(`${host.querySelector('.toast-text').textContent}${action ? t('ui.next', { action }) : ''}`);
   toastHide = hide; toastMs = duration || (action ? 7000 : 2600);
   if (!host.dataset.watched) { // once: someone who has moved onto the toast (VoiceOver, keyboard) gets to finish before it leaves
     host.dataset.watched = '1';
@@ -93,7 +94,7 @@ function focusableScrollers(sheet) {
   new MutationObserver(fix).observe(sheet, { childList: true, subtree: true });
 }
 
-export function openSheet({ html, label = 'Sheet', onMount, onClose, tall = true }) {
+export function openSheet({ html, label = t('ui.sheet'), onMount, onClose, tall = true }) {
   const layer = document.getElementById('sheets');
   const app = document.getElementById('app');
   const prevFocus = document.activeElement;

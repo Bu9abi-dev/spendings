@@ -2,9 +2,10 @@
 // (spent vs limit per category) and the small bits of HTML Insights and Home show.
 // Pure on purpose (no store import) so tests/verify-budgets.mjs can run it in Node. The Settings sheet that
 // edits limits is in budgets-settings.js. Limits live in the Extras store: { v: 1, limits: { <categoryId>: AED } }.
-import { allCategories, SPEND_CATEGORIES, seriesColor, fmt } from './model.js';
+import { allCategories, SPEND_CATEGORIES, seriesColor, fmt, amtAED } from './model.js';
 import { esc } from './ui.js';
 import { icon } from './icons.js';
+import { t } from './i18n.js';
 
 export const BUDGETS_KEY = 'budgets';
 export const NEAR = 0.8; // 80% of the limit: "close"
@@ -64,7 +65,7 @@ export function worstBudget(rows) {
 
 /** Sum of the limits and of what's spent against them, for the card's intro line. */
 export function budgetTotals(rows) {
-  return rows.reduce((t, r) => ({ limit: t.limit + r.limit, spent: t.spent + r.spent }), { limit: 0, spent: 0 });
+  return rows.reduce((acc, r) => ({ limit: acc.limit + r.limit, spent: acc.spent + r.spent }), { limit: 0, spent: 0 });
 }
 
 /** Dirhams for a "left" or "over" figure: whole numbers, except under 1 AED, which shows its cents so a red row never reads "0 over". */
@@ -72,30 +73,30 @@ const gap = (n) => (n > 0 && n < 1 ? n.toFixed(2) : fmt(n, { whole: true }));
 const AT_LIMIT = 0.005;
 const tintOf = (r) => (r.status === 'over' ? 'var(--neg)' : r.status === 'near' ? 'var(--warn)' : seriesColor(r.meta.slot));
 export function leftText(r) {
-  if (Math.abs(r.left) < AT_LIMIT) return 'At the limit';
-  return r.left > 0 ? `AED ${gap(r.left)} left` : `AED ${gap(-r.left)} over`;
+  if (Math.abs(r.left) < AT_LIMIT) return t('bud.atLimit');
+  return r.left > 0 ? t('rp.left', { amt: amtAED(gap(r.left)) }) : t('rp.over', { amt: amtAED(gap(-r.left)) });
 }
 
 /** Insights card ("Category budgets"). With no limits it is a small prompt that opens Settings. */
 export function budgetsCard(rows, { isCurrent = true } = {}) {
   if (!rows.length) {
     return `<section class="panel budgets-card empty-budgets">
-      <h3 class="panel-title">Category budgets</h3>
+      <h3 class="panel-title">${t('bud.title')}</h3>
       <button type="button" class="budget-prompt" data-go="settings" data-anchor="budgets">
         <span class="row-icon" style="--tint:var(--tint-text)">${icon('plus', { size: 20 })}</span>
-        <span class="row-main"><span class="row-title">Set a category limit</span><span class="row-sub">Give a category a limit for each cycle and watch it fill up</span></span>
+        <span class="row-main"><span class="row-title">${t('bud.setLimit')}</span><span class="row-sub">${t('bud.setLimitSub')}</span></span>
         ${icon('chevR', { size: 16, cls: 'chev' })}</button>
     </section>`;
   }
-  const t = budgetTotals(rows);
+  const tot = budgetTotals(rows);
   return `<section class="panel budgets-card">
-    <h3 class="panel-title">Category budgets</h3>
-    <p class="panel-sub">${isCurrent ? 'This cycle so far' : 'That cycle'}: AED ${fmt(t.spent, { whole: true })} of AED ${fmt(t.limit, { whole: true })} across ${rows.length} ${rows.length === 1 ? 'category' : 'categories'}.</p>
+    <h3 class="panel-title">${t('bud.title')}</h3>
+    <p class="panel-sub">${t(isCurrent ? 'bud.sumThis' : 'bud.sumThat', { spent: amtAED(fmt(tot.spent, { whole: true })), limit: amtAED(fmt(tot.limit, { whole: true })), n: rows.length })}</p>
     <div class="bg-list">${rows.map((r) => `<div class="bg-row ${r.status}" style="--tint:${tintOf(r)}">
         <span class="lg-icon">${icon(r.meta.icon, { size: 16 })}</span>
-        <span class="bg-name"><b>${esc(nameOf(r.meta))}</b><small>AED ${fmt(r.spent, { whole: true })} of ${fmt(r.limit, { whole: true })}</small></span>
+        <span class="bg-name"><b>${esc(nameOf(r.meta))}</b><small>${t('bud.of', { a: amtAED(fmt(r.spent, { whole: true })), b: fmt(r.limit, { whole: true }) })}</small></span>
         <span class="bg-pct num">${pctText(r)}</span>
-        <span class="bg-track" role="progressbar" aria-label="${esc(nameOf(r.meta))} limit" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.floor(r.ratio * 100))}" aria-valuetext="AED ${fmt(r.spent, { whole: true })} of ${fmt(r.limit, { whole: true })}"><i style="--w:${Math.min(100, r.ratio * 100)}%"></i></span>
+        <span class="bg-track" role="progressbar" aria-label="${t('bud.limitOf', { name: esc(nameOf(r.meta)) })}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.min(100, Math.floor(r.ratio * 100))}" aria-valuetext="${t('bud.of', { a: amtAED(fmt(r.spent, { whole: true })), b: fmt(r.limit, { whole: true }) })}"><i style="--w:${Math.min(100, r.ratio * 100)}%"></i></span>
         <span class="bg-left num">${leftText(r)}</span>
       </div>`).join('')}</div>
   </section>`;
@@ -111,9 +112,9 @@ export function budgetNotice(rows, { isCurrent = true } = {}) {
   const { row: r, more } = w;
   const name = nameOf(r.meta);
   const main = r.status === 'over'
-    ? (Math.abs(r.left) < AT_LIMIT ? `${name} has reached its limit` : `${name} is over its limit by AED ${gap(-r.left)}`)
-    : `${name} is at ${pctText(r)} of its limit`;
-  return { priority: r.status, text: more ? `${main}, and ${more} more ${more === 1 ? 'is' : 'are'} close or over` : main, row: r, more };
+    ? (Math.abs(r.left) < AT_LIMIT ? t('bud.reached', { name }) : t('bud.overBy', { name, amt: amtAED(gap(-r.left)) }))
+    : t('bud.atPct', { name, pct: pctText(r) });
+  return { priority: r.status, text: more ? t('bud.andMore', { main, n: more }) : main, row: r, more };
 }
 
 /** Home: the notice as a quiet tappable line. Empty string when all is well or it isn't the current cycle.
@@ -132,11 +133,11 @@ export function budgetsSettingsRows(limits, byCategory, categories = allSpend())
   const rows = budgetRows(byCategory || new Map(), limits, categories);
   const list = rows.map((r) => `<button type="button" class="row link-row" data-budget-edit="${esc(r.id)}">
       <span class="row-icon" style="--tint:${seriesColor(r.meta.slot)}">${icon(r.meta.icon, { size: 20 })}</span>
-      <span class="row-main"><span class="row-title">${esc(nameOf(r.meta))}</span><span class="row-sub">AED ${fmt(r.spent, { whole: true })} spent this cycle</span></span>
+      <span class="row-main"><span class="row-title">${esc(nameOf(r.meta))}</span><span class="row-sub">${t('bud.spentCycle', { amt: amtAED(fmt(r.spent, { whole: true })) })}</span></span>
       <b class="num">${fmt(r.limit, { whole: true })}</b>${icon('chevR', { size: 16, cls: 'chev' })}</button>`).join('');
   return `${list}<button type="button" class="row link-row" data-budget-add="1">
       <span class="row-icon" style="--tint:var(--tint-text)">${icon('plus', { size: 20 })}</span>
-      <span class="row-main"><span class="row-title">Add a limit</span><span class="row-sub">${rows.length ? 'Pick another category' : 'Pick a category to keep an eye on'}</span></span></button>`;
+      <span class="row-main"><span class="row-title">${t('bud.addLimit')}</span><span class="row-sub">${rows.length ? t('bud.pickAnother') : t('bud.pickOne')}</span></span></button>`;
 }
 
 /** The categories you can still add a limit to: the ones shown in lists, minus those that already have one. */

@@ -2,6 +2,7 @@
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { remapGoalAccounts } from './goals.js';
 import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
+import { t } from './i18n.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
 
@@ -87,9 +88,9 @@ export function setConnection(url, token) {
 /* ───── Apps Script client ───── */
 
 async function call(body, { timeout = 45000 } = {}) {
-  if (!isConnected()) throw new Error('Not connected to your Google Sheet yet.');
+  if (!isConnected()) throw new Error(t('err.notConn'));
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), timeout);
+  const timer = setTimeout(() => ctrl.abort(), timeout);
   try {
     // text/plain keeps this a "simple" request, so the browser skips the CORS preflight Apps Script can't answer.
     const res = await fetch(state.conn.url, {
@@ -97,14 +98,14 @@ async function call(body, { timeout = 45000 } = {}) {
       headers: { 'Content-Type': 'text/plain;charset=utf-8' }, signal: ctrl.signal, redirect: 'follow',
     });
     const data = await res.json();
-    if (!data.ok) throw new Error(data.error || 'The sheet said no.');
+    if (!data.ok) throw new Error(data.error || t('err.said'));
     return data;
   } catch (e) {
     // a timeout or a dropped connection is worth retrying quietly; anything else is a real error
-    if (e.name === 'AbortError') throw Object.assign(new Error('The sheet took too long to answer.'), { transient: true });
-    if (e instanceof TypeError) throw Object.assign(new Error(navigator.onLine ? 'Couldn’t reach the sheet. Check the Web app URL.' : 'You’re offline. Changes will sync later.'), { transient: true });
+    if (e.name === 'AbortError') throw Object.assign(new Error(t('err.slow')), { transient: true });
+    if (e instanceof TypeError) throw Object.assign(new Error(navigator.onLine ? t('err.reach') : t('err.offline')), { transient: true });
     throw e;
-  } finally { clearTimeout(t); }
+  } finally { clearTimeout(timer); }
 }
 
 /** Does this script's reply to the app list its features? Remember them; a reply without any changes nothing. */
@@ -327,7 +328,7 @@ export function addEntry(fields) {
   // a BNPL payment ("Tabby · Noon") takes the plan's category; it isn't you teaching the app a merchant
   if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') state.merchants[merchantKey(e.merchant)] = e.category;
   if (!state.prefs.demo) enqueue({ op: 'add', id: e.id, entry: e });
-  record(e.type === 'Adjustment' ? `Matched ${e.account} with bank` : `Added ${describe(e)}`, () => deleteEntry(e.id));
+  record(e.type === 'Adjustment' ? t('undoL.matched', { acc: e.account }) : t('undoL.added', { what: describe(e) }), () => deleteEntry(e.id));
   persist(); emit('entries');
   sync();
   return e;
@@ -337,7 +338,7 @@ export function updateEntry(id, fields) {
   const i = state.entries.findIndex((x) => x.id === id);
   if (i < 0) return;
   const before = state.entries[i];
-  record(`Edited ${describe(before)}`, () => putBack(before));
+  record(t('undoL.edited', { what: describe(before) }), () => putBack(before));
   // a USD entry keeps the rate it was priced at unless its amount or currency changes
   const repriced = ('amount' in fields && +fields.amount !== +before.amount) || ('currency' in fields && fields.currency !== before.currency);
   // …or when the caller sets the price itself (a split): then the sheet gets that exact price too
@@ -368,7 +369,7 @@ function putBack(before) {
 export function deleteEntry(id) {
   const removed = state.entries.find((x) => x.id === id);
   state.entries = state.entries.filter((x) => x.id !== id);
-  if (removed) record(`Deleted ${describe(removed)}`, () => restoreEntry(removed));
+  if (removed) record(t('undoL.deleted', { what: describe(removed) }), () => restoreEntry(removed));
   if (!state.prefs.demo) enqueue({ op: 'delete', id });
   persist(); emit('entries');
   sync();
@@ -384,7 +385,7 @@ export function restoreEntry(entry) {
 
 export function saveSettings(patch) {
   const before = Object.fromEntries(Object.keys(patch).map((k) => [k, state.settings[k]]));
-  record('Changed a setting', () => saveSettings(before));
+  record(t('undoL.setting'), () => saveSettings(before));
   state.settings = { ...state.settings, ...patch };
   state.entries = state.entries.map((e) => ({ ...e, cycle: cycleOf(e.date, state.settings.cycleStart) }));
   if (!state.prefs.demo) enqueue({ op: 'settings', id: 'settings', settings: patch });
@@ -396,7 +397,7 @@ export function saveSettings(patch) {
 const merchantKey = (m) => String(m || '').toLowerCase().replace(/[^a-z0-9\u0600-\u06ff]+/g, ' ').trim();
 export function savePlan(plan) {
   const before = state.plan, allowanceBefore = state.settings.allowance;
-  record('Changed the payday plan', () => {
+  record(t('undoL.plan'), () => {
     savePlan(before);
     if (state.settings.allowance !== allowanceBefore) saveSettings({ allowance: allowanceBefore });
   });
@@ -426,7 +427,7 @@ function commitDismissed(map) {
 export function dismissPlan(id, cycle) {
   const before = state.dismissed;
   const name = state.plan.find((p) => p.id === id)?.name || 'prompt';
-  record(`Dismissed ${name}`, () => commitDismissed(before));
+  record(t('undoL.dismissed', { what: name }), () => commitDismissed(before));
   // older cycles' dismissals have expired, so they're dropped as new ones are written
   const next = Object.fromEntries(Object.entries(before).filter(([, c]) => c >= cycle));
   next[id] = cycle;
@@ -437,7 +438,7 @@ export function restorePlan(id) {
   if (!(id in state.dismissed)) return;
   const before = state.dismissed;
   const name = state.plan.find((p) => p.id === id)?.name || 'prompt';
-  record(`Brought back ${name}`, () => commitDismissed(before));
+  record(t('undoL.back', { what: name }), () => commitDismissed(before));
   const next = { ...before };
   delete next[id];
   commitDismissed(next);
@@ -457,7 +458,7 @@ export const extrasOnPhoneOnly = () => state.extrasUnsent.length > 0;
     found), which isn't something you did, so it doesn't take a place in the Undo history.
     `{ reverse }` replaces the default Undo (put the whole old value back) with your own: BNPL uses it so
     undoing one plan change undoes only that change, read fresh at undo time, and keeps links found since. */
-export function saveExtra(key, value, label = 'Changed a setting', { undoable = true, reverse = null } = {}) {
+export function saveExtra(key, value, label = t('undoL.setting'), { undoable = true, reverse = null } = {}) {
   if (!EXTRA_KEY.test(key)) throw new Error(`Bad extras key: ${key}`);
   const before = Object.hasOwn(state.extras, key) ? state.extras[key] : null;
   if (undoable) record(label, reverse || (() => saveExtra(key, before)));
@@ -504,7 +505,7 @@ export const nameTaken = (name, except = '') => state.accounts.some((a) => a.nam
 
 export function addAccount(a) {
   const before = state.accounts;
-  record(`Added ${a.name.trim()}`, () => commitAccounts(before));
+  record(t('undoL.added', { what: a.name.trim() }), () => commitAccounts(before));
   commitAccounts([...state.accounts, { name: a.name.trim(), note: a.note || '', color: a.color || 'graphite', wallet: a.wallet || '', archived: false }]);
 }
 
@@ -512,7 +513,7 @@ export function addAccount(a) {
 export function updateAccount(oldName, patch) {
   const newName = (patch.name ?? oldName).trim();
   const prev = state.accounts.find((a) => a.name === oldName);
-  if (prev) record(newName !== oldName ? `Renamed ${oldName} to ${newName}` : `Edited ${oldName}`, () => updateAccount(newName, { ...prev }));
+  if (prev) record(newName !== oldName ? t('undoL.renamed', { a: oldName, b: newName }) : t('undoL.edited', { what: oldName }), () => updateAccount(newName, { ...prev }));
   muted++;
   if (newName !== oldName) {
     const sw = (v) => (v === oldName ? newName : v);
@@ -552,7 +553,7 @@ export function removeAccount(name, moveTo) {
   }
   commitAccounts(state.accounts.map((a) => (a.name === name ? { ...a, archived: true } : a)));
   muted--;
-  record(`Removed ${name}`, () => { if (closing) deleteEntry(closing.id); if (state.plan !== planBefore) savePlan(planBefore); commitAccounts(before); });
+  record(t('undoL.removed', { what: name }), () => { if (closing) deleteEntry(closing.id); if (state.plan !== planBefore) savePlan(planBefore); commitAccounts(before); });
 }
 
 /** The setup guide's answers, once a sheet is connected: accounts first (the sheet checks settings and

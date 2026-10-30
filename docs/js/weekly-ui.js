@@ -5,16 +5,17 @@
 // with { undoable: false }: opening a summary or tapping the pace alert isn't something to undo, and an Undo step for it
 // would sit on top of the real last change. It syncs like any extra. The week line shows Mondays and Tuesdays only, so it
 // also clears itself; the pace alert stays quiet for that cycle until the day it runs out moves 3 or more days earlier.
-import { categoryMeta, seriesColor, homeNumbers, fmt } from './model.js';
+import { categoryMeta, seriesColor, homeNumbers, fmt, amtAED } from './model.js';
 import { state, getExtra, saveExtra } from './store.js';
 import { openSheet, haptic, esc } from './ui.js';
 import { icon } from './icons.js';
+import { t } from './i18n.js';
 import { readBnpl, shortDay } from './bnpl.js';
 import { currentLimits } from './budgets-settings.js';
 import { weeklySummary, paceAlert, paceSeen, summaryDue, summaryLine, categoryLabel } from './weekly.js';
 
 export const WEEKLY_KEY = 'weekly';
-const aed = (n) => `AED ${fmt(n, { whole: true })}`;
+const aed = (n) => `${amtAED(fmt(n, { whole: true }))}`;
 const stored = () => { const v = getExtra(WEEKLY_KEY, null); return v && typeof v === 'object' ? v : {}; };
 const seen = () => String(stored().seen || '');
 /** Save part of the `weekly` extra, keeping the rest (quietly: not an Undo step). */
@@ -60,34 +61,34 @@ export function weeklyHomeNotices(m, isCurrent, now = new Date()) {
 const range = (w) => `${shortDay(w.from)} – ${shortDay(w.to)}`;
 
 function sheetBody(s, pace) {
-  const vsText = !s.vs ? 'Not enough weeks yet to say what is usual.'
-    : s.vs.tone === 'same' ? `About the usual week (AED ${fmt(s.vs.usual, { whole: true })}).`
-    : `${aed(Math.abs(s.vs.delta))} ${s.vs.tone === 'more' ? 'more' : 'less'} than the usual week (AED ${fmt(s.vs.usual, { whole: true })}).`;
+  const vsText = !s.vs ? t('wk.notEnough')
+    : s.vs.tone === 'same' ? t('wk.aboutUsualWeek', { amt: amtAED(fmt(s.vs.usual, { whole: true })) })
+    : t(s.vs.tone === 'more' ? 'wk.moreThan' : 'wk.lessThan', { amt: aed(Math.abs(s.vs.delta)), usual: amtAED(fmt(s.vs.usual, { whole: true })) });
   const top = s.top.map((c) => `<div class="row"><span class="row-icon" style="--tint:${catTint(c.id)}">${icon(catIcon(c.id), { size: 20 })}</span>
       <span class="row-main"><span class="row-title">${esc(c.label)}</span></span><b class="num">${fmt(c.amount, { whole: true })}</b></div>`).join('');
   const big = s.biggest;
   const c = s.coming;
   const comingRows = [
     ...c.bnpl.map((x) => `<div class="row"><span class="row-icon" style="--tint:${x.overdue ? 'var(--warn)' : 'var(--tint-text)'}">${icon(x.overdue ? 'warn' : 'calendar', { size: 20 })}</span>
-      <span class="row-main"><span class="row-title">${esc(x.name || 'Buy now, pay later')}</span><span class="row-sub">${x.overdue ? `Overdue since ${shortDay(x.due)}` : `Pay later · due ${shortDay(x.due)}`}</span></span><b class="num">${fmt(x.amount)}</b></div>`),
+      <span class="row-main"><span class="row-title">${esc(x.name || t('set.bnpl'))}</span><span class="row-sub">${x.overdue ? t('wk.overdueSince', { date: shortDay(x.due) }) : t('wk.payLaterDue', { date: shortDay(x.due) })}</span></span><b class="num">${fmt(x.amount)}</b></div>`),
     ...c.subs.map((x) => `<div class="row"><span class="row-icon" style="--tint:var(--series-other)">${icon('calendar', { size: 20 })}</span>
-      <span class="row-main"><span class="row-title">${esc(x.name)}</span><span class="row-sub">Subscription · ${shortDay(x.day)}</span></span><b class="num">${fmt(x.amount)}</b></div>`),
+      <span class="row-main"><span class="row-title">${esc(x.name)}</span><span class="row-sub">${t('wk.subOn', { date: shortDay(x.day) })}</span></span><b class="num">${fmt(x.amount)}</b></div>`),
   ].join('');
   // budgets run for the whole cycle, not the week, so they get their own heading
   const budgetRowsHTML = [
     ...c.budgets.map((x) => `<div class="row"><span class="row-icon" style="--tint:${x.status === 'over' ? 'var(--neg)' : 'var(--warn)'}">${icon(catIcon(x.id), { size: 20 })}</span>
-      <span class="row-main"><span class="row-title">${esc(x.label)}</span><span class="row-sub">${x.status === 'over' ? 'Over its limit' : `At ${Math.floor(x.ratio * 100)}% of its limit`}</span></span><b class="num ${x.status === 'over' ? 'nw-neg' : ''}">${x.left >= 0 ? `${fmt(x.left, { whole: true })} left` : `${fmt(-x.left, { whole: true })} over`}</b></div>`),
+      <span class="row-main"><span class="row-title">${esc(x.label)}</span><span class="row-sub">${x.status === 'over' ? t('wk.overLimit') : t('wk.atPct', { pct: Math.floor(x.ratio * 100) })}</span></span><b class="num ${x.status === 'over' ? 'nw-neg' : ''}">${x.left >= 0 ? t('rp.left', { amt: fmt(x.left, { whole: true }) }) : t('rp.over', { amt: fmt(-x.left, { whole: true }) })}</b></div>`),
   ].join('');
-  return `<div class="wk-hero"><span>${esc(range(s.week))}</span><b class="num">${aed(s.spent)}</b>${s.refunds > 0 ? `<small>spent before refunds (${aed(s.refunds)} refunded)</small>` : ''}<small>${esc(vsText)}</small></div>
+  return `<div class="wk-hero"><span>${esc(range(s.week))}</span><b class="num">${aed(s.spent)}</b>${s.refunds > 0 ? `<small>${t('wk.beforeRefundsSmall', { amt: aed(s.refunds) })}</small>` : ''}<small>${esc(vsText)}</small></div>
     ${pace ? `<p class="wk-pace">${icon('warn', { size: 16 })}<span>${esc(pace.text)}</span></p>` : ''}
-    <div class="group-head"><h3 class="group-title">Top categories</h3></div>
-    <section class="group">${top || '<div class="empty"><p>Nothing last week.</p></div>'}</section>
-    ${big ? `<div class="group-head"><h3 class="group-title">Biggest payment</h3></div>
+    <div class="group-head"><h3 class="group-title">${t('wk.topCats')}</h3></div>
+    <section class="group">${top || `<div class="empty"><p>${t('wk.nothingLast')}</p></div>`}</section>
+    ${big ? `<div class="group-head"><h3 class="group-title">${t('wk.biggest')}</h3></div>
     <section class="group"><div class="row"><span class="row-icon" style="--tint:${catTint(big.category)}">${icon(catIcon(big.category), { size: 20 })}</span>
       <span class="row-main"><span class="row-title">${esc(big.merchant || categoryLabel(big.category))}</span><span class="row-sub">${esc(categoryLabel(big.category))} · ${shortDay(big.day)}</span></span><b class="num">${fmt(big.amount, { whole: true })}</b></div></section>` : ''}
-    <div class="group-head"><h3 class="group-title">Coming up this week</h3></div>
-    <section class="group">${comingRows || '<div class="empty"><p>Nothing due this week.</p></div>'}</section>
-    ${budgetRowsHTML ? `<div class="group-head"><h3 class="group-title">Budgets this cycle</h3></div>
+    <div class="group-head"><h3 class="group-title">${t('wk.coming')}</h3></div>
+    <section class="group">${comingRows || `<div class="empty"><p>${t('wk.nothingDue')}</p></div>`}</section>
+    ${budgetRowsHTML ? `<div class="group-head"><h3 class="group-title">${t('wk.budgetsCycle')}</h3></div>
     <section class="group">${budgetRowsHTML}</section>` : ''}`;
 }
 
@@ -95,10 +96,10 @@ function sheetBody(s, pace) {
 export function openWeek(now = new Date()) {
   const s = currentSummary(now);
   const pace = paceAlert(homeNow(now).pace, now);
-  if (summaryDue(now, seen(), s.week)) saveWeekly({ seen: s.week.key }, 'Opened Your week');
+  if (summaryDue(now, seen(), s.week)) saveWeekly({ seen: s.week.key }, t('wk.opened'));
   openSheet({
-    label: 'Your week',
-    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">Your week</h2><button class="text-btn strong" data-wk-act="done" type="button">Done</button></header>
+    label: t('wk.title'),
+    html: `<header class="sheet-head"><span class="icon-btn-spacer"></span><h2 class="sheet-title">${t('wk.title')}</h2><button class="text-btn strong" data-wk-act="done" type="button">${t('common.done')}</button></header>
       <div class="sheet-scroll wk-sheet">${sheetBody(s, pace)}</div>`,
     onMount(sheet, close) {
       sheet.addEventListener('click', (ev) => { if (ev.target.closest('[data-wk-act="done"]')) close(); });
@@ -108,14 +109,14 @@ export function openWeek(now = new Date()) {
 
 /** Taps on the Home lines and the Insights card. Returns true when handled. The pace alert is marked seen here and
     returns false, so main.js's data-go handler still opens Insights at the pace card. */
-export function weeklyClick(t) {
-  const paceBtn = t.closest('[data-pace-seen]');
+export function weeklyClick(tg) {
+  const paceBtn = tg.closest('[data-pace-seen]');
   if (paceBtn) {
     const [cycle, outDay] = paceBtn.dataset.paceSeen.split('|');
-    saveWeekly({ pace: { cycle, outDay } }, 'Saw the allowance pace alert');
+    saveWeekly({ pace: { cycle, outDay } }, t('wk.sawPace'));
     return false;
   }
-  if (!t.closest('[data-weekly]')) return false;
+  if (!tg.closest('[data-weekly]')) return false;
   haptic();
   openWeek();
   return true;
@@ -129,12 +130,12 @@ export function weeklyCard() {
   if (!s.hasData) return '';
   const max = Math.max(1, ...s.top.map((c) => c.amount));
   return `<section class="panel wk-card">
-    <h3 class="panel-title">Last week</h3>
-    <p class="panel-sub">${esc(range(s.week))} · <b>${esc(summaryLine(s.spent, s.vs, aed, s.refunds).replace('Last week you spent ', 'You spent '))}</b>${s.vs && s.vs.tone !== 'same' ? ` (usual ${aed(s.vs.usual)})` : ''}</p>
+    <h3 class="panel-title">${t('wk.lastWeek')}</h3>
+    <p class="panel-sub">${esc(range(s.week))} · <b>${esc(summaryLine(s.spent, s.vs, aed, s.refunds, true))}</b>${s.vs && s.vs.tone !== 'same' ? ` (${t('wk.usual', { amt: aed(s.vs.usual) })})` : ''}</p>
     <div class="tm-list">${s.top.map((c) => `<div class="tm-row">
         <span class="tm-name"><b>${esc(c.label)}</b></span>
         <span class="hb-track"><i style="--w:${(c.amount / max) * 100}%; --tint:${catTint(c.id)}"></i></span>
         <span class="hb-val num">${fmt(c.amount, { whole: true })}</span></div>`).join('')}</div>
-    <button type="button" class="btn-plain wk-open" data-weekly="open">See your week${icon('chevR', { size: 14, cls: 'chev' })}</button>
+    <button type="button" class="btn-plain wk-open" data-weekly="open">${t('wk.seeWeek')}${icon('chevR', { size: 14, cls: 'chev' })}</button>
   </section>`;
 }

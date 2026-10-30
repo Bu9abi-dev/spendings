@@ -51,7 +51,9 @@ const P = {
   store: '<path d="M4 9.5 5.5 4.5h13L20 9.5"/><path d="M4 9.5a2.7 2.7 0 0 0 5.3 0 2.7 2.7 0 0 0 5.4 0 2.7 2.7 0 0 0 5.3 0M5.5 12v8h13v-8M10 20v-4.5h4V20"/>',
 };
 
+// Icons that point somewhere are mirrored in Arabic (right to left), like iOS: chevrons, undo, the delete key.
+const FLIP = new Set(['chevL', 'chevR', 'undo', 'backspace']);
 export function icon(name, { size = 22, cls = '', label = '' } = {}) {
   const a11y = label ? `role="img" aria-label="${label}"` : 'aria-hidden="true"';
-  return `<svg class="i ${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${a11y}>${P[name] || P.dots}</svg>`;
+  return `<svg class="i ${FLIP.has(name) ? 'i-flip ' : ''}${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" ${a11y}>${P[name] || P.dots}</svg>`;
 }

@@ -1,6 +1,7 @@
 // Activity filters: which entries match, and what they add up to. Pure functions (no page, no state),
 // so tests can run them in Node.
-import { cycleOf, shiftCycle, dayKey, toAED, fmt } from './model.js';
+import { cycleOf, shiftCycle, dayKey, toAED, fmt, amtAED, shortDay, categoryMeta } from './model.js';
+import { t } from './i18n.js';
 
 // Everything the Activity tab can filter on. Empty string = "any".
 export const EMPTY_FILTER = { q: '', kind: 'all', account: '', category: '', period: 'all', from: '', to: '', min: '', max: '' };
@@ -66,16 +67,15 @@ export function totals(list, settings) {
 export function activeLabels(f) {
   const out = [];
   if (f.account) out.push(['account', f.account]);
-  if (f.category) out.push(['category', f.category === NO_CATEGORY ? 'Uncategorised' : f.category]);
-  if (f.period === 'this') out.push(['period', 'This cycle']);
-  if (f.period === 'last') out.push(['period', 'Last cycle']);
-  if (f.period === 'custom' && (f.from || f.to)) out.push(['period', `${f.from ? shortDay(f.from) : '…'} – ${f.to ? shortDay(f.to) : 'today'}`]);
+  if (f.category) out.push(['category', f.category === NO_CATEGORY ? t('act.uncat') : categoryMeta(f.category)?.label || categoryMeta(f.category, 'Income')?.label || f.category]);
+  if (f.period === 'this') out.push(['period', t('period.this')]);
+  if (f.period === 'last') out.push(['period', t('period.last')]);
+  if (f.period === 'custom' && (f.from || f.to)) out.push(['period', `${f.from ? shortDay(f.from) : '…'} – ${f.to ? shortDay(f.to) : t('home.today')}`]);
   const min = num(f.min), max = num(f.max);
-  if (min != null && max != null) out.push(['amount', `AED ${fmt(min)}–${fmt(max)}`]);
-  else if (min != null) out.push(['amount', `AED ${fmt(min)}+`]);
-  else if (max != null) out.push(['amount', `Up to AED ${fmt(max)}`]);
+  if (min != null && max != null) out.push(['amount', amtAED(`${fmt(min)}–${fmt(max)}`)]);
+  else if (min != null) out.push(['amount', `${amtAED(fmt(min))}+`]);
+  else if (max != null) out.push(['amount', t('filter.upTo', { amt: amtAED(fmt(max)) })]);
   return out;
 }
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const shortDay = (key) => { const [, m, d] = key.split('-').map(Number); return `${d} ${MON[m - 1]}`; };
+// short dates ("12 Oct") come from model.js (shortDay), in the current language

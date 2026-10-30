@@ -1,7 +1,8 @@
 // Savings goals and net worth: pure maths, no store or DOM, so Node tests can import it.
 // Stored in Extras as `goals` = { v: 1, goals: [...] } and `investments` = { v: 1, items: [...] }.
 // Anything that isn't that shape (an array, junk, a different version) is treated as empty.
-import { cycleOf, shiftCycle, cycleBounds, dayKey, uid } from './model.js';
+import { cycleOf, shiftCycle, cycleBounds, dayKey, uid, shortDay } from './model.js';
+import { t } from './i18n.js';
 
 const isObj = (x) => x && typeof x === 'object' && !Array.isArray(x);
 const num = (x) => (typeof x === 'number' || (typeof x === 'string' && x.trim() !== '') ? +x : NaN);
@@ -129,9 +130,9 @@ export function remapGoalAccounts(x, from, to) {
   return hit ? { ...x, goals } : null;
 }
 
-const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+/** "12 Oct 2026", month in the current language. */
 export function dateLabel(d) {
   if (!goodDate(d)) return '';
-  const [y, m, day] = d.split('-').map(Number);
-  return `${day} ${MON[m - 1]} ${y}`;
+  const [y] = d.split('-').map(Number);
+  return `${shortDay(d)} ${y}`;
 }
