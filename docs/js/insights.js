@@ -5,7 +5,8 @@ import {
 import { state } from './store.js';
 import { esc } from './ui.js';
 import { icon } from './icons.js';
-import { donut, paceLine, inOutBars } from './charts.js';
+import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
+import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
 
 let insightsCycle = null;
@@ -58,6 +59,26 @@ export function renderInsights() {
     return { label: cycleName(c, false).split(' ')[0], income: x.income, spent: x.spent, current: c === cyc };
   });
 
+  // spending by day and week (every account, transfers left out)
+  const daily = dailySpend(state.entries, cyc, s);
+  const elapsed = today + 1;
+  const avgDay = daily.slice(0, elapsed).reduce((a, v) => a + v, 0) / elapsed;
+  const barDays = daily.map((v, i) => ({ label: labels[i], value: v, future: i > today, today: isCurrent && i === today }));
+  const barWeeks = weeklySpend(daily).map((w) => ({
+    label: labels[w.from],
+    range: w.from === w.to ? labels[w.from] : `${labels[w.from]} – ${labels[w.to]}`,
+    value: w.total,
+    future: w.from > today,
+  }));
+
+  const merchants = topMerchants(state.entries, cyc, s, 5);
+  const merchMax = Math.max(1, ...merchants.map((m) => m.total));
+
+  const trends = categoryTrends(state.entries, cyc, s, 6);
+  const catOf = (id) => SPEND_CATEGORIES.find((c) => c.id === id)
+    || (id === 'Uncategorised' ? { id, short: 'Needs category', icon: 'tray', slot: 0, warn: true } : { id, icon: 'dots', slot: 0 });
+  const trendNote = (t) => (t.usual == null ? 'New this cycle' : `Usual AED ${fmt(t.usual, { whole: true })}`);
+
   const accMax = Math.max(1, ...ACCOUNTS.map((a) => sum.byAccount.get(a.id)?.spent || 0));
 
   return `
@@ -81,6 +102,20 @@ export function renderInsights() {
           <span class="lg-pct num">${Math.round((v / Math.max(1, sum.spent)) * 100)}%</span>
         </div>`).join('') : '<p class="muted center">No spending in this cycle.</p>'}
       </div>
+    </section>
+
+    <section class="panel">
+      <h3 class="panel-title">Spending by day</h3>
+      <p class="panel-sub">Every account. Moving money between accounts isn’t counted.</p>
+      ${sum.spent ? spendBars({ days: barDays, weeks: barWeeks, avg: avgDay }) : '<p class="muted center">No spending in this cycle.</p>'}
+    </section>
+
+    <section class="panel">
+      <h3 class="panel-title">Top places</h3>
+      ${merchants.length ? `<div class="tm-list">${merchants.map((m) => `<div class="tm-row">
+          <span class="tm-name"><b>${esc(m.name)}</b><small>${m.count} ${m.count === 1 ? 'payment' : 'payments'}</small></span>
+          <span class="hb-track"><i style="--w:${(m.total / merchMax) * 100}%"></i></span>
+          <span class="hb-val num">${fmt(m.total, { whole: true })}</span></div>`).join('')}</div>` : '<p class="muted center">No places logged in this cycle.</p>'}
     </section>
 
     <section class="panel">
@@ -113,5 +148,15 @@ export function renderInsights() {
       <h3 class="panel-title">Last six cycles</h3>
       <div class="series-legend"><span><i class="sw in"></i>Money in</span><span><i class="sw out"></i>Money out</span></div>
       ${inOutBars(six)}
+    </section>
+
+    <section class="panel">
+      <h3 class="panel-title">Categories over six cycles</h3>
+      <p class="panel-sub">${isCurrent ? 'This cycle so far is the solid bar.' : 'The cycle shown is the solid bar.'} “Usual” is the average of the cycles before it.</p>
+      ${trends.length ? `<div class="tr-list">${trends.map((t) => { const c = catOf(t.id); const color = c.warn ? 'var(--warn)' : seriesColor(c.slot); return `<div class="tr-row">
+          <span class="lg-icon" style="--tint:${color}">${icon(c.icon, { size: 16 })}</span>
+          <span class="tr-name"><b>${esc(c.warn ? c.short : t.id)}</b><small>${trendNote(t)}</small></span>
+          ${sparkBars(t.values, color)}
+          <span class="tr-val num">${fmt(t.values[t.values.length - 1], { whole: true })}</span></div>`; }).join('')}</div>` : '<p class="muted center">No spending in the last six cycles.</p>'}
     </section>`;
 }
