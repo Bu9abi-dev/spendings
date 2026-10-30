@@ -126,6 +126,27 @@ assert.equal(post({ action: 'list' }).settings.allowanceAccount, 'ADCB Allowance
 r = post({ action: 'accounts', accounts: post({ action: 'list' }).accounts.map((a) => (a.name === 'Cash' ? { ...a, archived: true } : a)) });
 assert.equal(r.accounts.find((a) => a.name === 'Cash').archived, true);
 
+// people (money owed): a person is never matched as your card, and lending from the allowance card uses allowance
+{
+  const allow = post({ action: 'list' }).settings.allowanceAccount;
+  post({ action: 'accounts', accounts: [...post({ action: 'list' }).accounts, { name: 'Visa', note: 'Person', color: 'graphite', wallet: '' }] });
+  let x = post({ source: 'applepay', amount: 'AED 12', merchant: 'Cafe', card: 'Visa Gold', category: 'Food & Drinks' });
+  assert.equal(x.entry.account, 'Visa'); // not flagged yet: the old name match still applies
+  assert.equal(post({ action: 'extras', key: 'people', value: { v: 1, names: ['Visa'] } }).ok, true);
+  x = post({ source: 'applepay', amount: 'AED 13', merchant: 'Cafe', card: 'Visa Gold', category: 'Food & Drinks' });
+  assert.notEqual(x.entry.account, 'Visa');
+  assert.equal(x.entry.status, 'Review'); // unknown card, for you to sort
+  x = post({ source: 'applepay', amount: 'AED 14', merchant: 'Visa', card: 'ADIB Visa', category: 'Food & Drinks' });
+  assert.equal(x.entry.type, 'Spend'); // paying a shop called like a person is still spending
+  const cyc = ctx.cycleOf_(new Date(), 27);
+  const left0 = ctx.cycleSummary_(cyc).allowanceLeft;
+  post({ action: 'add', entry: { id: 'lend1', type: 'Transfer', amount: 50, account: allow, toAccount: 'Visa' } });
+  assert.equal(Math.round((left0 - ctx.cycleSummary_(cyc).allowanceLeft) * 100) / 100, 50);
+  post({ action: 'add', entry: { id: 'back1', type: 'Transfer', amount: 50, account: 'Visa', toAccount: allow } });
+  assert.equal(Math.round(ctx.cycleSummary_(cyc).allowanceLeft * 100) / 100, Math.round(left0 * 100) / 100);
+  post({ action: 'extras', key: 'people', value: null });
+}
+
 // reset: entries and merchants cleared, a hidden backup keeps the old ledger, accounts survive
 const before = post({ action: 'list' }).entries.length;
 assert.ok(before > 0);
@@ -242,6 +263,44 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   // a merchant that merely contains an account's letters is still a purchase
   r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('12.00', 'CASHEW HOUSE') });
   assert.equal(r.entry.type, 'Spend');
+
+  // a payment split in the app (money owed): Apple Pay logs 100, the app cuts it to your 60 plus a
+  // `-split` Transfer of 40 to a person; the bank alert for the full 100 is the same payment
+  p2({ action: 'accounts', accounts: [...p2({ action: 'list' }).accounts, { name: 'Ahmed', note: 'Person', color: 'graphite', wallet: '' }] });
+  p2({ action: 'extras', key: 'people', value: { v: 1, names: ['Ahmed'] } });
+  r = p2({ source: 'applepay', amount: 'AED 100.00', merchant: 'Zuma', card: 'ADCB Debit', category: 'Food & Drinks' });
+  const sid = r.entry.id;
+  assert.equal(p2({ action: 'update', id: sid, fields: { amount: 60 } }).ok, true);
+  p2({ action: 'add', entry: { id: `${sid}-split`, type: 'Transfer', amount: 40, account: 'ADCB', toAccount: 'Ahmed', note: 'Split: Zuma', source: 'Split', date: r.entry.date } });
+  const n1 = ledger().length;
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('100.00', 'ZUMA') });
+  assert.equal(r.duplicate, true, 'the alert for the whole bill matches the split payment');
+  assert.match(r.message, /^Already logged · AED 100 · Zuma · split with Ahmed/);
+  assert.equal(ledger().length, n1, 'nothing logged twice');
+  const zuma = ledger().find((e) => e.id === sid);
+  assert.equal(zuma.amount, 60, 'your share stays your share');
+  assert.equal(zuma.type, 'Spend');
+  assert.equal(zuma.source, 'Apple Pay + Bank alert', 'paired once');
+  // one-to-one: a second alert for 100 (another real payment) is logged
+  r = p2({ source: 'bank', app: 'ADCB', title: 'ADCBAlert', body: adcb('100.00', 'ZUMA') });
+  assert.equal(r.duplicate, false);
+  assert.equal(ledger().length, n1 + 1);
+  // an alert for just your share or just theirs doesn't match the split pair
+  r = p2({ source: 'applepay', amount: 'AED 100.00', merchant: 'Zuma', card: 'ADCB Debit', category: 'Food & Drinks' });
+  assert.equal(r.duplicate, true, 'the new bank alert pairs with its own Apple Pay');
+  r = p2({ source: 'applepay', amount: 'AED 40.00', merchant: 'Zuma', card: 'ADCB Debit', category: 'Food & Drinks' });
+  assert.equal(r.duplicate, false);
+
+  // a USD split: each half keeps the price the app gave it, so the halves add up to the whole in AED
+  r = p2({ action: 'add', entry: { id: 'usd1', type: 'Spend', amount: 10.01, currency: 'USD', account: 'ADCB', category: 'Shopping', source: 'App', amountAED: 36.77 } });
+  assert.equal(r.entries[0].amountAED, 36.77, 'an app-priced USD entry keeps its price');
+  p2({ action: 'update', id: 'usd1', fields: { amount: 5.01, amountAED: 18.41 } });
+  p2({ action: 'add', entry: { id: 'usd1-split', type: 'Transfer', amount: 5, currency: 'USD', account: 'ADCB', toAccount: 'Ahmed', source: 'Split', amountAED: 18.36 } });
+  const usd = ledger().filter((e) => e.id === 'usd1' || e.id === 'usd1-split');
+  assert.equal(Math.round(usd.reduce((t, e) => t + e.amountAED, 0) * 100) / 100, 36.77);
+  // an add without a price (the Shortcut, older app versions) is still priced by the sheet
+  r = p2({ action: 'add', entry: { id: 'usd2', type: 'Spend', amount: 10, currency: 'USD', account: 'ADCB', category: 'Shopping' } });
+  assert.equal(r.entries[0].amountAED, 36.73);
 }
 
 // Extras: one JSON value per key, updated in place, returned by list, kept through a reset

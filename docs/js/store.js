@@ -1,5 +1,5 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, balances, cycleOf, toAED, uid, money } from './model.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { remapGoalAccounts } from './goals.js';
 import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
 
@@ -40,6 +40,7 @@ export const isConnected = () => !!(state.conn.url && state.conn.token);
 export const isDemo = () => !!state.prefs.demo;
 export function subscribe(fn) { listeners.add(fn); return () => listeners.delete(fn); }
 function emit(reason) {
+  applyPeople(); // even mid-batch, so account lists are right for the rest of the batch
   if (batching) { batchEmits.add(reason); return; }
   applyCategories();
   for (const fn of listeners) fn(reason);
@@ -55,6 +56,16 @@ function applyCategories() {
   setCategoryList(cfg);
 }
 applyCategories();
+
+// People (money owed) are accounts named in the `people` extra: { v: 1, names: [...] }.
+let appliedPeople;
+function applyPeople() {
+  const cfg = state.extras.people;
+  if (cfg === appliedPeople) return;
+  appliedPeople = cfg;
+  setPeopleList(cfg && Array.isArray(cfg.names) ? cfg.names : []);
+}
+applyPeople();
 
 function persist() {
   if (state.prefs.demo || batching) return;
@@ -282,8 +293,11 @@ export function batch(label, fn) {
 const describe = (e) => `${money(e.amount, e.currency)}${e.merchant ? ` · ${e.merchant}` : e.type === 'Transfer' ? ` · ${e.account} → ${e.toAccount}` : ''}`;
 const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'category', 'merchant', 'note', 'date', 'source'];
 
+// a price in AED set on purpose (each half of a USD split, so the halves add up to the whole)
+const explicitAED = (f) => f.amountAED != null && f.amountAED !== '' && !Number.isNaN(+f.amountAED) && (f.currency || 'AED') !== 'AED';
+
 export function addEntry(fields) {
-  const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields });
+  const e = finalize({ id: uid(), source: 'App', currency: 'AED', note: '', merchant: '', ...fields }, { keepAED: explicitAED({ currency: 'AED', ...fields }) });
   state.entries = sortEntries([e, ...state.entries]);
   // a BNPL payment ("Tabby · Noon") takes the plan's category; it isn't you teaching the app a merchant
   if (e.merchant && e.category && e.type === 'Spend' && e.source !== 'BNPL') state.merchants[merchantKey(e.merchant)] = e.category;
@@ -301,11 +315,14 @@ export function updateEntry(id, fields) {
   record(`Edited ${describe(before)}`, () => putBack(before));
   // a USD entry keeps the rate it was priced at unless its amount or currency changes
   const repriced = ('amount' in fields && +fields.amount !== +before.amount) || ('currency' in fields && fields.currency !== before.currency);
-  const e = finalize({ ...before, ...fields }, { keepAED: !repriced && before.amountAED != null && before.amountAED !== '' });
+  // …or when the caller sets the price itself (a split): then the sheet gets that exact price too
+  const priced = 'amountAED' in fields && explicitAED({ ...before, ...fields });
+  const e = finalize({ ...before, ...fields }, { keepAED: priced || (!repriced && before.amountAED != null && before.amountAED !== '') });
   state.entries[i] = e;
   sortEntries(state.entries);
   const sent = { ...fields, cycle: undefined };
-  delete sent.cycle; delete sent.status; delete sent.amountAED;
+  delete sent.cycle; delete sent.status;
+  if (priced) sent.amountAED = +fields.amountAED; else delete sent.amountAED;
   if (!state.prefs.demo) enqueue({ op: 'update', id, fields: sent });
   persist(); emit('entries');
   sync();
@@ -545,6 +562,7 @@ export function loadDemo() {
   state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
   state.extras = demoExtras();
   setAccountList(state.accounts);
+  applyPeople();
 }
 
 export function setDemo(on) {

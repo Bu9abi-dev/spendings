@@ -1416,6 +1416,57 @@ html.sheet-open body::after { opacity: 0; }
 .del-list li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
 .del-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .del-list li.more { justify-content: center; }
+/* Money owed: people, splits, the Home line */
+.chip-group-label { grid-column: 1 / -1; font-size: 12px; font-weight: 600; color: var(--label-2); padding: 8px 4px 0; }
+.chip.person-chip { height: 44px; --chip: var(--tint); min-width: 0; }
+.chip.person-chip.new { color: var(--tint-text); }
+.chips.accounts .chip.person-chip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.person-avatar { flex: none; display: inline-grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; font-size: 15px; font-weight: 650; color: var(--tint-text); background: color-mix(in srgb, var(--tint) 16%, var(--bg-2)); }
+.person-avatar.sm { width: 24px; height: 24px; font-size: 12px; }
+.person-row { min-height: 52px; }
+.owed-in { color: var(--good); }
+.owed-out { color: var(--neg); }
+.owed-line > .i:first-child { color: var(--tint-text); }
+.people-list { padding-bottom: 24px; }
+.person-card { margin: 0 var(--gutter) 10px; padding: 12px 14px; border-radius: var(--r-group, 20px); background: var(--bg-2); }
+.pc-head { display: flex; align-items: center; gap: 10px; min-height: 44px; }
+.pc-name { flex: 1; min-width: 0; display: grid; font-size: 15px; }
+.pc-name b { font-size: 17px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-settle { flex: none; min-height: 44px; padding: 0 16px; border-radius: 999px; font-size: 15px; font-weight: 600; color: var(--tint-text); background: color-mix(in srgb, var(--tint) 12%, transparent); transition: transform 0.16s var(--ease-out); }
+.pc-settle:active { transform: scale(0.96); }
+.pc-list { list-style: none; margin: 8px 0 0; padding: 0; border-top: 0.5px solid var(--sep); }
+.pc-list li { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 0 0; font-size: 14px; }
+.pc-what { min-width: 0; display: grid; }
+.pc-what, .pc-what small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-what small { font-size: 12px; color: var(--label-2); }
+.pc-list b { font-weight: 600; white-space: nowrap; }
+.split-btn, .linked-btn { min-height: 44px; }
+.split-note { display: flex; align-items: center; gap: 8px; margin: 14px var(--gutter) 0; padding: 10px 14px; border-radius: 16px; font-size: 14px; color: var(--label-2); background: var(--bg-2); }
+.split-note b { color: var(--label); }
+.split-note > .i { flex: none; color: var(--tint-text); }
+.split-form { padding-bottom: 20px; }
+.part-chips .chip, .people-chips .chip { height: 44px; }
+.part-chips .chip { --chip: var(--tint); padding: 0 18px; }
+.np-row, .custom-row { display: flex; gap: 8px; align-items: center; margin: 10px var(--gutter) 0; }
+.np-row[hidden], .custom-row[hidden] { display: none; }
+.np-row .field, .custom-row .field { flex: 1; min-width: 0; background: var(--field); border-radius: 16px; }
+.custom-row .cur { font-weight: 600; }
+.np-add { min-height: 44px; padding: 0 18px; border-radius: 999px; font-weight: 600; color: var(--on-tint); background: var(--tint); }
+.split-sum { margin: 16px var(--gutter) 0; font-size: 15px; color: var(--label-2); }
+.split-sum b { color: var(--label); font-weight: 600; }
+.text-btn.off { opacity: 0.4; }
+.linked-btn { width: 100%; }
+.linked-btn + .linked-btn { margin-top: 10px; }
+@media (prefers-reduced-motion: reduce) { .pc-settle { transition: none; } }
+.owed-line { min-height: 44px; }
+/* what people owe, under "All your money" (it isn't part of it) */
+.where-owed { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 44px; margin-top: 2px; padding: 0 0 0 19px; border-top: 0.5px solid var(--sep); text-align: left; font-size: 15px; color: var(--label-2); }
+.where-owed > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.where-owed > .i:first-child { color: var(--tint-text); }
+.where-owed .chev { color: var(--label-3); }
+/* Split with someone, above the keypad so it's in view without scrolling */
+.keypad-wrap .split-btn { margin: 0 auto 8px; height: 44px; }
+.keypad-wrap .split-btn[hidden] { display: none; }
 
 /* ───── Goals and net worth ───── */
 .gl-list { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }

@@ -1,5 +1,5 @@
 // Savings goals and net worth: the Insights cards, the Settings block and the add/edit sheets.
-import { ACCOUNTS, balances, fmt, uid } from './model.js';
+import { ACCOUNTS, balances, fmt, uid, isPerson, peopleBalances } from './model.js';
 import { state, getExtra, saveExtra, topUndoId } from './store.js';
 import { bnplSummary, readBnpl } from './bnpl.js';
 import { openSheet, haptic, toast, esc } from './ui.js';
@@ -60,10 +60,12 @@ export function goalsCard() {
 export function netWorthCard() {
   const bals = balances(state.entries, state.settings);
   const items = holdings();
-  const money = totalMoney(bals);
+  const money = totalMoney(bals, isPerson);
   const inv = investmentsTotal(items);
   const owed = bnplSummary(readBnpl(getExtra('bnpl', null)).plans, state.entries).owed;
-  const total = netWorth({ money, investments: inv, owed });
+  const pb = peopleBalances(state.entries, state.settings, bals);
+  const people = Math.round((pb.owedToYou - pb.youOwe) * 100) / 100; // net: friends owe you minus you owe them
+  const total = netWorth({ money, investments: inv, owed, people });
   const row = (label, v, sub = '', cls = '') => `<div class="nw-row"><span>${label}${sub ? `<small>${sub}</small>` : ''}</span><b class="num ${cls}">${v < 0 ? '−' : ''}${fmt(Math.abs(v), { whole: true })}</b></div>`;
   return `<section class="panel" id="networth-card">
     <div class="gl-head"><h3 class="panel-title">Net worth</h3>${manage('investments')}</div>
@@ -73,6 +75,7 @@ export function netWorthCard() {
     <div class="nw-rows">
       ${row('Money in your accounts', money)}
       ${items.map((i) => row(esc(i.name), i.value, i.asOf ? `as of ${esc(dateLabel(i.asOf))}` : '')).join('')}
+      ${Math.abs(people) >= 0.5 ? row(people > 0 ? 'Friends owe you' : 'You owe friends', people, 'net', people < 0 ? 'nw-neg' : '') : ''}
       ${owed > 0 ? row('Still owed on instalments', -owed, '', 'nw-neg') : ''}
     </div>
     ${items.length ? '<p class="panel-sub nw-foot">Investments are the values you typed in. Nothing is connected to a broker.</p>'

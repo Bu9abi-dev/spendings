@@ -92,6 +92,8 @@ eq(goalProgress(goal({ manual: 100, date: '2026-11-20' }), bals, new Date('2026-
 eq(totalMoney(bals), 1700, 'total money sums every account');
 eq(netWorth({ money: 1700, investments: 300, owed: 170.5 }), 1829.5, 'net worth = money + investments - owed');
 eq(netWorth({ money: -50, investments: 0, owed: 0 }), -50, 'net worth can be negative');
+eq(totalMoney(new Map([['ADIB', { balance: 500 }], ['Ahmed', { balance: 40 }]]), (id) => id === 'Ahmed'), 500, 'a person\'s balance is not your money (matches Home)');
+eq(netWorth({ money: 500, investments: 0, owed: 0, people: 40 }), 540, 'what friends owe you (net) is added to net worth');
 eq(dateLabel('2026-12-05'), '5 Dec 2026', 'date label');
 eq(dateLabel('junk'), '', 'bad date label is empty');
 

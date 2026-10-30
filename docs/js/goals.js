@@ -45,11 +45,13 @@ export function readInvestments(x) {
 
 export const investmentsTotal = (items) => r2(items.reduce((a, i) => a + i.value, 0));
 
-/** Total money across every account (the same figure Home shows). `bals` is the Map from balances(). */
-export const totalMoney = (bals) => r2([...bals.values()].reduce((a, b) => a + (b.balance || 0), 0));
+/** Total money across your own accounts (the same figure Home shows). `bals` is the Map from balances().
+    People's accounts (money owed between you and friends) are left out, like on Home; `isPerson` says which. */
+export const totalMoney = (bals, isPerson = () => false) => r2([...bals].reduce((a, [id, b]) => (isPerson(id) ? a : a + (b.balance || 0)), 0));
 
-export function netWorth({ money = 0, investments = 0, owed = 0 } = {}) {
-  return r2(money + investments - owed);
+/** What you own minus what you owe: your money, investments, what friends owe you net (people), minus BNPL still to pay. */
+export function netWorth({ money = 0, investments = 0, owed = 0, people = 0 } = {}) {
+  return r2(money + investments + people - owed);
 }
 
 const DAY = 864e5;

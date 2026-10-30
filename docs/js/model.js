@@ -11,11 +11,28 @@ export const DEFAULT_ACCOUNTS = [
 ];
 export const ACCOUNTS = [];
 const ALL_ACCOUNTS = [];
+// People (money owed): an account flagged as a person in the `people` extra. Every balance still
+// counts them, but they are not your money, so ACCOUNTS (balance bar, pay pickers, totals) leaves
+// them out. PEOPLE_ACCOUNTS holds the active ones. Removed people stay flagged, so old entries keep their meaning.
+export const PEOPLE_ACCOUNTS = [];
+const PEOPLE = new Set();
+export const isPerson = (id) => !!id && PEOPLE.has(id);
 export const colorHex = (id) => (CARD_COLORS.find((c) => c.id === id) || CARD_COLORS[CARD_COLORS.length - 1]).hex;
+function refreshAccountLists() {
+  for (const a of ALL_ACCOUNTS) a.person = PEOPLE.has(a.id);
+  ACCOUNTS.splice(0, ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived && !a.person));
+  PEOPLE_ACCOUNTS.splice(0, PEOPLE_ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived && a.person));
+}
 export function setAccountList(list) {
   const view = (a) => ({ id: a.name, name: a.name, role: a.note || '', colorId: a.color, color: colorHex(a.color), wallet: a.wallet || '', archived: !!a.archived });
   ALL_ACCOUNTS.splice(0, ALL_ACCOUNTS.length, ...list.map(view));
-  ACCOUNTS.splice(0, ACCOUNTS.length, ...ALL_ACCOUNTS.filter((a) => !a.archived));
+  refreshAccountLists();
+}
+/** names: the `people` extra's names (account names). */
+export function setPeopleList(names) {
+  PEOPLE.clear();
+  for (const n of Array.isArray(names) ? names : []) if (typeof n === 'string' && n.trim()) PEOPLE.add(n);
+  refreshAccountLists();
 }
 setAccountList(DEFAULT_ACCOUNTS);
 
@@ -241,19 +258,23 @@ function isPlannedMove(e, p, cycle, settings) {
 function allowanceCycle(entries, cycle, settings, plan) {
   const acc = settings.allowanceAccount, hub = settings.emergencyAccount;
   const moves = allowanceMoves(plan, settings);
-  let spent = 0, refunds = 0, topUps = 0;
+  let spent = 0, refunds = 0, topUps = 0, lent = 0;
   for (const e of entries) {
     if (e.cycle !== cycle) continue;
     const v = toAED(e, settings);
     if (e.type === 'Spend' && e.account === acc) spent += v;
     else if (e.type === 'Income' && e.account === acc && e.category === 'Refund') refunds += v;
+    // money owed: lending (or your friend's share of a split) from the allowance card uses allowance;
+    // being paid back into it is a top-up
+    else if (e.type === 'Transfer' && e.account === acc && isPerson(e.toAccount)) lent += v;
+    else if (e.type === 'Transfer' && e.toAccount === acc && isPerson(e.account)) topUps += v;
     else if (e.type === 'Transfer' && acc !== hub) {
       if (e.account === hub && e.toAccount === acc && !moves.some((p) => isPlannedMove(e, p, cycle, settings))) topUps += v;
       else if (e.account === acc && e.toAccount === hub && !isPlanTagged(e)) topUps -= v; // a top-up sent back
     }
   }
   topUps = Math.max(0, topUps);
-  return { spent, refunds, topUps, used: Math.max(0, spent - refunds) };
+  return { spent, refunds, topUps, lent, used: Math.max(0, spent + lent - refunds) };
 }
 
 /** This cycle's allowance: the allowance, plus top-ups, plus last cycle's unspent top-ups. */
@@ -347,6 +368,23 @@ export function balances(entries, settings) {
   return out;
 }
 
+/** Your money: every balance except people's (they are money owed, not money you hold). */
+export const moneyTotal = (bals) => [...bals].reduce((a, [id, b]) => (isPerson(id) ? a : a + b.balance), 0);
+
+/** What each person's account says: > 0 they owe you, < 0 you owe them. Active people always, a removed
+    one only while something is still owed. owedToYou and youOwe are the two sums (both ≥ 0). */
+export function peopleBalances(entries, settings, bals = balances(entries, settings)) {
+  const ids = new Set([...PEOPLE_ACCOUNTS.map((a) => a.id), ...[...bals.keys()].filter(isPerson)]);
+  const people = [...ids].map((id) => ({ id, name: accountMeta(id).name, archived: !PEOPLE_ACCOUNTS.some((a) => a.id === id), balance: bals.get(id)?.balance || 0 }))
+    .filter((p) => !p.archived || Math.abs(p.balance) >= 0.005);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  return {
+    people,
+    owedToYou: r2(people.reduce((a, p) => a + Math.max(0, p.balance), 0)),
+    youOwe: r2(people.reduce((a, p) => a + Math.max(0, -p.balance), 0)),
+  };
+}
+
 /** The calendar date inside `cycle` that falls on day-of-month `day`. */
 export function dateInCycle(cycle, day, startDay = 27) {
   const [y, m] = cycle.split('-').map(Number);
@@ -413,7 +451,7 @@ export function hubFlow(entries, cycle, hub, settings) {
 export function homeNumbers(entries, plan, settings, now = new Date(), dismissed = {}) {
   const s = settings, cyc = cycleOf(now, s.cycleStart);
   const bals = balances(entries, s);
-  const total = [...bals.values()].reduce((a, b) => a + b.balance, 0);
+  const total = moneyTotal(bals);
   const status = planStatus(plan, entries, cyc, s, now, dismissed);
   const hub = s.emergencyAccount;
   const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
@@ -472,7 +510,7 @@ export function whereRows(m) {
   for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);
   // money still sitting in an archived (or unknown) account is part of the total too
   for (const [id, x] of m.bals) {
-    if (id === m.hub || id === m.allowAcc || ACCOUNTS.some((a) => a.id === id)) continue;
+    if (id === m.hub || id === m.allowAcc || isPerson(id) || ACCOUNTS.some((a) => a.id === id)) continue;
     const a = accountMeta(id);
     add(a.name, x.balance, a.color, a.archived ? 'removed account' : a.role);
   }
