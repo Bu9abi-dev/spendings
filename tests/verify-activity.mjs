@@ -76,6 +76,13 @@ ok(snap() === before, 'one undo brings all three back exactly');
 const ops2 = state.outbox.slice(outBefore).map((o) => o.op);
 ok(ops2.filter((o) => o === 'add').length === 3, 'undo queues them back to the sheet');
 
+// a batch that throws midway still records what it did, as one step
+const before3 = snap();
+try { batch('Half done', () => { updateEntry('a', { category: 'Health' }); updateEntry('b', { category: 'Health' }); throw new Error('boom'); }); } catch {}
+ok(store.lastAction() === 'Half done' && state.entries.find((e) => e.id === 'b').category === 'Health', 'a batch that throws keeps its partial changes as one undo step');
+undo();
+ok(snap() === before3, 'undoing the partial batch restores everything');
+
 // a batch that changes nothing leaves no undo step
 const steps = store.lastAction();
 ok(batch('Nothing', () => {}) === 0 && store.lastAction() === steps, 'an empty batch adds no undo step');
@@ -97,14 +104,16 @@ const server = () => JSON.parse(ctx.doPost({ postData: { contents: JSON.stringif
 
 const b = await chromium.launch();
 const c = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+let offline = false; // test switch: while true the phone can't reach the sheet, so nothing syncs
 await c.route('https://script.google.com/**', async (route) => {
+  if (offline) return route.abort();
   const out = ctx.doPost({ postData: { contents: route.request().postData() } });
   await route.fulfill({ status: 200, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: out.text });
 });
 const p = await c.newPage();
 const errors = [];
 p.on('pageerror', (e) => errors.push(e.message));
-await p.goto('http://localhost:8765/#settings');
+await p.goto((process.env.BASE || 'http://localhost:8765') + '/#settings');
 await p.fill('input[name="url"]', URL_);
 await p.fill('input[name="token"]', token);
 await p.click('[data-act="connect"]');
@@ -168,6 +177,82 @@ ok(await p.locator('.af-pill').count() === 0, 'browser: Clear all removes every 
 await p.click('[data-act="select"]');
 await p.click('[data-act="select-done"]');
 ok(!(await p.evaluate(() => document.documentElement.classList.contains('selecting'))) && await p.locator('.pick').count() === 0, 'browser: Done leaves Select mode');
+
+/* ───── Bulk delete + undo, and selection safety ───── */
+const sheetKeys = () => server().filter((e) => /^Bulk/.test(e.merchant)).map((e) => `${e.merchant}|${e.amount}`).sort();
+const balances = () => p.evaluate(async () => {
+  const st = await import('/js/store.js'); const md = await import('/js/model.js');
+  return JSON.stringify([...md.balances(st.state.entries, st.state.settings)]);
+});
+await app((st) => {
+  [['Bulk One', 11], ['Bulk Two', 22], ['Bulk Three', 33], ['Bulk Four', 44]].forEach(([m, a]) => st.addEntry({ type: 'Spend', amount: a, account: 'ADCB', category: 'Other', merchant: m }));
+});
+await settle();
+const wantKeys = ['Bulk Four|44', 'Bulk One|11', 'Bulk Three|33', 'Bulk Two|22'];
+ok(sheetKeys().join() === wantKeys.join(), 'browser: four Bulk entries are on the sheet');
+const balB0 = await balances();
+await p.fill('.search input', 'Bulk ');
+await p.waitForTimeout(200);
+const keepId = await app((st) => st.state.entries.find((e) => e.merchant === 'Bulk Four').id);
+const selectAndDelete = async () => {
+  await p.click('[data-act="select"]');
+  await p.click('[data-act="select-all"]');
+  await p.click(`.entry[data-id="${keepId}"]`); // untick the one to keep
+  await p.click('[data-act="bulk-del"]');
+  ok((await p.textContent('.sheet .del-list')).includes('Bulk'), 'browser: the delete sheet lists the entries it will remove');
+  await p.click('.sheet [data-act="confirm"]');
+};
+
+// (1) delete 3, undo BEFORE any sync (phone offline the whole time)
+offline = true;
+await selectAndDelete();
+ok(await app((st) => st.state.entries.filter((e) => /^Bulk/.test(e.merchant)).length) === 1, 'browser: 3 of 4 deleted on the phone');
+ok((await p.textContent('#toast')).includes('Deleted 3 entries'), 'browser: the toast confirms the delete');
+await p.click('#toast .toast-action');
+offline = false;
+await app((st) => st.sync());
+await settle();
+ok(sheetKeys().join() === wantKeys.join(), 'browser: undo before sync leaves each row on the sheet exactly once');
+ok(await balances() === balB0, 'browser: balances equal the before state (undo before sync)');
+
+// (2) delete 3, let it sync, then undo with the normal Undo button in the title
+await selectAndDelete();
+await settle();
+ok(sheetKeys().join() === 'Bulk Four|44', 'browser: after sync the sheet has only the kept row');
+await p.click('.large-title [data-act="undo"]');
+await settle();
+ok(sheetKeys().join() === wantKeys.join(), 'browser: undo after the delete synced puts each row back exactly once');
+ok(await balances() === balB0, 'browser: balances equal the before state (undo after sync)');
+
+// the toast lasts long enough, and its Undo only undoes its own step
+await selectAndDelete();
+await p.waitForTimeout(6200);
+ok(await p.evaluate(() => document.getElementById('toast').classList.contains('show')), 'browser: the bulk Undo toast is still up after 6 seconds');
+await app((st) => st.addEntry({ type: 'Spend', amount: 5, account: 'ADCB', category: 'Other', merchant: 'Later' }));
+await p.click('#toast .toast-action');
+await settle();
+ok(sheetKeys().join() === 'Bulk Four|44' && server().some((e) => e.merchant === 'Later'), 'browser: toast Undo does nothing if another change happened since');
+await p.click('.large-title [data-act="undo"]'); // undoes "Later"
+await p.click('.large-title [data-act="undo"]'); // undoes the bulk delete
+await settle();
+ok(sheetKeys().join() === wantKeys.join() && !server().some((e) => e.merchant === 'Later'), 'browser: the title Undo still reaches the bulk step afterwards');
+
+// a selection made before the search changed must not delete what is now hidden
+await p.click('[data-act="select"]');
+await p.click('[data-act="select-all"]');
+ok((await p.textContent('.act-bar')).includes('4 selected'), 'browser: four Bulk entries selected');
+await p.fill('.search input', 'Bulk One');
+await p.waitForTimeout(200);
+ok((await p.textContent('.act-bar')).includes('1 selected'), 'browser: narrowing the search drops hidden rows from the selection');
+await p.click('[data-act="bulk-del"]');
+await p.click('.sheet [data-act="confirm"]');
+await settle();
+ok(sheetKeys().join() === ['Bulk Four|44', 'Bulk Three|33', 'Bulk Two|22'].join(), 'browser: only the visible match was deleted');
+await p.click('.large-title [data-act="undo"]');
+await settle();
+ok(sheetKeys().join() === wantKeys.join(), 'browser: undo restores it');
+await p.fill('.search input', '');
+
 ok(errors.length === 0, `browser: no page errors ${errors.join('; ')}`);
 
 await b.close();

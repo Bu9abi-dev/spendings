@@ -1,7 +1,7 @@
 // Activity tab: every entry, grouped by day, with search, filter chips, a Filter sheet
 // (account, category, period, amount), the filtered total, and Select mode for bulk edits.
 import { dayKey, dayLabel, fmt, toAED, ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money } from './model.js';
-import { state, batch, updateEntry, deleteEntry } from './store.js';
+import { state, batch, updateEntry, deleteEntry, topUndoId } from './store.js';
 import { esc, openSheet, toast, haptic } from './ui.js';
 import { icon } from './icons.js';
 import { entryRow, largeTitle, syncBadge, demoBanner, doUndo } from './views.js';
@@ -14,8 +14,18 @@ export const activitySelect = { on: false, ids: new Set() };
 const SHOW_MAX = 400; // rows drawn at once; totals and "Select all" still cover every match
 const plural = (n, one, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 const matches = () => matchEntries(state.entries, activityFilter, state.settings);
-/** Ticked entries that still exist (a sync or undo may have removed some). */
-const selectedEntries = () => state.entries.filter((e) => activitySelect.ids.has(e.id));
+/** The rows actually drawn: the newest SHOW_MAX matches. Only these can be selected. */
+const drawn = (all = matches()) => all.slice(0, SHOW_MAX);
+/** Drops ticked ids that aren't drawn right now (filtered out, past the cap, or gone after a sync/undo). */
+export function pruneSelection(all = matches()) {
+  const seen = new Set(drawn(all).map((e) => e.id));
+  for (const id of [...activitySelect.ids]) if (!seen.has(id)) activitySelect.ids.delete(id);
+}
+/** Ticked entries the user can see. Always re-checked against the current filter and search. */
+const selectedEntries = () => { pruneSelection(); return state.entries.filter((e) => activitySelect.ids.has(e.id)); };
+/** Toast Undo that only undoes the step it was made for; if something else happened since, say so instead. */
+const undoThis = (tok) => () => { if (topUndoId() === tok) doUndo(); else toast('Something changed since, so this Undo is off.'); };
+const UNDO_MS = 8000; // bulk toasts stay long enough to reach Undo; the Undo button in the title still works after
 
 export function renderActivity() {
   const n = extraCount(activityFilter);
@@ -36,6 +46,7 @@ export function renderActivity() {
 /** Everything under the chips: filter pills, the total bar, the list and (in Select mode) the action bar. */
 export function activityBody() {
   const all = matches();
+  if (activitySelect.on) pruneSelection(all);
   return `${pills()}${summaryBar(all)}<div class="activity-list">${activityList(all)}</div>${bulkBar()}`;
 }
 
@@ -49,14 +60,20 @@ function pills() {
 function summaryBar(all) {
   if (activitySelect.on) {
     const n = selectedEntries().length;
-    const allOn = all.length > 0 && all.every((e) => activitySelect.ids.has(e.id));
-    return `<div class="act-bar selecting" role="status"><span class="act-sum"><b>${n ? `${n} selected` : 'Tap entries to select'}</b></span>
-      <button type="button" class="text-btn" data-act="select-all">${allOn ? 'Deselect all' : `Select all ${all.length}`}</button>
+    const shown = drawn(all);
+    const allOn = shown.length > 0 && shown.every((e) => activitySelect.ids.has(e.id));
+    const capped = all.length > shown.length;
+    const msg = n ? (capped ? `Selected ${n} of ${all.length} shown` : `${n} selected`) : 'Tap entries to select';
+    return `<div class="act-bar selecting" role="status"><span class="act-sum"><b>${msg}</b></span>
+      <button type="button" class="text-btn" data-act="select-all">${allOn ? 'Deselect all' : `Select all ${shown.length}`}</button>
       <button type="button" class="text-btn strong" data-act="select-done">Done</button></div>`;
   }
   const t = totals(all, state.settings);
   const bits = isFiltered(activityFilter)
-    ? [plural(t.count, 'entry', 'entries'), t.spent ? `Spent <b class="num">AED ${fmt(t.spent, { fixed: true })}</b>` : '', t.income ? `In <b class="num in">AED ${fmt(t.income, { fixed: true })}</b>` : ''].filter(Boolean).join(' · ')
+    ? [plural(t.count, 'entry', 'entries'),
+      t.spent ? `${t.refunds ? 'Spent (before refunds)' : 'Spent'} <b class="num">AED ${fmt(t.spent, { fixed: true })}</b>` : '',
+      t.refunds ? `Refunds <b class="num in">AED ${fmt(t.refunds, { fixed: true })}</b>` : '',
+      t.income - t.refunds > 0.005 ? `In <b class="num in">AED ${fmt(t.income - t.refunds, { fixed: true })}</b>` : ''].filter(Boolean).join(' · ')
     : '';
   return `<div class="act-bar"><span class="act-sum">${bits}</span>${state.entries.length ? '<button type="button" class="text-btn" data-act="select">Select</button>' : ''}</div>`;
 }
@@ -115,9 +132,9 @@ export function toggleSelected(id) {
 }
 
 export function selectAll() {
-  const all = matches();
-  const allOn = all.length > 0 && all.every((e) => activitySelect.ids.has(e.id));
-  if (allOn) activitySelect.ids.clear(); else all.forEach((e) => activitySelect.ids.add(e.id));
+  const shown = drawn();
+  const allOn = shown.length > 0 && shown.every((e) => activitySelect.ids.has(e.id));
+  if (allOn) activitySelect.ids.clear(); else shown.forEach((e) => activitySelect.ids.add(e.id));
 }
 
 export function clearFilter(key) {
@@ -217,7 +234,7 @@ export function openBulkCategory(onDone) {
         close();
         endSelect();
         onDone();
-        if (n) toast(`Moved ${plural(n, 'entry', 'entries')} to ${esc(cat)}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('check', { size: 18 }) });
+        if (n) toast(`Moved ${plural(n, 'entry', 'entries')} to ${esc(cat)}`, { action: 'Undo', onAction: undoThis(topUndoId()), icon: icon('check', { size: 18 }), duration: UNDO_MS });
         else toast(`Already in ${esc(cat)}`, { icon: icon('check', { size: 18 }) });
       });
     },
@@ -229,6 +246,9 @@ export function openBulkDelete(onDone) {
   const list = selectedEntries();
   if (!list.length) return;
   const t = totals(list, state.settings);
+  const SHOWN_MAX = 5;
+  const lines = list.slice(0, SHOWN_MAX).map((e) => `<li><span>${esc(e.merchant || e.note || e.category || e.type)}</span><b class="num">${money(toAED(e, state.settings), 'AED', { fixed: true })}</b></li>`).join('');
+  const more = list.length > SHOWN_MAX ? `<li class="more">+${list.length - SHOWN_MAX} more</li>` : '';
   const what = [t.spent ? `${money(t.spent, 'AED', { fixed: true })} of spending` : '', t.income ? `${money(t.income, 'AED', { fixed: true })} of income` : ''].filter(Boolean).join(' and ');
   openSheet({
     label: 'Delete entries', tall: false,
@@ -236,6 +256,7 @@ export function openBulkDelete(onDone) {
       <div class="reset-body">
         <div class="reset-icon">${icon('trash', { size: 28 })}</div>
         <p class="reset-lede">This removes <b>${plural(list.length, 'entry', 'entries')}</b>${what ? ` (${what})` : ''} from the app and the sheet. Your balances update to match.</p>
+        <ul class="del-list">${lines}${more}</ul>
         <p class="group-foot center">You can undo it straight after.</p>
         <button type="button" class="dup-btn danger-btn solid" data-act="confirm">${icon('trash', { size: 18 })}Delete ${plural(list.length, 'entry', 'entries')}</button>
       </div>`,
@@ -247,7 +268,7 @@ export function openBulkDelete(onDone) {
         close();
         endSelect();
         onDone();
-        toast(`Deleted ${plural(n, 'entry', 'entries')}`, { action: 'Undo', onAction: () => doUndo(), icon: icon('trash', { size: 18 }) });
+        toast(`Deleted ${plural(n, 'entry', 'entries')}`, { action: 'Undo', onAction: undoThis(topUndoId()), icon: icon('trash', { size: 18 }), duration: UNDO_MS });
       };
     },
   });

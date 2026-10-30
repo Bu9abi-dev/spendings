@@ -208,15 +208,17 @@ function finalize(e, { keepAED = false } = {}) {
 /* ───── Undo ─────
    Every change records how to reverse itself. undo() replays the reversal without recording it. */
 const history = [];
-let muted = 0;
+let muted = 0, historySeq = 0;
 function record(label, reverse) {
   if (muted) return;
   if (batchSteps) { batchSteps.push(reverse); return; } // part of a batch: undone together
-  history.push({ label, reverse });
+  history.push({ label, reverse, id: ++historySeq });
   if (history.length > 30) history.shift();
   emit('history');
 }
 export const canUndo = () => history.length > 0;
+/** Id of the newest undo step, so a toast can check its own step is still the one Undo would undo. */
+export const topUndoId = () => history[history.length - 1]?.id || 0;
 export const lastAction = () => history[history.length - 1]?.label || '';
 export function undo() {
   const h = history.pop();
@@ -247,9 +249,12 @@ export function batch(label, fn) {
   const steps = [];
   const outer = batchSteps;
   batchSteps = steps;
-  try { quietly(fn); } finally { batchSteps = outer; }
-  // undo walks the changes backwards, so each one is reversed against the state it left
-  if (steps.length) record(label, () => quietly(() => { for (const r of [...steps].reverse()) r(); }));
+  try { quietly(fn); } finally {
+    batchSteps = outer;
+    // even if fn threw midway, what it did so far is one undo step. Undo walks the changes
+    // backwards, so each one is reversed against the state it left.
+    if (steps.length) record(label, () => quietly(() => { for (const r of [...steps].reverse()) r(); }));
+  }
   return steps.length;
 }
 

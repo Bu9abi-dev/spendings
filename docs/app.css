@@ -1261,3 +1261,9 @@ html.sheet-open body::after { opacity: 0; }
 .conn-details > summary::-webkit-details-marker { display: none; }
 .conn-details[open] > summary .chev { transform: rotate(180deg); }
 .conn-details .chev { transition: transform 0.25s var(--ease-out); margin-left: auto; }
+
+/* Bulk delete: the first few entries it will remove */
+.del-list { list-style: none; margin: 4px 0 8px; padding: 0; font-size: 15px; color: var(--label-2); }
+.del-list li { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; }
+.del-list li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.del-list li.more { justify-content: center; }

@@ -52,12 +52,14 @@ export function matchEntries(entries, f, settings, now = new Date()) {
 
 /** What a list adds up to, in AED. Transfers and bank matches move money around, so they count in neither. */
 export function totals(list, settings) {
-  let spent = 0, income = 0;
+  let spent = 0, income = 0, refunds = 0;
   for (const e of list) {
     if (e.type === 'Spend') spent += toAED(e, settings);
-    else if (e.type === 'Income') income += toAED(e, settings);
+    else if (e.type === 'Income') { income += toAED(e, settings); if (e.category === 'Refund') refunds += toAED(e, settings); }
   }
-  return { count: list.length, spent: Math.round(spent * 100) / 100, income: Math.round(income * 100) / 100 };
+  const r = (x) => Math.round(x * 100) / 100;
+  // spent is gross (refunds are not netted off); refunds is the part of income that is a Refund
+  return { count: list.length, spent: r(spent), income: r(income), refunds: r(refunds) };
 }
 
 /** Short labels for the filters that are on, for the removable pills under the chips. */
