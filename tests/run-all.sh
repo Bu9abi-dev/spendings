@@ -12,7 +12,7 @@ if [ -z "${BASE:-}" ] && ! curl -s -o /dev/null http://localhost:8765/; then
   sleep 1
 fi
 failed=()
-for t in apps-script.test verify-setup verify-maths verify-undo e2e verify-iphone verify-sync verify-extras verify-charts verify-activity verify-categorize verify-report verify-categories verify-budgets verify-recurring verify-bnpl verify-owed verify-goals verify-weekly verify-perf verify-a11y verify-arabic verify-quick-wins; do
+for t in apps-script.test verify-setup verify-maths verify-undo e2e verify-iphone verify-sync verify-extras verify-charts verify-activity verify-categorize verify-report verify-categories verify-budgets verify-recurring verify-bnpl verify-owed verify-goals verify-weekly verify-perf verify-a11y verify-arabic verify-quick-wins verify-polish; do
   out=$(node "tests/$t.mjs" 2>&1)
   rc=$?
   if [ $rc -eq 0 ]; then

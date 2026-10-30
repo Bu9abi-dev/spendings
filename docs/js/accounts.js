@@ -101,7 +101,8 @@ export function openAccount(name) {
           if (nm.toLowerCase() === 'all') { toast(t('su.allTaken'), { tone: 'warn', icon: icon('warn', { size: 18 }) }); return; }
           if (nameTaken(nm, existing ? name : '')) { toast(t('acc2.taken', { name: esc(nm) }), { tone: 'warn', icon: icon('warn', { size: 18 }) }); return; }
           const patch = { name: nm, note: $('#af-note').value.trim(), wallet: $('#af-wallet').value.trim(), color: a.color };
-          if (existing) updateAccount(name, patch); else addAccount(patch);
+          if (existing) updateAccount(name, patch);
+          else { const r = addAccount(patch); if (r?.error) { toast(esc(r.error), { tone: 'warn', icon: icon('warn', { size: 18 }) }); return; } }
           haptic(); close();
           toast(existing ? t('home.savedItem', { name: esc(nm) }) : t('undoL.added', { what: esc(nm) }), { icon: icon('check', { size: 18 }), tone: 'good' });
         }

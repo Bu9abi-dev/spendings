@@ -1,6 +1,6 @@
 // Insights tab: where the money went, allowance pace, accounts, income and the last six cycles.
 import {
-  ACCOUNTS, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
+  accountMeta, spentByAccount, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
   homeNumbers, isPerson, amtAED, shortDay,
 } from './model.js';
 import { t } from './i18n.js';
@@ -155,7 +155,8 @@ export function renderInsights() {
     || (id === 'Uncategorised' ? { id, short: t('row.needsCat'), icon: 'tray', slot: 0, warn: true } : { id, icon: 'dots', slot: 0 });
   const trendNote = (tr) => (tr.usual == null ? t('ins.nothingBefore') : t('ins.usual', { amt: amtAED(fmt(tr.usual, { whole: true })) }));
 
-  const accMax = Math.max(1, ...ACCOUNTS.map((a) => sum.byAccount.get(a.id)?.spent || 0));
+  const byAcc = spentByAccount(sum);
+  const accMax = Math.max(1, ...byAcc.map((r) => r.spent));
 
   return `
     ${largeTitle(t('ins.title'), '', '')}
@@ -224,10 +225,10 @@ export function renderInsights() {
     <section class="panel">
       <h3 class="panel-title">${t('ins.byAccount')}</h3>
       <div class="hbars">
-        ${ACCOUNTS.map((a) => { const v = sum.byAccount.get(a.id)?.spent || 0; return `<div class="hb-row">
-          <span class="hb-name">${a.name}</span>
-          <span class="hb-track"><i style="--w:${(v / accMax) * 100}%; --tint:${a.color}"></i></span>
-          <span class="hb-val num">${fmt(v, { whole: true })}</span></div>`; }).join('')}
+        ${byAcc.map((r) => { const a = r.other ? { name: t('ins.everythingElse'), color: 'var(--series-other)' } : accountMeta(r.id); return `<div class="hb-row${r.other ? ' hb-other' : ''}">
+          <span class="hb-name">${esc(a.name)}</span>
+          <span class="hb-track"><i style="--w:${(r.spent / accMax) * 100}%; --tint:${a.color}"></i></span>
+          <span class="hb-val num">${fmt(r.shown, { whole: true })}</span></div>`; }).join('')}
       </div>
     </section>
 

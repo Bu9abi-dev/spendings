@@ -1,5 +1,5 @@
 // Savings goals and net worth: the Insights cards, the Settings block and the add/edit sheets.
-import { ACCOUNTS, balances, fmt, uid, isPerson, peopleBalances, amtAED } from './model.js';
+import { ACCOUNTS, balances, fmt, uid, isPerson, peopleBalances, amtAED, apportion } from './model.js';
 import { state, getExtra, saveExtra, topUndoId } from './store.js';
 import { bnplSummary, readBnpl } from './bnpl.js';
 import { openSheet, haptic, toast, esc } from './ui.js';
@@ -67,6 +67,12 @@ export function netWorthCard() {
   const pb = peopleBalances(state.entries, state.settings, bals);
   const people = Math.round((pb.owedToYou - pb.youOwe) * 100) / 100; // net: friends owe you minus you owe them
   const total = netWorth({ money, investments: inv, owed, people });
+  // whole dirhams that add up to the total shown above them (largest remainder); a friends' balance too small to
+  // list (under 0.5) rides with "In accounts" so nothing is left out of the sum
+  const showPeople = Math.abs(people) >= 0.5;
+  const parts = [money + (showPeople ? 0 : people), ...items.map((i) => i.value), showPeople ? people : 0, owed > 0 ? -owed : 0];
+  const shown = apportion(parts, Math.sign(total) * Math.round(Math.abs(total))); // the total is shown as its rounded size with a sign
+  const shownMoney = shown[0], shownPeople = shown[items.length + 1], shownOwed = shown[items.length + 2];
   const row = (label, v, sub = '', cls = '') => `<div class="nw-row"><span>${label}${sub ? `<small>${sub}</small>` : ''}</span><b class="num ${cls}">${v < 0 ? '−' : ''}${fmt(Math.abs(v), { whole: true })}</b></div>`;
   return `<section class="panel" id="networth-card">
     <div class="gl-head"><h3 class="panel-title">${t('gl.netWorth')}</h3>${manage('investments')}</div>
@@ -74,10 +80,10 @@ export function netWorthCard() {
     <p class="panel-sub nw-sub">${t('gl.ownMinus')}</p>
     <p class="panel-sub nw-sub">${t('gl.goalsNot')}</p>
     <div class="nw-rows">
-      ${row(t('gl.inAccounts'), money)}
-      ${items.map((i) => row(esc(i.name), i.value, i.asOf ? t('gl.asOfL', { date: esc(dateLabel(i.asOf)) }) : '')).join('')}
-      ${Math.abs(people) >= 0.5 ? row(people > 0 ? t('gl.friendsOwe') : t('gl.youOweFriends'), people, t('gl.net'), people < 0 ? 'nw-neg' : '') : ''}
-      ${owed > 0 ? row(t('gl.instalments'), -owed, '', 'nw-neg') : ''}
+      ${row(t('gl.inAccounts'), shownMoney)}
+      ${items.map((i, k) => row(esc(i.name), shown[k + 1], i.asOf ? t('gl.asOfL', { date: esc(dateLabel(i.asOf)) }) : '')).join('')}
+      ${showPeople ? row(people > 0 ? t('gl.friendsOwe') : t('gl.youOweFriends'), shownPeople, t('gl.net'), people < 0 ? 'nw-neg' : '') : ''}
+      ${owed > 0 ? row(t('gl.instalments'), shownOwed, '', 'nw-neg') : ''}
     </div>
     ${items.length ? `<p class="panel-sub nw-foot">${t('gl.invFoot')}</p>`
     : `<button type="button" class="dup-btn" data-invest-new="1">${icon('plus', { size: 16 })}${t('gl.addInv')}</button>`}

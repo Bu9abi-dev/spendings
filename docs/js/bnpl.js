@@ -98,6 +98,13 @@ export function dueBetween(plans, entries, from, to, today = dayKey(new Date()))
     .sort((a, b) => (a.due < b.due ? -1 : 1));
 }
 
+/** The bnpl extra with every plan paid from account `from` now paid from `to` (an account rename), or null
+    when no plan names `from`. */
+export function remapBnplAccounts(x, from, to) {
+  if (!x || typeof x !== 'object' || !Array.isArray(x.plans) || !x.plans.some((p) => p && p.account === from)) return null;
+  return { ...x, plans: x.plans.map((p) => (p && p.account === from ? { ...p, account: to } : p)) };
+}
+
 /* ───── Paying and "sync" ───── */
 
 /** The Spend entry for paying instalment i. It goes through the app's normal add path. */

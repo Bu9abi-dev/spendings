@@ -380,3 +380,17 @@ Choices made while running the app on my own, newest first, with the reason for 
   verify-extras move the page's `Date.now` forward instead. Waits that test real elapsed time stay (a toast lasting 6 s,
   focus keeping it up, the 3 s spinner). `tests/run-all.sh` runs every test, prints one line per test, and exits non-zero
   naming the failures.
+- **Whole-app audit fixes (branch claude/polish).** (1) An account rename now also carries buy-now-pay-later plans (`plan.account`)
+  and the `people` list with it, the same way goals already did (`remapExtra` in store.js: queued, no undo step of its own; undoing
+  the rename renames back and remaps again). Budgets are keyed by category and the payday plan was already remapped. (2) Account
+  names, roles and ids are escaped wherever they go into HTML (Home lens label and account keys, Insights By account). (3) One
+  account limit, `MAX_ACCOUNTS = 20` in store.js: `addAccount` returns `{ error }` past it and the account and people screens show it.
+  Code.gs `saveAccounts_` refuses more than 20 with the same message instead of quietly dropping the 21st (a refusal reaches the
+  app as a sync error; an older app never sends more than it could before, so this is backward compatible). (4) Instalments
+  logged by Mark paid (`source: 'BNPL'`) are never a subscription, so they aren't counted twice in Your week and the report.
+  (5) Net worth rows are apportioned to the rounded total. (6) Insights "By account" and the report's use one list,
+  `spentByAccount` in model.js: your active accounts plus an "Everything else" row (a friend who paid, a removed account), so both
+  add up to Spent. (7) A sync's read no longer overwrites a settings change still waiting to go up (pending patches are laid
+  over the sheet's copy). (8) The report's allowance for the cycle we're in comes from `homeNumbers` (as Insights), so "left"
+  matches Home. (9) The CSV formula guard skips real numbers in the amount columns, so a refund's "-12.5" stays a number.
+  All covered by `tests/verify-polish.mjs`.
