@@ -1439,3 +1439,9 @@ html.sheet-open body::after { opacity: 0; }
 .nw-neg { color: var(--neg); }
 .nw-foot { margin: 12px 0 0; }
 #gf-manual-wrap[hidden] { display: none; }
+.gl-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.gl-head .panel-title { margin: 0; }
+.gl-manage { font-size: 15px; min-height: 44px; min-width: 44px; padding: 0 4px; margin-right: -4px; }
+.nw-sub { margin: 0 0 4px; }
+.gl-btn { min-height: 44px; min-width: 44px; }
+#gf-accts .chip { height: 44px; }
