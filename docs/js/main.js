@@ -12,6 +12,7 @@ import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
+import { goalsSettingsBlock, goalsClick } from './goals-ui.js';
 import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
@@ -103,6 +104,7 @@ function renderSettings() {
     <section class="group">${accountsSettingsBlock()}</section>
     <p class="group-foot">Rename, recolour or remove an account. A new name follows through every past entry and your sheet.</p>
 
+    ${goalsSettingsBlock()}
     <h3 class="group-title" id="categories">Categories</h3>
     <section class="group">${categoriesSettingsBlock()}</section>
     <p class="group-foot">Add your own, rename any, or hide ones you don’t use. Old entries always keep their category.</p>
@@ -422,7 +424,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();
