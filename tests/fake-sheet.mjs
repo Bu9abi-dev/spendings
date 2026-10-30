@@ -49,7 +49,8 @@ class Sheet {
 }
 for (const m of ['setFrozenRows', 'setColumnWidth', 'setColumnWidths', 'setHiddenGridlines', 'hideSheet']) Sheet.prototype[m] = function () { return this; };
 
-export function makeEnv() {
+/** `extra`: more script files (like the setup's Bootstrap.gs) loaded before Code.gs; `source`: a different Code.gs. */
+export function makeEnv({ extra = '', source = code } = {}) {
   const sheets = [new Sheet('Sheet1')];
   const props = {};
   const ss = {
@@ -82,7 +83,8 @@ export function makeEnv() {
     Logger: { log() {} },
   };
   vm.createContext(ctx);
-  vm.runInContext(code, ctx);
+  if (extra) vm.runInContext(extra, ctx);
+  vm.runInContext(source, ctx);
   return { ctx, ss, props };
 }
 

@@ -22,6 +22,8 @@ import {
 import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { bnplClick, bnplSettingsBlock } from './bnpl-ui.js';
+import { shouldOnboard, openOnboarding } from './onboarding.js';
+import { googleReady } from './google.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
 const view = document.getElementById('view');
@@ -82,6 +84,8 @@ function renderSettings() {
       </div>
       ${isConnected() ? '</details>' : ''}
       ${state.sheetUrl ? `<a class="row link-row" href="${esc(state.sheetUrl)}" target="_blank" rel="noopener">${icon('sheet', { size: 20 })}<span>Open the sheet</span>${icon('chevR', { size: 16, cls: 'chev' })}</a>` : ''}
+      <button type="button" class="row link-row" data-act="onboard"><span class="row-icon" style="--tint:var(--tint-text)">${icon('sparkle', { size: 20 })}</span>
+        <span class="row-main"><span class="row-title">${isConnected() ? 'Set up a new sheet' : 'Set up with Google'}</span><span class="row-sub">${googleReady() ? 'A short tutorial that makes your sheet for you' : 'A short tutorial for your accounts and allowance'}</span></span>${icon('chevR', { size: 16, cls: 'chev' })}</button>
     </section>
     <p class="group-foot">The app key is like a password for your sheet. It stays on this phone and in your Shortcut, never in the app’s code.</p>
 
@@ -476,6 +480,11 @@ document.addEventListener('click', async (ev) => {
   if (act === 'undo') doUndo();
   if (act === 'reset') openReset();
   if (act === 'connect') connect(t.closest('[data-act]'));
+  if (act === 'onboard') {
+    // a new sheet must not receive changes still waiting for the current one
+    if (isConnected() && state.outbox.length) return toast('Wait for your changes to sync to your current sheet first.', { icon: icon('warn', { size: 18 }), tone: 'warn' });
+    openOnboarding({ fresh: true });
+  }
 });
 
 /* Activity: Select mode, the Filter sheet and filter pills. Returns true when it handled the tap. */
@@ -715,6 +724,10 @@ render();
 initLock();
 handleDeepLink();
 sync();
+// first-time setup tutorial: only on a phone that has never been connected (or just back from Google sign-in)
+window.addEventListener('onboarding-closed', () => { tab = TABS.includes(location.hash.slice(1)) ? location.hash.slice(1) : tab; render(); });
+window.addEventListener('open-shortcut-guide', () => openShortcutGuide());
+if (shouldOnboard()) openOnboarding();
 
 try {
   if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
