@@ -31,7 +31,19 @@ timeline
         v16 : Category suggestions : File a whole shop at once : Only sure guesses act
         v17 : Monthly report : Save as PDF : Cycle CSV
         v18 : Your own categories : Rename and hide : Sheet keeps the names
+        v19 : Category limits : Progress bars : One quiet nudge
 ```
+
+---
+
+## v19: Category budgets
+**30 October 2026** · no sheet update needed
+
+- **Settings → Category limits**: set a monthly limit for any spending category, including your own. Only the categories with a limit are listed; "Add a limit" adds another.
+- Insights has a **Category budgets** card: a bar per limit with what's left, turning amber near the limit and red over it.
+- Home shows one quiet line when a category passes 80% or goes over this cycle. Tap it to see the details.
+- Refunds aren't taken off a limit; they count as money in, the same as everywhere else in the app.
+- The monthly report lists your limits too.
 
 ---
 

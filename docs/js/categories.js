@@ -3,7 +3,8 @@
 // A category's id is what the sheet stores, so it never changes: renaming only changes the label the app shows,
 // and hiding only takes it out of the pickers. Past entries always keep their category.
 import { allCategories, categoryKey, CATEGORY_ICONS, DEFAULT_SPEND_CATEGORIES, DEFAULT_INCOME_CATEGORIES, seriesColor } from './model.js';
-import { state, getExtra, saveExtra } from './store.js';
+import { state, getExtra, saveExtra, batch } from './store.js';
+import { BUDGETS_KEY, limitsOf } from './budgets.js';
 import { openSheet, haptic, toast, esc } from './ui.js';
 import { icon } from './icons.js';
 
@@ -92,7 +93,15 @@ export function openCategory(id, type = 'Spend') {
           c.custom = c.custom.filter((x) => !(x.id === existing.id && (x.type || 'Spend') === type));
           c.hidden = c.hidden.filter((x) => x !== key);
           delete c.names[key];
-          saveExtra(KEY, c, `Deleted ${existing.label}`);
+          // a limit on a deleted category would be left behind, so it goes too, as one undo step
+          const lim = limitsOf(getExtra(BUDGETS_KEY, null));
+          batch(`Deleted ${existing.label}`, () => {
+            saveExtra(KEY, c, `Deleted ${existing.label}`);
+            if (type === 'Spend' && existing.id in lim) {
+              delete lim[existing.id];
+              saveExtra(BUDGETS_KEY, Object.keys(lim).length ? { v: 1, limits: lim } : null, `Deleted ${existing.label}`);
+            }
+          });
           haptic(); close();
           toast(`Deleted ${esc(existing.label)}`, { icon: icon('check', { size: 18 }), tone: 'good' });
         }

@@ -9,6 +9,8 @@ import { donut, paceLine, inOutBars, spendBars, sparkBars } from './charts.js';
 import { dailySpend, weeklySpend, topMerchants, categoryTrends } from './trends.js';
 import { largeTitle, demoBanner } from './views.js';
 import { detectRecurring, monthlyTotal, daysUntil } from './recurring.js';
+import { budgetRows, budgetsCard } from './budgets.js';
+import { currentLimits } from './budgets-settings.js';
 
 let insightsCycle = null;
 
@@ -68,6 +70,9 @@ export function shiftInsights(delta) {
   insightsCycle = shiftCycle(insightsCycle || currentCycle(), delta);
   if (insightsCycle >= currentCycle()) insightsCycle = null;
 }
+
+/** Back to the current cycle (Home's limit notice opens Insights on it, not on whatever cycle was last browsed). */
+export function resetInsights() { insightsCycle = null; }
 
 export function renderInsights() {
   const s = state.settings;
@@ -163,6 +168,8 @@ export function renderInsights() {
         </div>`).join('') : '<p class="muted center">No spending in this cycle.</p>'}
       </div>
     </section>
+
+    ${budgetsCard(budgetRows(sum.byCategory, currentLimits()), { isCurrent })}
 
     <section class="panel">
       <h3 class="panel-title">Day by day</h3>

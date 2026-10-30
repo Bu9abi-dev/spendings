@@ -9,7 +9,7 @@ if [ -z "$BASE" ] && ! curl -s -o /dev/null http://localhost:8765/; then
   (cd docs && python3 -m http.server 8765 >/dev/null 2>&1 &)
   sleep 1
 fi
-for t in apps-script.test verify-maths verify-undo e2e verify-iphone verify-sync verify-extras verify-charts verify-activity verify-categorize verify-report verify-categories verify-recurring; do
+for t in apps-script.test verify-maths verify-undo e2e verify-iphone verify-sync verify-extras verify-charts verify-activity verify-categorize verify-report verify-categories verify-budgets verify-recurring; do
   echo "── $t"
   node "tests/$t.mjs" 2>&1 | tail -n 1
 done

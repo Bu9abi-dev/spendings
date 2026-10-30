@@ -8,8 +8,9 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 - `main` is deployed by Vercel (Root Directory `docs`). Every branch also gets a preview deploy.
 - Apps Script backend: `apps-script/Code.gs`. Changes only reach the sheet after Abdullah pastes the file
   into Apps Script and deploys a **new version of the existing deployment** (same URL).
-  - Last script change: v12 (Extras tab). **Not yet redeployed** as of 30 Oct. Until it is, extras stay
-    on the phone (`state.extrasLocalOnly`) and get sent up automatically afterwards.
+  - Script changes waiting for Abdullah's redeploy (one paste covers all): v12 Extras tab, v13 Shortcut test runs /
+    Arabic digits, v18 custom categories from the Shortcut. Until then extras stay on the phone
+    (`extrasOnPhoneOnly()`) and are sent up automatically afterwards.
 - Work in progress and ideas: [BACKLOG.md](BACKLOG.md). Why things are the way they are: [DECISIONS.md](DECISIONS.md).
   What shipped: [CHANGELOG.md](CHANGELOG.md).
 
@@ -42,6 +43,10 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/views.js` | Shared bits: entry row, sync badge, large title + undo button, demo banner. |
 | `docs/js/entry.js` | Add/edit entry sheet with keypad. |
 | `docs/js/charts.js` | SVG charts. |
+| `docs/js/budgets.js` | Category budgets: pure maths (spent vs limit, near/over) plus the Insights card, Home line and Settings rows HTML. |
+| `docs/js/budgets-settings.js` | Budgets store wiring: read/save limits in the `budgets` extra, and the Settings edit sheet. |
+| `docs/js/categorize.js` | Learns merchant → category from past entries; `cleanMerchant` is the one shop-name normaliser. |
+| `docs/js/categories.js` | Settings → Categories (your own, rename, hide). Lists live in model.js (`setCategoryList`, `allCategories`, `pickerCategories`, `categoryMeta(id).label`). |
 | `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
@@ -65,8 +70,21 @@ on the phone (`extrasOnPhoneOnly()`), Settings says so, and they're sent up on t
 Feature branches don't bump `VERSION` or edit CHANGELOG.md (that would make every parallel branch conflict).
 The thread running the loop does both when it merges, one version per merge.
 
-## Wave 1 threads (started 30 Oct 2026)
+## Categories: rules for new code
 
-Briefs: `/mnt/project-files/loop/wave1-briefs.md`. Each thread messages the loop thread when its PR is ready.
-1 smart-categories, 2 category-budgets, 3 spend-charts, 4 recurring, 5 activity-filters, 6 monthly-report
-(branches `claude/<name>`). Foundation PR: #6.
+- Pickers: `pickerCategories(type, current)`. Lists of everything (filters, legends): `allCategories(type)`.
+  Never copy `SPEND_CATEGORIES` at import time; it changes when Abdullah edits categories.
+- Names on screen: `categoryMeta(id, type)?.label || id`, escaped with `esc`. The id is what the sheet stores and
+  never changes.
+
+## Tests on a shared machine
+
+Browser tests read `BASE` (default `http://localhost:8765`). When several checkouts run at once, serve your own
+`docs/` on a free port and run `BASE=http://localhost:<port> node tests/<name>.mjs`. Under heavy load a few
+browser checks can fail on timing; rerun before chasing them (see BACKLOG "Tests: stable under load").
+
+## How the loop runs (30 Oct 2026)
+
+Feature work is done by subagents on `claude/<name>` branches (in their own worktrees). The loop thread reviews
+each with the council (`council/council-transcript-*.md`), sends fixes back, merges to main one at a time,
+bumps VERSION and writes the changelog. See BACKLOG.md "In progress" for what's out.

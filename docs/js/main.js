@@ -12,13 +12,14 @@ import { bindDonut, bindPace, bindBars } from './charts.js';
 import { initLock, lockSupported, enableLock, disableLock } from './lock.js';
 import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } from './theme.js';
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
+import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
 import {
   renderActivity, refreshActivity, activityFilter, activitySelect, openFilters, openBulkCategory, openBulkDelete,
   startSelect, endSelect, toggleSelected, selectAll, clearFilter, syncSelectingClass,
 } from './activity.js';
-import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights } from './insights.js';
+import { renderInsights, shiftInsights, insightsShown, subsClick, showCurrentInsights, resetInsights } from './insights.js';
 import { openReport } from './report.js';
 import { renderHome, snapshotHome, afterHomeRender, bindHomeGestures, homeClick, planSettingsBlock, stepFocus } from './home.js';
 
@@ -108,6 +109,10 @@ function renderSettings() {
     <h3 class="group-title" id="plan">Payday plan</h3>
     <section class="group plan-settings">${planSettingsBlock()}</section>
     <p class="group-foot">Salary and Nafis wait for your “It landed” tap, so your total never runs ahead of the bank.</p>
+
+    <h3 class="group-title" id="budgets">Category limits</h3>
+    <section class="group">${budgetsSettingsBlock()}</section>
+    <p class="group-foot">A spending limit for a category in each pay cycle. Insights shows how full each one is, and Home says so when one nears its limit.</p>
 
     <h3 class="group-title">Budget</h3>
     <section class="group form">
@@ -413,11 +418,12 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || categoriesClick(t) || budgetsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();
     if (goBtn.dataset.anchor === 'subs') showCurrentInsights();
+    if (goBtn.dataset.resetInsights) resetInsights();
     go(goBtn.dataset.go);
     if (goBtn.dataset.anchor) setTimeout(() => document.getElementById(goBtn.dataset.anchor)?.scrollIntoView({ behavior: reduceMotion() ? 'auto' : 'smooth', block: 'start' }), 260);
     return;
