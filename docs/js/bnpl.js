@@ -12,11 +12,11 @@
 // { entry: '' } means "paid before I started tracking": paid, with no entry to point at.
 // auto: true marks a link the app found by itself. skip lists entries you unlinked from this plan,
 // so the app never links them to it again.
-import { dayKey, toAED } from './model.js';
+import { dayKey, toAED, money } from './model.js';
 
 export const PROVIDERS = ['Tabby', 'Tamara', 'Postpay', 'Cashew', 'Card plan'];
 export const CADENCES = [{ id: '2w', label: 'Every 2 weeks' }, { id: '1m', label: 'Monthly' }];
-// how close a ledger payment must be to count as an instalment ("sync")
+// how close a ledger payment must be to count as a plan's payment ("sync"); see windows()
 export const MATCH_AED = 1, MATCH_DAYS = 5;
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -106,7 +106,7 @@ export function paymentEntry(plan, i, date = new Date().toISOString()) {
   return {
     type: 'Spend', amount: n[i], currency: 'AED', account: plan.account, category: plan.category,
     merchant: [plan.provider, plan.merchant].filter(Boolean).join(' · '),
-    note: `Instalment ${i + 1} of ${n.length}${plan.item ? ` · ${plan.item}` : ''}`,
+    note: `Payment ${i + 1} of ${n.length}${plan.item ? ` · ${plan.item}` : ''}`,
     source: 'BNPL', date,
   };
 }
@@ -135,53 +135,109 @@ export function linkedIds(plans) {
   return out;
 }
 
+/* How close a payment has to be. It can come up to MATCH_DAYS before the due day. Late, it still pays
+   that payment until MATCH_DAYS after the next one is due (the last one: one period more), so a payment
+   made a week late counts for the overdue one, not for the next one it happens to be near. */
+const periodDays = (plan) => (plan.cadence === '1m' ? 31 : 14);
+function windows(plan) {
+  const amounts = instalmentAmounts(plan.total, plan.count), dues = dueDates(plan.first, amounts.length, plan.cadence);
+  return amounts.map((amount, i) => ({
+    i, amount, due: dues[i],
+    from: addDays(dues[i], -MATCH_DAYS),
+    to: addDays(dues[i + 1] || addDays(dues[i], periodDays(plan)), MATCH_DAYS),
+  }));
+}
+
+/** Does the entry's name mention the plan's provider / shop? ("TABBY*NOON FZ": provider yes, shop yes) */
+function nameMatch(plan, merchant) {
+  const m = squash(merchant), prov = squash(plan.provider), shop = squash(plan.merchant);
+  return { provider: prov.length >= 3 && m.includes(prov), shop: shop.length >= 3 && m.includes(shop) };
+}
+
+/** The unpaid payment of `plan` that an entry (AED v, on `day`) could be: the EARLIEST unpaid one whose
+    window holds the day and whose amount is within AED 1. null if none. `filled`: Set of paid indexes. */
+function slotFor(plan, v, day, filled) {
+  for (const w of windows(plan)) {
+    if (filled.has(w.i)) continue;
+    if (day < w.from || day > w.to || Math.abs(v - w.amount) > MATCH_AED + 1e-9) continue;
+    return { ...w, dDay: Math.abs(daysBetween(w.due, day)), dAmt: Math.abs(v - w.amount) };
+  }
+  return null;
+}
+
+/** Orders the plans one entry could pay: a shop-name match first, then the closest day, the closest amount,
+    the earliest due day, the plan id. A proper ordering: 0 only for the same plan and payment. */
+export function byFit(a, b) {
+  return (b.shop - a.shop) || (a.dDay - b.dDay) || (a.dAmt - b.dAmt)
+    || (a.due < b.due ? -1 : a.due > b.due ? 1 : 0)
+    || (a.plan.id < b.plan.id ? -1 : a.plan.id > b.plan.id ? 1 : 0) || (a.i - b.i);
+}
+/** Just as good on name, day and amount: the app can't tell which plan it paid, so it leaves it to you. */
+const tied = (a, b) => !!b && a.shop === b.shop && a.dDay === b.dDay && Math.abs(a.dAmt - b.dAmt) < 0.005;
+
 /**
- * "Sync": find Spend entries already in the ledger that look like an instalment — the merchant names
- * the provider (TABBY, TAMARA, POSTPAY…), the amount is within AED 1 and the day within ±5 days of an
- * unpaid instalment — and link them instead of logging the payment twice. Pure: returns the new plans
- * and how many links it made. Each entry pays one instalment at most; closest day wins, then closest amount.
+ * "Sync": find Spend entries already in the ledger that look like a plan's payment (the merchant names the
+ * provider: TABBY, TAMARA, POSTPAY…; the amount is within AED 1; the day is in that payment's window, see
+ * windows()) and link them, instead of the payment being logged twice. Pure.
+ * Entries are taken oldest first, and each goes to the earliest unpaid payment it fits, so a plan added
+ * halfway through picks up its past payments in order. One entry pays one payment at most. When two plans
+ * fit an entry equally well it isn't linked at all: you pick in the app.
+ * Returns { plans, linked, links: [{ planId, i, entry }] } (links: what's new, for the "Linked …" toast).
  */
 export function autoLink(plans, entries, settings) {
   const ids = idSet(entries);
   const used = linkedIds(plans);
   // only links whose entry still exists block a match; a stale link frees the entry again
   for (const id of [...used]) if (!ids.has(id)) used.delete(id);
-  const slots = [];
-  (plans || []).forEach((p, pi) => {
-    const key = squash(p.provider);
-    if (key.length < 3) return; // "Card plan" style names don't appear on statements: link those by hand
-    const amounts = instalmentAmounts(p.total, p.count), dues = dueDates(p.first, amounts.length, p.cadence);
-    const skip = new Set(p.skip || []);
-    amounts.forEach((amount, i) => { if (!isPaid(p.paid?.[i], ids)) slots.push({ pi, i, key, amount, due: dues[i], skip }); });
-  });
-  if (!slots.length) return { plans, linked: 0 };
-  const pairs = [];
-  for (const e of entries) {
-    if (e.type !== 'Spend' || used.has(e.id)) continue;
-    const m = squash(e.merchant);
-    if (!m) continue;
+  // "Card plan" style names don't appear on statements: link those by hand
+  const open = (plans || []).filter((p) => squash(p.provider).length >= 3);
+  if (!open.length) return { plans, linked: 0, links: [] };
+  const filled = new Map(open.map((p) => [p.id, new Set(windows(p).filter((w) => isPaid(p.paid?.[w.i], ids)).map((w) => w.i))]));
+  const found = [];
+  const list = entries.filter((e) => e.type === 'Spend' && e.merchant && !used.has(e.id))
+    .sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  for (const e of list) {
     const v = toAED(e, settings), day = dayKey(e.date);
-    for (const s of slots) {
-      if (!m.includes(s.key) || s.skip.has(e.id)) continue;
-      const dAmt = Math.abs(v - s.amount), dDay = Math.abs(daysBetween(s.due, day));
-      if (dAmt <= MATCH_AED + 1e-9 && dDay <= MATCH_DAYS) pairs.push({ s, e, day, dAmt, dDay });
+    const cands = [];
+    for (const p of open) {
+      const nm = nameMatch(p, e.merchant);
+      if (!nm.provider || (p.skip || []).includes(e.id)) continue;
+      const s = slotFor(p, v, day, filled.get(p.id));
+      if (s) cands.push({ ...s, plan: p, shop: nm.shop ? 1 : 0 });
     }
+    if (!cands.length) continue;
+    cands.sort(byFit);
+    if (tied(cands[0], cands[1])) continue;
+    const c = cands[0];
+    filled.get(c.plan.id).add(c.i);
+    found.push({ planId: c.plan.id, i: c.i, entry: e.id, day });
   }
-  pairs.sort((a, b) => a.dDay - b.dDay || a.dAmt - b.dAmt || (a.s.due < b.s.due ? -1 : 1) || (a.e.id < b.e.id ? -1 : 1));
-  const taken = new Set(), filled = new Set();
-  let next = plans, linked = 0;
-  for (const { s, e, day } of pairs) {
-    const slot = `${s.pi}:${s.i}`;
-    if (taken.has(e.id) || filled.has(slot)) continue;
-    taken.add(e.id); filled.add(slot);
-    next = next.map((p, k) => (k === s.pi ? withPaid(p, s.i, e.id, day, { auto: true }) : p));
-    linked++;
-  }
-  return { plans: next, linked };
+  if (!found.length) return { plans, linked: 0, links: [] };
+  const next = plans.map((p) => found.filter((l) => l.planId === p.id).reduce((q, l) => withPaid(q, l.i, l.entry, l.day, { auto: true }), p));
+  return { plans: next, linked: found.length, links: found.map(({ planId, i, entry }) => ({ planId, i, entry })) };
 }
 
-/** Ledger payments that could be instalment i, for "Link existing payment": Spend entries not yet
-    linked, within ±30 days of the due day, closest amount first. Looser than autoLink on purpose. */
+/** Before "Mark paid" logs a new Spend: is a payment already in the ledger probably this one? Looser than
+    autoLink, because it only asks you: not linked anywhere, not one you said wasn't this plan's, in the
+    payment's window, within AED 1, and naming the provider or shop or the exact amount. Best one, or null. */
+export function likelyPayment(plan, i, plans, entries, settings) {
+  const w = windows(plan)[i];
+  if (!w) return null;
+  const ids = idSet(entries), used = linkedIds(plans), skip = new Set(plan.skip || []);
+  for (const id of [...used]) if (!ids.has(id)) used.delete(id);
+  const hits = [];
+  for (const e of entries) {
+    if (e.type !== 'Spend' || used.has(e.id) || skip.has(e.id)) continue;
+    const v = toAED(e, settings), day = dayKey(e.date), nm = nameMatch(plan, e.merchant), dAmt = Math.abs(v - w.amount);
+    if (day < w.from || day > w.to || dAmt > MATCH_AED + 1e-9 || !(nm.provider || nm.shop || dAmt < 0.005)) continue;
+    hits.push({ e, named: nm.provider || nm.shop ? 1 : 0, dDay: Math.abs(daysBetween(w.due, day)), dAmt });
+  }
+  hits.sort((a, b) => (b.named - a.named) || (a.dDay - b.dDay) || (a.dAmt - b.dAmt) || (a.e.id < b.e.id ? -1 : a.e.id > b.e.id ? 1 : 0));
+  return hits[0]?.e || null;
+}
+
+/** Ledger payments that could be payment i, for "Link a payment": Spend entries not yet linked, within
+    ±30 days of the due day, closest amount first. Looser than autoLink on purpose. */
 export function linkCandidates(plan, i, plans, entries, settings, limit = 8) {
   const amount = instalmentAmounts(plan.total, plan.count)[i];
   const due = dueDates(plan.first, plan.count, plan.cadence)[i];
@@ -189,16 +245,46 @@ export function linkCandidates(plan, i, plans, entries, settings, limit = 8) {
   return entries
     .filter((e) => e.type === 'Spend' && !used.has(e.id) && Math.abs(daysBetween(due, dayKey(e.date))) <= 30)
     .map((e) => ({ e, dAmt: Math.abs(toAED(e, settings) - amount), dDay: Math.abs(daysBetween(due, dayKey(e.date))) }))
-    .sort((a, b) => a.dAmt - b.dAmt || a.dDay - b.dDay)
+    .sort((a, b) => a.dAmt - b.dAmt || a.dDay - b.dDay || (a.e.id < b.e.id ? -1 : a.e.id > b.e.id ? 1 : 0))
     .slice(0, limit)
     .map((x) => x.e);
 }
+
+/* ───── Home notice ───── */
+
+/** Unpaid payments due before `payday` ('YYYY-MM-DD', the next cycle's first day), overdue ones included.
+    Information only: never taken off a balance or Safe to spend. */
+export function dueBeforePayday(plans, entries, payday, today = dayKey(new Date())) {
+  const s = bnplSummary(plans, entries, today);
+  return Math.round(s.upcoming.filter((x) => x.due < payday).reduce((a, x) => a + x.amount, 0) * 100) / 100;
+}
+
+/**
+ * The one line Home may show, or null. Only when something is overdue (always shown) or a payment is due
+ * within 7 days, so a plan with nothing coming up stays out of the way. Pure, so a later "one notice at a
+ * time" cap can rank it: { priority: 'overdue' | 'due', text, sub, owed, beforePayday }.
+ */
+export function bnplNotice(plans, entries, today = dayKey(new Date()), payday = '') {
+  if (!plans?.length) return null;
+  const s = bnplSummary(plans, entries, today);
+  if (!s.next) return null;
+  const late = s.overdue.length > 0, d = daysBetween(today, s.next.due);
+  if (!late && d > 7) return null;
+  const when = d === 0 ? 'today' : d === 1 ? 'tomorrow' : `on ${shortDay(s.next.due)}`;
+  const beforePayday = payday ? dueBeforePayday(plans, entries, payday, today) : 0;
+  const text = late
+    ? `Buy now, pay later: ${money(s.overdueAmount)} overdue since ${shortDay(s.overdue[0].due)}`
+    : `Buy now, pay later: ${money(s.owed)} still to pay · next ${money(s.next.amount)} ${when}`;
+  const sub = [late ? `${money(s.owed)} still to pay` : '', beforePayday ? `${money(beforePayday)} due before payday` : ''].filter(Boolean).join(' · ');
+  return { priority: late ? 'overdue' : 'due', text, sub, owed: s.owed, beforePayday };
+}
+
 
 /** A clean plan from the editor's fields: sensible bounds, and the paid list sized to the count. */
 export function normalizePlan(p) {
   const count = Math.min(24, Math.max(1, Math.floor(+p.count || 4)));
   return {
-    id: p.id, provider: String(p.provider || '').trim() || 'BNPL', merchant: String(p.merchant || '').trim(), item: String(p.item || '').trim(),
+    id: p.id, provider: String(p.provider || '').trim() || 'Plan', merchant: String(p.merchant || '').trim(), item: String(p.item || '').trim(),
     category: p.category || 'Shopping', total: Math.round(Math.max(0, +p.total || 0) * 100) / 100, count,
     cadence: p.cadence === '1m' ? '1m' : '2w', first: /^\d{4}-\d{2}-\d{2}$/.test(p.first || '') ? p.first : dayKey(new Date()),
     account: p.account || '', paid: Array.from({ length: count }, (_, k) => p.paid?.[k] || null),

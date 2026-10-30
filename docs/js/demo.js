@@ -41,7 +41,7 @@ export const DEMO_PLAN = [
 // (as the Apple Pay Shortcut would log them), so the app links them on its own: that's the "sync".
 // [id, provider, merchant, item, total, count, cadence, first due (days from today), account, paid (days from today)]
 const DEMO_BNPL = [
-  ['tabby', 'Tabby', 'Noon', 'AirPods Pro', 899, 4, '2w', -30, 'ADCB', [-30, -15, -2]],
+  ['tabby', 'Tabby', 'Noon', 'AirPods Pro', 899, 4, '2w', -38, 'ADCB', [-38, -23, -10]], // the last one is due in 4 days, so Home shows it
   ['tamara', 'Tamara', 'Namshi', 'Trainers', 600, 3, '1m', -20, 'BOTIM', [-19]],
 ];
 
@@ -113,7 +113,8 @@ export function demoEntries(settings) {
 
   // the two most recent Apple Pay spends wait for a category, like real ones would
   const recentPay = out.filter((e) => e.type === 'Spend' && e.account !== 'ADIB' && new Date(e.date) <= now).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(1, 3);
-  for (const e of recentPay) Object.assign(e, { category: '', status: 'Review', source: 'Apple Pay' });
+  // spelled the way a bank or Apple Pay sends them, so the smarter categories have something to match
+  for (const e of recentPay) Object.assign(e, { category: '', status: 'Review', source: 'Apple Pay', merchant: `${e.merchant.toUpperCase()} ABU DHABI AE` });
 
   // BNPL instalments, logged by Apple Pay with the provider's name as the merchant
   const today = dayKey(now);

@@ -1,6 +1,7 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
-import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
-import { state, addEntry, updateEntry, deleteEntry, suggestCategory, setPrefs, undo } from './store.js';
+import { ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, seriesColor, money, fmt, dubaiParts, balances } from './model.js';
+import { state, addEntry, updateEntry, deleteEntry, setPrefs, undo } from './store.js';
+import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openSheet, haptic, toast, esc, spring, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 
@@ -84,6 +85,8 @@ export function openEntry(existing = null, preset = {}) {
       const merchantInput = $('input[name="merchant"]'), noteInput = $('input[name="note"]'), dateInput = $('input[name="date"]');
       const thumb = $('.seg-thumb'), seg = $('.segmented');
       let thumbAnim = null;
+      // category guessed from the merchant: autoPicked = we chose it (you didn't), hinted = a weak guess only ringed
+      let autoPicked = false, hinted = '';
 
       function moveThumb(animate) {
         const btn = seg.querySelector(`[data-type="${e.type}"]`);
@@ -132,6 +135,7 @@ export function openEntry(existing = null, preset = {}) {
 
       function renderType() {
         sheet.dataset.type = e.type;
+        if (e.type !== 'Spend') hinted = '';
         moveThumb(true);
         merchantInput.placeholder = e.type === 'Income' ? 'From (e.g. employer)' : e.type === 'Transfer' ? 'Reason (optional)' : 'Where? (e.g. Carrefour)';
         $('[data-label="account"]').textContent = e.type === 'Income' ? 'Into' : e.type === 'Transfer' ? 'From' : 'Paid with';
@@ -153,14 +157,25 @@ export function openEntry(existing = null, preset = {}) {
       }
 
       function renderCategories() {
-        const list = e.type === 'Income' ? INCOME_CATEGORIES : SPEND_CATEGORIES;
+        const list = pickerCategories(e.type, e.category);
         if (e.category && !list.some((c) => c.id === e.category)) e.category = '';
-        $('.cat-grid').innerHTML = list.map((c) => {
-          const on = e.category === c.id;
-          const color = e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot);
-          return `<button type="button" class="cat${on ? ' on' : ''}" role="radio" aria-checked="${on}" data-cat="${esc(c.id)}" style="--cat:${color}">
-            <span class="cat-icon">${icon(c.icon, { size: 22 })}</span><span class="cat-name">${c.short}</span></button>`;
-        }).join('');
+        const grid = $('.cat-grid');
+        // build the buttons once per type; after that only flip classes, so a tap in progress isn't lost
+        const key = `${e.type}|${list.map((c) => c.id).join('|')}`;
+        if (grid.dataset.key !== key) {
+          grid.dataset.key = key;
+          grid.innerHTML = list.map((c) => {
+            const color = e.type === 'Income' ? 'var(--good)' : seriesColor(c.slot);
+            return `<button type="button" class="cat" role="radio" aria-checked="false" data-cat="${esc(c.id)}" style="--cat:${color}">
+            <span class="cat-icon">${icon(c.icon, { size: 22 })}</span><span class="cat-name">${esc(c.short)}</span></button>`;
+          }).join('');
+        }
+        for (const b of grid.children) {
+          const on = e.category === b.dataset.cat;
+          b.classList.toggle('on', on);
+          b.classList.toggle('sug', !on && hinted === b.dataset.cat);
+          b.setAttribute('aria-checked', String(on));
+        }
       }
 
       let saveOk = false, bigOk = false, touchedAccount = !!existing;
@@ -187,18 +202,31 @@ export function openEntry(existing = null, preset = {}) {
 
       function suggest() {
         if (e.type !== 'Spend') return;
+        const name = merchantInput.value.trim();
         // a merchant you've used before also brings back the card you paid with
-        const key = merchantInput.value.trim().toLowerCase();
-        if (key && !touchedAccount) {
-          const last = state.entries.find((x) => x.type === 'Spend' && x.merchant && x.merchant.toLowerCase() === key && ACCOUNTS.some((a) => a.id === x.account));
+        if (name && !touchedAccount) {
+          const last = state.entries.find((x) => x.type === 'Spend' && x.merchant && sameMerchant(x.merchant, name) && ACCOUNTS.some((a) => a.id === x.account));
           if (last && last.account !== e.account) { e.account = last.account; renderAccounts(); }
         }
-        const s = suggestCategory(merchantInput.value);
+        // smarter categories (categorize.js): learns from past entries, copes with bank-style names
+        const g = name ? suggestFor(name, learn(state.entries, state.merchants)) : null;
         const tag = $('.suggest');
-        if (s && !e.category) {
-          e.category = s; renderCategories(); validate();
-          tag.hidden = false; tag.textContent = `· remembered for ${merchantInput.value.trim()}`;
-        } else if (!s) tag.hidden = true;
+        const was = e.category + '|' + hinted;
+        hinted = '';
+        if (g && g.confidence === 'high' && (!e.category || autoPicked)) {
+          e.category = g.category; autoPicked = true;
+          tag.hidden = false;
+          tag.textContent = g.like && g.like.toLowerCase() !== name.toLowerCase() ? `· like ${g.like}` : `· remembered for ${name}`;
+        } else if (g && (!e.category || autoPicked)) {
+          // medium or low: only a guess, so ring it and let you pick
+          if (autoPicked) { e.category = ''; autoPicked = false; }
+          hinted = g.category;
+          tag.hidden = false; tag.textContent = `· maybe ${categoryMeta(g.category)?.short || g.category}?`;
+        } else if (!g) {
+          if (autoPicked) { e.category = ''; autoPicked = false; }
+          tag.hidden = true;
+        }
+        if (e.category + '|' + hinted !== was) { renderCategories(); validate(); }
       }
 
       // keypad
@@ -257,6 +285,7 @@ export function openEntry(existing = null, preset = {}) {
         const cat = ev.target.closest('[data-cat]');
         if (cat) {
           e.category = e.category === cat.dataset.cat ? '' : cat.dataset.cat;
+          autoPicked = false; hinted = '';
           $('.suggest').hidden = true;
           haptic(); renderCategories(); validate();
           return;
