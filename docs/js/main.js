@@ -2,7 +2,7 @@ import {
   ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, categoryMeta, pickerCategories, allCategories, seriesColor, accountMeta, money, fmt, dayKey, dayLabel, timeLabel, toCSV,
 } from './model.js';
 import {
-  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch,
+  state, subscribe, sync, isConnected, isDemo, setConnection, ping, updateEntry, deleteEntry, saveSettings, setDemo, setPrefs, resetAll, extrasOnPhoneOnly, batch, topUndoId,
 } from './store.js';
 import { learn, suggestFor, sameMerchant } from './categorize.js';
 import { openEntry } from './entry.js';
@@ -191,8 +191,8 @@ function openReview() {
     const index = learn(state.entries, state.merchants);
     return new Map(items().map((e) => [e.id, e.type === 'Spend' ? suggestFor(e.merchant, index) : null]));
   };
-  // other waiting payments from the same shop as e
-  const twins = (e, list) => list.filter((x) => x.id !== e.id && x.type === e.type && sameMerchant(x.merchant, e.merchant));
+  // other waiting spends from the same shop as e (never transfers)
+  const twins = (e, list) => e.type !== 'Spend' ? [] : list.filter((x) => x.id !== e.id && x.type === 'Spend' && sameMerchant(x.merchant, e.merchant));
   // only a high-confidence guess is ever filed without you tapping it
   const confident = (g) => !!g && g.confidence === 'high';
 
@@ -229,10 +229,16 @@ function openReview() {
       <div class="sheet-scroll review-list">${body()}</div>`,
     onMount(sheet, close) {
       const redraw = () => { const l = sheet.querySelector('.review-list'); if (l) l.innerHTML = body(); };
-      // file several at once, undone together in one step
+      // file several at once, undone together in one step. Skips any you filed meanwhile.
       const fileMany = (pairs, label) => {
-        batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })));
-        toast(`${esc(label)}. Undo puts ${pairs.length > 1 ? `these ${pairs.length}` : 'it'} back.`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { doUndo(); redraw(); } });
+        const waiting = new Set(items().map((x) => x.id));
+        pairs = pairs.filter(([id]) => waiting.has(id));
+        if (!pairs.length) return;
+        if (typeof label === 'function') label = label(pairs.length);
+        if (!batch(label, () => pairs.forEach(([id, category]) => updateEntry(id, { category })))) return;
+        const mine = topUndoId();
+        // this Undo only ever undoes this filing; if you've done something since, it does nothing
+        toast(`${esc(label)}. Undo puts ${pairs.length > 1 ? `these ${pairs.length}` : 'it'} back.`, { icon: icon('check', { size: 18 }), tone: 'good', action: 'Undo', onAction: () => { if (topUndoId() === mine) { doUndo(); redraw(); } } });
       };
       sheet.addEventListener('click', (ev) => {
         if (ev.target.closest('[data-act="done"]')) return close();
@@ -263,7 +269,7 @@ function openReview() {
           // this toast's button files the others (its own undo step); the header Undo still undoes the one you just picked
           toast(`Filed as ${esc(categoryMeta(cat, e.type)?.short || cat)}`, {
             icon: icon('check', { size: 18 }), tone: 'good', action: `File ${others.length} more`,
-            onAction: () => { fileMany(others.map((x) => [x.id, cat]), `Filed ${others.length} more from ${e.merchant}`); redraw(); },
+            onAction: () => { fileMany(others.map((x) => [x.id, cat]), (n) => `Filed ${n} more from ${e.merchant}`); redraw(); },
           });
         }
         const h = card.offsetHeight;
