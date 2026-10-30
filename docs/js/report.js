@@ -6,7 +6,7 @@ import { cleanMerchant } from './categorize.js';
 import { detectRecurring, monthlyTotal } from './recurring.js';
 import {
   categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts, shortDay, dayKey,
-  isPerson, moneyTotal, peopleBalances, amtAED} from './model.js';
+  isPerson, moneyTotal, peopleBalances, amtAED, homeNumbers, spentByAccount } from './model.js';
 import { state, getExtra } from './store.js';
 import { openSheet, toast, haptic, esc } from './ui.js';
 import { icon } from './icons.js';
@@ -38,13 +38,15 @@ const budgetLimit = (b) => (typeof b === 'number' && b > 0 ? b : 0);
 
 /** Everything the report shows for one cycle. Transfers are kept apart: moving money between
     accounts is never spending. Bank matches (Adjustments) only move "Total money". */
-export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = null, now = new Date(), ignoredSubs = []) {
+export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = null, now = new Date(), ignoredSubs = [], dismissed = {}) {
   const budgets = budgetsExtra?.limits || {}; // saved as { v: 1, limits: { <categoryId>: <AED> } }
   const s = settings;
-  const sum = summarize(entries, cycle, s, plan);
-  const prev = summarize(entries, shiftCycle(cycle, -1), s, plan);
   const { start, end } = cycleBounds(cycle, s.cycleStart);
   const isCurrent = cycle === cycleOf(now, s.cycleStart);
+  // the cycle we're in uses Home's own summary (adjusted for spending before tracking began), like Insights,
+  // so the allowance "left" here is the same number as Home's Safe to spend works from
+  const sum = isCurrent ? homeNumbers(entries, plan, s, now, dismissed).sum : summarize(entries, cycle, s, plan);
+  const prev = summarize(entries, shiftCycle(cycle, -1), s, plan);
 
   // Same rules as Insights: Spent is gross (a refund is income, not netted off). Money in includes
   // refunds; "refunds" is shown on its own as the part of it that was money back.
@@ -100,7 +102,8 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
     cycle, isCurrent, start, end, asOf,
     income, refunds, spent, whole, saved: income - spent, prevSpent: prev.spent,
     byIncome: [...sum.byIncome].filter(([k]) => k !== 'Refund').sort((a, b) => b[1] - a[1]),
-    byAccount: [...sum.byAccount].map(([id, a]) => ({ id, spent: a.spent })).filter((a) => a.spent > 0).sort((a, b) => b.spent - a.spent),
+    // the same accounts as Insights (your active ones, then "Everything else"), so both add up to Spent
+    byAccount: spentByAccount(sum).filter((a) => a.spent > 0).sort((a, b) => (!!a.other - !!b.other) || b.spent - a.spent),
     categories, merchants, biggest, moved, moves,
     allowance: { account: s.allowanceAccount, pot: sum.allowancePot, base: s.allowance, topUps: sum.topUps, carryIn: sum.carryIn, used: sum.allowanceUsed, left: sum.allowanceLeft },
     totalMoney, accounts: [...bals].filter(([id]) => !isPerson(id)).map(([id, b]) => ({ id, balance: b.balance })).filter((a) => Math.abs(a.balance) >= 0.005),
@@ -182,7 +185,7 @@ export function reportHTML(r, settings) {
 
     <div class="rp-cols">
       ${section(t('ins.moneyIn'), r.byIncome.length ? `<table class="rp-table">${r.byIncome.map(([k, v]) => `<tr><td class="rp-name">${esc(categoryMeta(k, 'Income')?.label || k)}</td><td class="rp-num">${fmt(v, { whole: true })}</td></tr>`).join('')}</table>` : empty(t('rp.noIncome')))}
-      ${section(t('rp.byAccount'), r.byAccount.length ? `<table class="rp-table">${r.byAccount.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.spent, { whole: true })}</td></tr>`).join('')}</table>` : empty(t('rp.nothingSpent')))}
+      ${section(t('rp.byAccount'), r.byAccount.length ? `<table class="rp-table">${r.byAccount.map((x) => `<tr><td class="rp-name">${esc(x.other ? t('ins.everythingElse') : accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.shown, { whole: true })}</td></tr>`).join('')}</table>` : empty(t('rp.nothingSpent')))}
     </div>
 
     ${section(r.isCurrent ? t('rp.accNow') : t('rp.accEnd'), `<table class="rp-table">${r.accounts.map((x) => `<tr><td class="rp-name">${esc(accountMeta(x.id).name)}</td><td class="rp-num">${fmt(x.balance, { fixed: true })}</td></tr>`).join('')}
@@ -302,7 +305,7 @@ export function openReport(cycle) {
   ensureStyles();
   const current = () => cycleOf(new Date(), state.settings.cycleStart);
   let cyc = cycle && cycle <= current() ? cycle : current();
-  const build = () => cycleReport(state.entries, cyc, state.settings, state.plan, getExtra('budgets', null), new Date(), getExtra('recurring', { v: 1, ignored: [] }).ignored || []);
+  const build = () => cycleReport(state.entries, cyc, state.settings, state.plan, getExtra('budgets', null), new Date(), getExtra('recurring', { v: 1, ignored: [] }).ignored || [], state.dismissed);
   let r = build();
 
   openSheet({

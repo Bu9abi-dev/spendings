@@ -863,13 +863,17 @@ function refreshAccountValidation_() {
   if (sh) addValidation_(sh, C['Account'], activeNames_());
 }
 
+var MAX_ACCOUNTS = 20; // accounts and people together; the app checks the same number before adding one
+
 function saveAccounts_(list) {
   var seen = {};
-  var rows = (list || []).slice(0, 20).map(function (a) {
+  var rows = (list || []).map(function (a) {
     var name = clean_(a.name).slice(0, 24);
     return [name, clean_(a.note).slice(0, 60), COLOUR_IDS.indexOf(a.color) >= 0 ? a.color : 'graphite', clean_(a.wallet).slice(0, 40), a.archived ? 'yes' : ''];
   }).filter(function (r) { if (!r[0] || seen[r[0].toLowerCase()]) return false; seen[r[0].toLowerCase()] = true; return true; });
   if (!rows.length) return { ok: false, error: 'Keep at least one account.' };
+  // refuse rather than quietly drop the extra ones (nothing is written, so the sheet keeps its list)
+  if (rows.length > MAX_ACCOUNTS) return { ok: false, error: 'Your sheet keeps up to ' + MAX_ACCOUNTS + ' accounts and people. Remove one first.' };
   var sh = ensureAccounts_();
   var n = sh.getLastRow() - 1;
   if (n > 0) sh.getRange(2, 1, n, ACCOUNT_COLS.length).clearContent();

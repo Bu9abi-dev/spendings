@@ -24,6 +24,9 @@ export function peopleNames(extra) {
 export const withPerson = (extra, name) => ({ v: 1, names: [...new Set([...peopleNames(extra), name])] });
 export const renamedPerson = (extra, from, to) => ({ v: 1, names: [...new Set(peopleNames(extra).map((n) => (n === from ? to : n)))] });
 
+/** The people extra with `from` renamed to `to` (an account rename), or null when `from` isn't a person in it. */
+export const remapPeopleNames = (extra, from, to) => (peopleNames(extra).includes(from) ? renamedPerson(extra, from, to) : null);
+
 const fils = (n) => Math.round((+n || 0) * 100);
 
 /** Your share and theirs of `amount`, in the entry's own currency, adding up to it exactly.

@@ -1,6 +1,8 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { remapGoalAccounts } from './goals.js';
+import { remapBnplAccounts } from './bnpl.js';
+import { remapPeopleNames } from './people.js';
 import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
 import { t } from './i18n.js';
 
@@ -159,7 +161,9 @@ export function sync() {
       }
       const data = await call({ action: 'list' });
       lastList = Date.now();
-      state.settings = { ...DEFAULT_SETTINGS, ...data.settings };
+      // a settings change still waiting to go up wins over the sheet's older copy (like the plan and accounts below)
+      const pendingSettings = Object.assign({}, ...state.outbox.filter((o) => o.op === 'settings').map((o) => o.settings));
+      state.settings = { ...DEFAULT_SETTINGS, ...data.settings, ...pendingSettings };
       state.merchants = data.merchants || {};
       if (Array.isArray(data.plan) && !state.outbox.some((o) => o.op === 'plan')) state.plan = data.plan;
       if (Array.isArray(data.accounts) && data.accounts.length && !state.outbox.some((o) => o.op === 'accounts' || o.op === 'rename')) { state.accounts = data.accounts; setAccountList(state.accounts); }
@@ -503,11 +507,28 @@ function commitAccounts(list, { queue = true } = {}) {
 
 export const nameTaken = (name, except = '') => state.accounts.some((a) => a.name.toLowerCase() === name.trim().toLowerCase() && a.name !== except);
 
+/** Add an account (or a person's account). Returns { error } instead when the sheet is full. */
 export function addAccount(a) {
+  if (state.accounts.length >= MAX_ACCOUNTS) return { error: t('ppl.max', { n: MAX_ACCOUNTS }) };
   const before = state.accounts;
   record(t('undoL.added', { what: a.name.trim() }), () => commitAccounts(before));
   commitAccounts([...state.accounts, { name: a.name.trim(), note: a.note || '', color: a.color || 'graphite', wallet: a.wallet || '', archived: false }]);
+  return { name: a.name.trim() };
 }
+
+/** Saves a renamed copy of an extra (null = nothing in it named the account) without an undo step. */
+function remapExtra(key, value) {
+  if (!value) return;
+  state.extras = { ...state.extras, [key]: value };
+  if (!state.prefs.demo) {
+    state.outbox = state.outbox.filter((o) => !(o.op === 'extra' && o.key === key));
+    enqueue({ op: 'extra', id: '', key, value });
+  }
+  emit('extras');
+}
+
+/** The most accounts and people the sheet's Accounts tab keeps (Code.gs refuses more). */
+export const MAX_ACCOUNTS = 20;
 
 /** Change an account. A new name is carried through every entry, the plan and settings. */
 export function updateAccount(oldName, patch) {
@@ -522,16 +543,11 @@ export function updateAccount(oldName, patch) {
     state.settings = { ...state.settings, allowanceAccount: sw(state.settings.allowanceAccount), emergencyAccount: sw(state.settings.emergencyAccount) };
     state.outbox.forEach((o) => { if (o.entry) { o.entry.account = sw(o.entry.account); o.entry.toAccount = sw(o.entry.toAccount); } });
     if (!state.prefs.demo) enqueue({ op: 'rename', id: '', from: oldName, to: newName });
-    // goals name accounts by name: follow the rename. No undo step of its own; undoing the rename renames back and remaps again.
-    const g = remapGoalAccounts(state.extras.goals, oldName, newName);
-    if (g) {
-      state.extras = { ...state.extras, goals: g };
-      if (!state.prefs.demo) {
-        state.outbox = state.outbox.filter((o) => !(o.op === 'extra' && o.key === 'goals'));
-        enqueue({ op: 'extra', id: '', key: 'goals', value: g });
-      }
-      emit('extras');
-    }
+    // goals, buy-now-pay-later plans and the people list name accounts by name: follow the rename. No undo step
+    // of their own; undoing the rename renames back and remaps again.
+    remapExtra('goals', remapGoalAccounts(state.extras.goals, oldName, newName));
+    remapExtra('bnpl', remapBnplAccounts(state.extras.bnpl, oldName, newName));
+    remapExtra('people', remapPeopleNames(state.extras.people, oldName, newName));
   }
   commitAccounts(state.accounts.map((a) => (a.name === oldName ? { ...a, ...patch, name: newName } : a)));
   muted--;

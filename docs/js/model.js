@@ -430,12 +430,13 @@ export function uid() {
 
 export function toCSV(entries) {
   const cols = ['id', 'date', 'cycle', 'type', 'amount', 'currency', 'amountAED', 'account', 'toAccount', 'category', 'merchant', 'note', 'source', 'status'];
-  const esc = (v) => {
+  const numeric = new Set(['amount', 'amountAED']); // numbers stay numbers: a refund's "-12.5" isn't a formula
+  const esc = (v, col) => {
     let s = String(v ?? '');
-    if (/^[=+\-@]/.test(s)) s = "'" + s;
+    if (/^[=+\-@]/.test(s) && !(numeric.has(col) && s.trim() !== '' && Number.isFinite(+s))) s = "'" + s;
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  return [cols.join(','), ...entries.map((e) => cols.map((c) => esc(e[c])).join(','))].join('\n');
+  return [cols.join(','), ...entries.map((e) => cols.map((c) => esc(e[c], c)).join(','))].join('\n');
 }
 
 /* ───────────────────────── Balances ───────────────────────── */
@@ -639,6 +640,18 @@ export function apportion(values, target = Math.round(values.reduce((a, v) => a 
   values.map((v, i) => i).sort((a, b) => (values[b] - Math.floor(values[b])) - (values[a] - Math.floor(values[a])))
     .forEach((i) => { if (spare > 0) { shown[i]++; spare--; } });
   return shown;
+}
+
+/** "By account" for one cycle (Insights and the monthly report use this one list, so they agree): what each of
+    your active accounts spent, plus an `other` row for the rest (a friend who paid, a removed account), so the rows
+    add up to Spent. `shown` are whole dirhams that add up to the rounded Spent. */
+export function spentByAccount(sum) {
+  const rows = ACCOUNTS.map((a) => ({ id: a.id, spent: sum.byAccount.get(a.id)?.spent || 0 }));
+  const own = rows.reduce((x, r) => x + r.spent, 0);
+  const other = Math.max(0, Math.round((sum.spent - own) * 100) / 100);
+  const all = other >= 0.005 ? [...rows, { id: '', other: true, spent: other }] : rows;
+  apportion(all.map((r) => r.spent), Math.round(sum.spent)).forEach((n, i) => { all[i].shown = n; });
+  return all;
 }
 
 /** "Where your money is": every part of the total, so the numbers visibly add up. */

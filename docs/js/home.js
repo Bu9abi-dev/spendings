@@ -115,7 +115,7 @@ function amountHTML(v) {
 function label(m, f) {
   if (f === 'all') return t('home.allMoney');
   const a = accountMeta(f);
-  return `${a.name} <span class="lens-role">· ${f === m.hub ? t('home.payLands') : f === m.s.allowanceAccount ? t('home.allowance') : a.role.toLowerCase()}</span>`;
+  return `${esc(a.name)} <span class="lens-role">· ${f === m.hub ? t('home.payLands') : f === m.s.allowanceAccount ? t('home.allowance') : esc(a.role.toLowerCase())}</span>`;
 }
 
 /* Pace: how this cycle's allowance spending compares with an even spread over the cycle.
@@ -170,7 +170,7 @@ export function renderHome(h) {
         <p>${t('home.connectLede')}</p>
         <div class="onboard-actions"><button class="btn-primary" type="button" data-act="setup-guide">${t('home.setUp')}</button><button class="btn-plain" type="button" data-act="demo">${t('home.tryDemo')}</button></div>
       </section>` : ''}
-    <section class="lens" data-focus="${focus}" style="--lens-c:${lensColor(focus)}" aria-label="${t('home.balances')}">
+    <section class="lens" data-focus="${esc(focus)}" style="--lens-c:${lensColor(focus)}" aria-label="${t('home.balances')}">
       <div class="lens-label">${label(m, focus)}</div>
       <div class="lens-amount" aria-live="polite" style="--chars:${amountParts(valueFor(m, focus)).int.length + 3}">${amountHTML(valueFor(m, focus))}</div>
       <p class="lens-meta">${meta(m, focus)}</p>
@@ -182,8 +182,8 @@ export function renderHome(h) {
         ${order().map((id) => {
           const on = focus === id;
           const v = id === 'all' ? m.total : m.bals.get(id)?.balance || 0;
-          return `<button type="button" class="key-acc${on ? ' on' : ''}" aria-pressed="${on}" data-focus="${id}" style="--c:${id === 'all' ? 'var(--label)' : accountMeta(id).color}">
-            <span class="ka-name">${id === 'all' ? t('home.all') : id}</span><span class="ka-val num">${m.matched ? fmtCompact(v) : '—'}</span></button>`;
+          return `<button type="button" class="key-acc${on ? ' on' : ''}" aria-pressed="${on}" data-focus="${esc(id)}" style="--c:${id === 'all' ? 'var(--label)' : accountMeta(id).color}">
+            <span class="ka-name">${id === 'all' ? t('home.all') : esc(id)}</span><span class="ka-val num">${m.matched ? fmtCompact(v) : '—'}</span></button>`;
         }).join('')}
         <button type="button" class="key-acc key-add" data-acct-new="1" aria-label="${t('home.addAcc')}">${icon('plus', { size: 18 })}</button>
       </div>
@@ -477,7 +477,7 @@ function placePill(animate) {
   if (pillFollowing) return;
   const keys = document.querySelector('.keys');
   if (!keys) return;
-  const pill = keys.querySelector('.keys-pill'), key = keys.querySelector(`.key-acc[data-focus="${focus}"]`);
+  const pill = keys.querySelector('.keys-pill'), key = keys.querySelector(`.key-acc[data-focus="${CSS.escape(focus)}"]`);
   if (!pill || !key) return;
   if (key.offsetLeft < keys.scrollLeft || key.offsetLeft + key.offsetWidth > keys.scrollLeft + keys.clientWidth) {
     keys.scrollTo({ left: key.offsetLeft - (keys.clientWidth - key.offsetWidth) / 2, behavior: animate && !reduceMotion() ? 'smooth' : 'auto' });

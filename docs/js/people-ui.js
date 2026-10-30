@@ -2,7 +2,7 @@
 // entries, Settle up), the split sheet and the "this is half of a split" question.
 // The maths lives in people.js; this file talks to the store.
 import { PEOPLE_ACCOUNTS, isPerson, accountMeta, categoryMeta, balances, fmt, money, dayKey, dayLabel, toAED } from './model.js';
-import { state, getExtra, saveExtra, batch, addAccount, updateAccount, removeAccount, nameTaken, undo } from './store.js';
+import { state, getExtra, saveExtra, batch, addAccount, updateAccount, removeAccount, nameTaken, undo, MAX_ACCOUNTS } from './store.js';
 import {
   PEOPLE_KEY, SPLIT_PARTS, peopleBalances, withPerson, renamedPerson, splitShares, recentPeople, personEntries, settleUpPreset,
   owedText, balanceWords, personOf, splitPartner, lentFrom, settleUpTitle, rescaledPartner,
@@ -12,8 +12,6 @@ import { openSheet, haptic, toast, esc } from './ui.js';
 import { icon } from './icons.js';
 import { t } from './i18n.js';
 
-// the sheet's Accounts tab keeps at most 20 rows (accounts and people together)
-const MAX_ACCOUNTS = 20;
 const warn = (text) => toast(text, { tone: 'warn', icon: icon('warn', { size: 18 }) });
 const initial = (name) => esc([...String(name).trim()][0]?.toUpperCase() || '?');
 const cleanName = (raw) => String(raw || '').trim().replace(/\s+/g, ' ').slice(0, 24);

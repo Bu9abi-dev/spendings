@@ -66,6 +66,8 @@ function detect(entries, settings, now, ignored) {
   const groups = new Map();
   for (const e of entries) {
     if (e.type !== 'Spend') continue;
+    // a buy-now-pay-later instalment is already tracked by its plan (Home, Your week, the report): not a subscription
+    if (e.source === 'BNPL') continue;
     const key = recurringKey(e.merchant);
     if (!key || skip.has(key)) continue;
     const amount = toAED(e, settings);
