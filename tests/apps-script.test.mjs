@@ -268,6 +268,12 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   r = p3({ source: 'applepay', amount: '', merchant: '', card: '', category: 'Decide later' });
   assert.ok(r.ok && r.test && /Connected/.test(r.message));
   assert.equal(p3({ action: 'list' }).entries.length, before, 'a test run logs nothing');
+  // Arabic digits from an iPhone set to Arabic
+  r = p3({ source: 'applepay', amount: 'د.إ.‏ ٤٢٫٥٠', merchant: 'Lulu', card: 'ADCB', category: 'Groceries' });
+  assert.equal(r.entry.amount, 42.5);
+  // an amount that couldn't be read, even with no merchant, is still kept for review
+  r = p3({ source: 'applepay', amount: 'AED ?', merchant: '', card: 'ADCB', category: 'Decide later' });
+  assert.ok(!r.test && r.entry.status === 'Review');
   // a real payment whose amount couldn't be read is still kept for review
   r = p3({ source: 'applepay', amount: 'AED ?', merchant: 'Lulu', card: 'ADCB', category: 'Decide later' });
   assert.equal(r.entry.status, 'Review');
