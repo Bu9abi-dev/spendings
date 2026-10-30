@@ -100,6 +100,7 @@ function setup() {
 /** Everything setup() does, without popups, so the app's setup guide can run it over the web (`install`). */
 function setupSheet_() {
   var ss = SpreadsheetApp.getActive();
+  var newLedger = !ss.getSheetByName(LEDGER);
   ss.setSpreadsheetTimeZone(TZ);
   ss.setSpreadsheetLocale('en_GB');
 
@@ -150,6 +151,43 @@ function setupSheet_() {
   if (sheet1 && sheet1.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(sheet1);
   ss.setActiveSheet(ss.getSheetByName(OVERVIEW));
   ss.moveActiveSheet(1);
+  // remember what a brand-new sheet looked like, so `install` can tell it from one you've used
+  if (newLedger) PropertiesService.getScriptProperties().setProperty('SETUP_PRINT', setupPrint_());
+}
+
+/**
+ * Called by the app's setup guide once it can reach the sheet. Builds the tabs if they aren't there yet.
+ * A sheet that already has a Ledger is left exactly as it is (no restyling).
+ * `fresh: true` means nobody has used this sheet yet (no entries, and its accounts, settings and plan are
+ * still the ones setup made), so the app may send your guide answers. Anything else keeps what it has.
+ */
+function install_() {
+  var ss = SpreadsheetApp.getActive();
+  var ledger = ss.getSheetByName(LEDGER);
+  var fresh;
+  if (!ledger) {
+    // only a sheet with nothing of yours in it counts as new
+    fresh = [SETTINGS, ACCOUNTS_TAB, PLAN, EXTRAS, MERCHANTS].every(function (n) {
+      var sh = ss.getSheetByName(n);
+      return !sh || sh.getLastRow() === 0;
+    });
+    setupSheet_();
+  } else {
+    var print = PropertiesService.getScriptProperties().getProperty('SETUP_PRINT');
+    fresh = ledger.getLastRow() <= 1 && !!print && print === setupPrint_();
+  }
+  return { ok: true, message: 'Your sheet is ready', features: FEATURES, fresh: fresh };
+}
+
+/** A short fingerprint of the tabs you set up yourself (accounts, settings, plan, merchants, extras). */
+function setupPrint_() {
+  var ss = SpreadsheetApp.getActive();
+  var parts = [SETTINGS, ACCOUNTS_TAB, PLAN, MERCHANTS, EXTRAS].map(function (n) {
+    var sh = ss.getSheetByName(n);
+    if (!sh || sh.getLastRow() === 0) return n + ':';
+    try { return n + ':' + JSON.stringify(sh.getRange(1, 1, sh.getLastRow(), 12).getValues()); } catch (e) { return n + ':?' + sh.getLastRow(); }
+  });
+  return hash_(parts.join('|'));
 }
 
 function showToken() {
@@ -165,9 +203,19 @@ function rotateToken() {
 function getToken_() {
   var props = PropertiesService.getScriptProperties();
   var t = props.getProperty('TOKEN');
-  if (!t) {
-    t = installerKey_() || Utilities.getUuid().replace(/-/g, '').slice(0, 24);
-    props.setProperty('TOKEN', t);
+  if (t) return t;
+  // No key yet. Two first requests can arrive together: hold the lock, then look again, so the second one
+  // finds the key the first one took from the Setup tab instead of making a different one.
+  var lock = LockService.getScriptLock();
+  lock.waitLock(20000);
+  try {
+    t = props.getProperty('TOKEN');
+    if (!t) {
+      t = installerKey_() || Utilities.getUuid().replace(/-/g, '').slice(0, 24);
+      props.setProperty('TOKEN', t);
+    }
+  } finally {
+    lock.releaseLock();
   }
   return t;
 }
@@ -213,7 +261,9 @@ function doPost(e) {
   } catch (err) {
     return json_({ ok: false, error: 'Could not read the request.' });
   }
-  if (!body.token || String(body.token).trim() !== getToken_()) {
+  var key;
+  try { key = getToken_(); } catch (err) { return json_({ ok: false, error: 'The sheet is busy. Try again in a moment.' }); }
+  if (!body.token || String(body.token).trim() !== key) {
     return json_({ ok: false, error: 'Wrong app key. Copy it again from the sheet: Spendings → Show my app key.' });
   }
   var action = body.action || (body.source === 'applepay' ? 'applepay' : body.source === 'bank' ? 'bankalert' : 'add');
@@ -228,7 +278,7 @@ function doPost(e) {
     if (action !== 'ping' && action !== 'install' && !SpreadsheetApp.getActive().getSheetByName(LEDGER)) setupSheet_();
     switch (action) {
       case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName() });
-      case 'install': setupSheet_(); return json_({ ok: true, message: 'Your sheet is ready', features: FEATURES });
+      case 'install': return json_(install_());
       case 'list': return json_(listAll_());
       case 'applepay': return json_(addApplePay_(body));
       case 'bankalert': return json_(addBankAlert_(body));

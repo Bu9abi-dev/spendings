@@ -1,5 +1,5 @@
-// First-run setup guide: welcome → your cards → your money → make (or connect) your sheet →
-// Apple Pay Shortcut → done. Answers stay in this phone's storage (sp.setup) until a sheet is
+// First-run setup guide: welcome → your cards → your money → (turn on the Apps Script API) →
+// make (or connect) your sheet → Apple Pay Shortcut → done. Answers stay in this phone's storage (sp.setup) until a sheet is
 // connected, then go up through the normal store functions (applySetup). "Sign in with Google"
 // makes the sheet for you (provision.js); without a client ID the guide offers the by-hand path.
 import { colorHex, fmt } from './model.js';
@@ -76,7 +76,16 @@ export function setupPlan(a, basePlan = []) {
 
 /* ───── Google sign-in (Google Identity Services, token model) ───── */
 
-let gis = null, tokenClient = null, pending = null, accessToken = null;
+let gis = null, tokenClient = null, pending = null, accessToken = null, popupMisses = 0;
+// a Home Screen app: Google's sign-in window often can't open there, so the guide sends you to Safari
+const standalone = () => globalThis.navigator?.standalone === true || !!globalThis.matchMedia?.('(display-mode: standalone)').matches;
+const appLink = () => `${location.origin}${location.pathname}`;
+function popupError() {
+  popupMisses++;
+  return new SetupError('popup', standalone()
+    ? 'Google’s sign-in window can’t open inside the Home Screen app. Open this page in Safari to sign in, or set your sheet up by hand below.'
+    : 'Google’s sign-in window didn’t open. Open this page in Safari to sign in (or allow pop-ups for this site), or set your sheet up by hand below.');
+}
 function loadGis() {
   if (globalThis.google?.accounts?.oauth2) return Promise.resolve();
   return (gis ||= new Promise((resolve, reject) => {
@@ -112,8 +121,13 @@ function signIn() {
         resolve(r.access_token);
       },
       fail(e) {
-        if (e?.type === 'popup_failed_to_open') return reject(new SetupError('popup', 'Your browser blocked Google’s sign-in window. Tap Sign in with Google again (allow pop-ups for this site if it keeps happening).'));
-        if (e?.type === 'popup_closed') return reject(new SetupError('cancelled', 'Sign-in was closed before it finished. Tap Sign in with Google to try again.'));
+        if (e?.type === 'popup_failed_to_open') return reject(popupError());
+        // closed straight away in a Home Screen app, or closed twice: the window isn't working here
+        if (e?.type === 'popup_closed') {
+          if (standalone() || popupMisses > 0) return reject(popupError());
+          popupMisses++;
+          return reject(new SetupError('cancelled', 'Sign-in was closed before it finished. Tap Sign in with Google to try again.'));
+        }
         reject(new SetupError('google', 'Google sign-in didn’t work. Try again in a moment.', e?.type || ''));
       },
     };
@@ -125,24 +139,23 @@ function signIn() {
 
 /* ───── The guide ───── */
 
+// three plain steps on the sheet page
 const TASKS = [
-  ['signin', 'Sign in with Google'],
-  ['sheet', 'Make your Spendings sheet'],
-  ['script', 'Add its script'],
-  ['code', 'Copy in the code'],
-  ['publish', 'Publish it'],
-  ['allow', 'Allow it to use your sheet'],
-  ['install', 'Set up the tabs'],
+  ['signin', 'Sign in'],
+  ['sheet', 'Make your sheet'],
+  ['allow', 'Allow it'],
 ];
 
 export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => {} } = {}) {
   saved = load();
   const connectedAtStart = isConnected();
-  const steps = connectedAtStart ? ['welcome', 'sheet', 'shortcut', 'done'] : ['welcome', 'accounts', 'money', 'sheet', 'shortcut', 'done'];
+  // with Sign in with Google, turning on the Apps Script API gets its own step first (every new account needs it)
+  const steps = connectedAtStart ? ['welcome', 'sheet', 'shortcut', 'done']
+    : ['welcome', 'accounts', 'money', ...(GOOGLE_CLIENT_ID ? ['api'] : []), 'sheet', 'shortcut', 'done'];
   let step = steps.includes(start) ? start : steps.includes(saved.step) && !saved.done ? saved.step : 'welcome';
   // the sheet step's own state
   let phase = saved.progress?.url && !isConnected() ? 'allow' : 'idle';
-  let current = '', error = null, pollTimer = null, polling = false, manualOpen = !GOOGLE_CLIENT_ID;
+  let error = null, pollTimer = null, polling = false, manualOpen = !GOOGLE_CLIENT_ID;
   let sheetEl = null, closeFn = null;
 
   const go = (next, dir = 1) => {
@@ -166,7 +179,8 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       <li>${icon('bell', { size: 20 })}<span><b>Logs itself.</b> Apple Pay payments arrive with a tap, or none at all.</span></li>
       <li>${icon('chart', { size: 20 })}<span><b>Knows what’s safe to spend</b> until your next payday.</span></li>
       <li>${icon('sheet', { size: 20 })}<span><b>Yours.</b> Everything lives in your own Google Sheet.</span></li>
-    </ul>`;
+    </ul>
+    <p class="su-small center su-needs">You’ll need a Google account. Setup takes about 5 minutes.</p>`;
 
   const swatches = (a, i) => `<div class="swatches su-swatches" role="radiogroup" aria-label="Colour for ${esc(a.name || 'this account')}" ${saved.openColour === i ? '' : 'hidden'}>
       ${CARD_COLORS.map((c) => `<button type="button" role="radio" class="swatch" aria-checked="${c.id === a.color}" aria-label="${esc(c.name)}" data-su-colour="${i}:${c.id}" style="--sw:${c.hex}">${icon('check', { size: 14 })}</button>`).join('')}
@@ -215,22 +229,28 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     <p class="group-foot">On payday the app asks you to tap “It landed”, so your total never runs ahead of the bank.</p>`;
   };
 
+  const apiStep = () => `<div class="su-hero">${icon('gear', { size: 34 })}</div>
+    <h2 class="su-h">Turn on the Apps Script API</h2>
+    <p class="su-p">Google needs one switch on in your account before Spendings can make your sheet. You only do this once.</p>
+    <ol class="su-steps">
+      <li>Tap <b>Open Apps Script settings</b>. It opens in a new tab; sign in with your Google account if asked.</li>
+      <li>Tap <b>Google Apps Script API</b> and turn it <b>On</b>.</li>
+      <li>Come back to this app (close the tab, or switch back to Spendings). You’ll be on this same step: tap <b>It’s on</b>.</li>
+    </ol>
+    <a class="btn-tinted su-wide su-api" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">${icon('gear', { size: 18 })}Open Apps Script settings</a>
+    <p class="group-foot su-foot-note">Already on? Tap It’s on. If it’s still off later, the app says so and links here again.</p>`;
+
   const p = () => saved.progress || {};
   const taskState = (id) => {
-    const order = TASKS.map((t) => t[0]);
     const pr = p();
-    const doneUpTo = isConnected() ? order.length : phase === 'installing' ? order.indexOf('install')
-      : phase === 'allow' ? order.indexOf('allow')
-        : pr.url ? order.indexOf('allow') : pr.versionNumber ? order.indexOf('publish') : pr.pushed ? order.indexOf('publish') : pr.scriptId ? order.indexOf('code') : pr.spreadsheetId ? order.indexOf('script') : accessToken ? order.indexOf('sheet') : 0;
-    const i = order.indexOf(id);
-    const live = phase === 'working' ? Math.max(order.indexOf(current), doneUpTo) : phase === 'signing' ? 0 : -1;
-    if (i < doneUpTo && !(phase === 'working' && i === live)) return 'done';
-    if (i === live || (phase === 'allow' && id === 'allow') || (phase === 'installing' && id === 'install')) return 'now';
-    return '';
+    const i = TASKS.findIndex((t) => t[0] === id);
+    const doneN = isConnected() ? 3 : phase === 'allow' || phase === 'installing' || pr.url ? 2 : phase === 'working' || tokenValid() ? 1 : 0;
+    const nowN = phase === 'signing' ? 0 : phase === 'working' ? 1 : phase === 'allow' || phase === 'installing' ? 2 : -1;
+    return i === nowN ? 'now' : i < doneN ? 'done' : '';
   };
-  const tasks = () => `<ol class="su-tasks" aria-label="Progress">${TASKS.map(([id, label]) => {
+  const tasks = () => `<ol class="su-tasks" aria-label="Progress">${TASKS.map(([id, label], i) => {
     const st = taskState(id);
-    return `<li class="${st}">${st === 'done' ? icon('check', { size: 16 }) : st === 'now' ? '<span class="su-spin" aria-hidden="true"></span>' : '<i aria-hidden="true"></i>'}<span>${label}</span>${st === 'now' ? '<em class="sr">in progress</em>' : ''}</li>`;
+    return `<li class="${st}">${st === 'done' ? icon('check', { size: 16 }) : st === 'now' ? '<span class="su-spin" aria-hidden="true"></span>' : '<i aria-hidden="true"></i>'}<span>${i + 1}. ${label}</span>${st === 'now' ? '<em class="sr">in progress</em>' : st === 'done' ? '<em class="sr">done</em>' : ''}</li>`;
   }).join('')}</ol>`;
 
   const errorCard = () => {
@@ -238,7 +258,12 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     const e = error;
     const acts = [];
     if (e.code === 'script-api-off') acts.push(`<a class="btn-plain" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">Open Apps Script settings</a>`);
-    if (['auth', 'cancelled', 'popup', 'scopes'].includes(e.code)) acts.push(`<button type="button" class="btn-primary" data-su="signin">Sign in with Google</button>`);
+    if (e.code === 'popup') {
+      // never an endless "tap again": Safari, or the by-hand path just below
+      acts.push(`<a class="btn-primary" href="${esc(appLink())}" target="_blank" rel="noopener" data-su-safari="1">Open in Safari</a>`);
+      acts.push(`<button type="button" class="btn-plain" data-copy="${esc(appLink())}">${icon('copy', { size: 16 })}Copy this page’s address</button>`);
+      if (!standalone() && popupMisses < 2) acts.push(`<button type="button" class="btn-plain" data-su="signin">Try again</button>`);
+    } else if (['auth', 'cancelled', 'scopes'].includes(e.code)) acts.push(`<button type="button" class="btn-primary" data-su="signin">Sign in with Google</button>`);
     else if (e.code !== 'api-disabled' && e.code !== 'manual') acts.push(`<button type="button" class="btn-primary" data-su="retry">Try again</button>`);
     return `<div class="tip-card su-error" role="alert">${icon('warn', { size: 18 })}<div><p>${esc(e.message)}</p>${acts.length ? `<div class="su-actions">${acts.join('')}</div>` : ''}</div></div>`;
   };
@@ -270,7 +295,13 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     if (phase === 'allow' || phase === 'installing') {
       return `${head}${tasks()}
         <div class="su-allow">
-          <p class="su-p"><b>One last thing.</b> Google will ask you to allow Spendings to use this sheet. Tap below, then: <b>Review permissions</b> → your account → <b>Advanced</b> → <b>Go to Spendings</b> → <b>Allow</b>.</p>
+          <p class="su-p"><b>One last thing.</b> Google asks you to allow Spendings to use this sheet. Tap <b>Allow Spendings</b>; it opens in a new tab. Then:</p>
+          <ol class="su-steps">
+            <li>Tap <b>Review permissions</b> and choose your Google account.</li>
+            <li>Google says “Google hasn’t verified this app”. Tap <b>Advanced</b>, then <b>Go to Spendings (unsafe)</b>.</li>
+            <li>Tap <b>Allow</b>.</li>
+            <li>Come back to this app (close the tab, or switch back to Spendings). You’ll land on this same step and it carries on by itself.</li>
+          </ol>
           <p class="su-small">Google says “unsafe” only because the script is yours and Google hasn’t reviewed it. It can only use the sheet it lives in.</p>
           <a class="btn-primary su-wide" href="${esc(allowUrl(pr))}" target="_blank" rel="noopener" data-su-allow="1">Allow Spendings</a>
           <p class="su-small center" aria-live="polite">${phase === 'installing' ? 'Allowed ✓ Setting up the tabs…' : 'Waiting for you to allow it. Come back here afterwards; the app carries on by itself.'}</p>
@@ -278,12 +309,14 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           <p class="su-small">Google didn’t ask? <a href="${esc(editorUrl(pr))}" target="_blank" rel="noopener">Open the script</a>, choose <b>setup</b> at the top, tap <b>Run</b> and allow it there.</p>
         </div>
         ${errorCard()}
+        <p class="su-small su-storage">On iPhone, Safari and the Home Screen app keep separate storage. Finish here, where you started; at the end you get your Web app URL and app key with copy buttons to paste into the other one.</p>
         <p class="su-small"><button type="button" class="text-btn su-small" data-su="startover">Start again with a new sheet</button></p>`;
     }
     return `${head}<p class="su-p">Sign in and Spendings makes a sheet called <b>Spendings</b> in your Google Drive, with its script, ready to use. Your sign-in is only used for this and isn’t kept.</p>
-      ${pr.spreadsheetId || busy || error ? tasks() : ''}
+      ${tasks()}
       ${errorCard()}
       ${error ? '' : `<button type="button" class="btn-primary su-wide su-google" data-su="signin" ${busy ? 'disabled' : ''}>${busy ? '<span class="su-spin" aria-hidden="true"></span>Working…' : `${googleG()}Sign in with Google`}</button>`}
+      ${error ? '' : '<p class="su-small">Google may say it hasn’t verified this app: tap <b>Continue</b>. Best done in Safari, not the Home Screen app.</p>'}
       ${pr.spreadsheetId && !busy ? '<p class="su-small"><button type="button" class="text-btn su-small" data-su="startover">Start again with a new sheet</button></p>' : ''}
       ${manual()}`;
   };
@@ -310,7 +343,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       <p class="group-foot su-foot-note">Keep these for your Shortcut. If you set this up in Safari, paste them into the Home Screen app’s Settings too.</p>` : ''}`;
   };
 
-  const BODY = { welcome, accounts: accountsStep, money: moneyStep, sheet: sheetStep, shortcut: shortcutStep, done: doneStep };
+  const BODY = { welcome, accounts: accountsStep, money: moneyStep, api: apiStep, sheet: sheetStep, shortcut: shortcutStep, done: doneStep };
   const footer = () => {
     if (step === 'welcome') {
       return `<button type="button" class="btn-primary su-wide" data-su="next">Get started</button>
@@ -322,6 +355,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
         : '<button type="button" class="text-btn su-have" data-su="next">Skip for now</button>';
     }
     if (step === 'done') return '<button type="button" class="btn-primary su-wide" data-su="finish">Start using Spendings</button>';
+    if (step === 'api') return '<button type="button" class="btn-primary su-wide" data-su="next">It’s on</button><button type="button" class="text-btn su-have" data-su="have">Set up my sheet by hand instead</button>';
     if (step === 'shortcut') return '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button><button type="button" class="text-btn su-have" data-su="next">Later</button>';
     return '<button type="button" class="btn-primary su-wide" data-su="next">Continue</button>';
   };
@@ -373,10 +407,9 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       const done = await provision({
         token, code, progress: p(),
         save: (pr) => { saved.progress = pr; persist(); },
-        onStep: (s) => { current = s; redrawBody(); },
       });
       saved.progress = done; persist();
-      phase = 'allow'; current = '';
+      phase = 'allow';
       redrawBody();
       startPolling();
     } catch (e) {
@@ -397,6 +430,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     } catch (e) {
       phase = 'idle';
       error = e instanceof SetupError ? e : new SetupError('google', 'Google sign-in didn’t work. Try again in a moment.');
+      if (error.code === 'popup') manualOpen = true; // the by-hand path, right under the message
       redrawBody();
       return;
     }
@@ -426,8 +460,8 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     if (phase !== 'allow') return;
     phase = 'installing'; error = null; redrawBody();
     try {
-      await installSheet(pr.url, pr.key);
-      await finishConnect(pr.url, pr.key, { fresh: true });
+      const inst = await installSheet(pr.url, pr.key);
+      await finishConnect(pr.url, pr.key, { fresh: inst?.fresh === true });
     } catch (e) {
       phase = 'allow';
       error = new SetupError('busy', `Your sheet answered but couldn’t finish setting up: ${e.message}`);
@@ -436,23 +470,22 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
   }
   const onVisible = () => { if (!document.hidden && phase === 'allow' && step === 'sheet') checkAllowed(); };
 
-  /** Connected: save the connection, send your answers to a new sheet, and move on. */
+  /** Connected: save the connection, send your answers to a new sheet, and move on.
+      `fresh` comes from the sheet itself (`install`): only a sheet nobody has used yet takes your answers.
+      Any other sheet (entries, or its own accounts, settings or plan) keeps exactly what it has. */
   async function finishConnect(url, token, { fresh = false } = {}) {
-    const localIds = new Set(state.entries.map((e) => e.id));
     setConnection(url, token);
     if (isDemo()) setDemo(false);
     await sync();
-    // only a sheet with nothing in it yet takes your answers; an existing sheet keeps what it has
-    const empty = fresh || state.entries.every((e) => localIds.has(e.id));
     const a = answers();
-    if (!connectedAtStart && a.touched && empty) {
-      applySetup(setupPlan(a));
-      await sync();
+    let kept = false;
+    if (!connectedAtStart && a.touched) {
+      if (fresh) { applySetup(setupPlan(a)); await sync(); } else kept = true;
     }
     saved.progress = null; saved.answers = null; saved.done = true;
     persist();
     phase = 'idle';
-    toast(state.sync.status === 'error' ? esc(state.sync.error) : 'Connected to your sheet', { icon: icon(state.sync.status === 'error' ? 'warn' : 'check', { size: 18 }), tone: state.sync.status === 'error' ? 'warn' : 'good' });
+    toast(state.sync.status === 'error' ? esc(state.sync.error) : kept ? 'Connected. Your sheet already had its own accounts and settings, so it kept them.' : 'Connected to your sheet', { icon: icon(state.sync.status === 'error' ? 'warn' : 'check', { size: 18 }), tone: state.sync.status === 'error' ? 'warn' : 'good' });
     if (step === 'sheet') go('shortcut');
   }
 
@@ -465,8 +498,9 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     btn.disabled = true; btn.classList.add('busy');
     try {
       await ping(url, token);
-      await installSheet(url, token).catch(() => {}); // a by-hand sheet already ran setup; this only fills gaps
-      await finishConnect(url, token);
+      // a by-hand sheet already ran setup; install leaves it as it is and says whether it's still unused
+      const inst = await installSheet(url, token).catch(() => null);
+      await finishConnect(url, token, { fresh: inst?.fresh === true });
     } catch (e) {
       warn(e.message);
     } finally { btn.disabled = false; btn.classList.remove('busy'); }
@@ -573,6 +607,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           return;
         }
         if (t.closest('[data-su-allow]')) { setTimeout(startPolling, 0); return; } // the link opens Google in a new tab
+        if (t.closest('.su-api, [data-su-safari]')) return; // plain links to a new tab
         const act = t.closest('[data-su]')?.dataset.su;
         if (!act) return;
         if (act === 'signin') { haptic(); return signInAndRun(); }

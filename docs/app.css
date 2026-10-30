@@ -1440,6 +1440,14 @@ html.sheet-open body::after { opacity: 0; }
 .su-list li + li { border-top: 0.5px solid var(--sep); }
 .su-list li .i { flex: none; color: var(--tint); margin-top: 1px; }
 .su-list.small li { font-size: 15px; padding: 10px 0; }
+.su-steps { margin: 4px var(--gutter) 12px; padding: 6px 16px 6px 36px; background: var(--bg-2); border-radius: var(--r-group); }
+.su-steps li { padding: 9px 0; font-size: 15px; line-height: 1.4; color: var(--label-2); }
+.su-steps li::marker { color: var(--tint-text); font-weight: 600; }
+.su-steps li b { color: var(--label); font-weight: 600; }
+.su-steps li + li { border-top: 0.5px solid var(--sep); }
+a.su-api { display: flex; margin: 4px var(--gutter) 0; width: calc(100% - 2 * var(--gutter)); text-decoration: none; }
+.su-needs { padding-top: 14px; }
+.su-storage { padding-top: 12px; }
 .su-footer { flex: none; display: grid; gap: 8px; padding: 10px var(--gutter) 14px; }
 .su-wide { width: 100%; height: 50px; font-size: 17px; }
 .su-have { justify-self: center; min-height: 44px; font-size: 16px; }
