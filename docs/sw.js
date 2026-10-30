@@ -1,7 +1,8 @@
 // App-shell cache. Bump VERSION whenever app files change so phones pick up the update.
-const VERSION = 'spendings-v11';
+const VERSION = 'spendings-v12';
 const SHELL = ['./', 'index.html', 'app.css', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-180.png',
-  'js/main.js', 'js/model.js', 'js/store.js', 'js/ui.js', 'js/entry.js', 'js/charts.js', 'js/icons.js', 'js/lock.js', 'js/demo.js', 'js/theme.js', 'js/home.js', 'js/accounts.js'];
+  'js/main.js', 'js/model.js', 'js/store.js', 'js/ui.js', 'js/entry.js', 'js/charts.js', 'js/icons.js', 'js/lock.js', 'js/demo.js', 'js/theme.js', 'js/home.js', 'js/accounts.js',
+  'js/views.js', 'js/activity.js', 'js/insights.js'];
 
 self.addEventListener('install', (e) => {
   e.waitUntil(caches.open(VERSION).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

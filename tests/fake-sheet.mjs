@@ -55,7 +55,7 @@ export function makeEnv() {
   const ss = {
     getSheetByName: (n) => sheets.find((s) => s.name === n) || null,
     insertSheet: (n, i) => { const s = new Sheet(n); sheets.splice(i ?? sheets.length, 0, s); return s; },
-    getSheets: () => sheets,
+    getSheets: () => sheets.slice(), // a copy, like real Apps Script
     deleteSheet: (s) => sheets.splice(sheets.indexOf(s), 1),
     setSpreadsheetTimeZone() {}, setSpreadsheetLocale() {}, setActiveSheet() {}, moveActiveSheet() {},
     getName: () => 'My Spendings', getUrl: () => 'https://docs.google.com/x',

@@ -173,6 +173,8 @@ assert.deepEqual(errors, []);
 {
   const dc = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
   const d = await dc.newPage();
+  // pin the clock to 5 Oct 2026 (Dubai), so Nafis (day 1) is due and the cycle ends on 26 Oct whatever today is
+  await d.clock.install({ time: new Date('2026-10-05T10:00:00+04:00') });
   d.on('pageerror', (e) => errors.push(e.message));
   await d.goto('http://localhost:8765/?demo=1#home');
   await d.waitForSelector('.payday');

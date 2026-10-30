@@ -244,4 +244,26 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   assert.equal(r.entry.type, 'Spend');
 }
 
+// Extras: one JSON value per key, updated in place, returned by list, kept through a reset
+{
+  const env = makeEnv();
+  env.ctx.setup();
+  const tk = env.ctx.getToken_();
+  const p3 = (body) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify({ token: tk, ...body }) } }).text);
+  assert.deepEqual(p3({ action: 'list' }).extras, {});
+  assert.ok(p3({ action: 'extras', key: 'budgets', value: { 'Food & Drinks': 800 } }).ok);
+  assert.ok(p3({ action: 'extras', key: 'goals', value: [{ id: 'g1', name: 'Car', target: 20000 }] }).ok);
+  assert.ok(p3({ action: 'extras', key: 'budgets', value: { 'Food & Drinks': 900 } }).ok);
+  const ex = p3({ action: 'list' }).extras;
+  assert.deepEqual(ex.budgets, { 'Food & Drinks': 900 });
+  assert.equal(ex.goals[0].name, 'Car');
+  assert.equal(env.ss.getSheetByName('Extras').getLastRow(), 3, 'an update rewrites its row, never adds a second one');
+  assert.equal(p3({ action: 'extras', key: 'bad key!', value: 1 }).ok, false);
+  p3({ action: 'add', entry: { id: 'x1', type: 'Spend', amount: 5, account: 'ADCB', category: 'Other' } });
+  p3({ action: 'reset' });
+  assert.deepEqual(p3({ action: 'list' }).extras.budgets, { 'Food & Drinks': 900 }, 'reset keeps extras');
+  // the Apple Pay Shortcut's request is unchanged and still works
+  assert.equal(p3({ source: 'applepay', amount: 'AED 12.00', merchant: 'Cafe', card: 'ADCB', category: 'Decide later' }).ok, true);
+}
+
 console.log('apps-script: all tests passed');

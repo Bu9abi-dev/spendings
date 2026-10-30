@@ -303,7 +303,7 @@ function whereCard(m) {
   return `<section class="where">
     <h3>Where your ${fmt(m.total, { whole: true })} is</h3>
     <div class="where-bar">${rows.filter((r) => r.v > 0).map((r) => `<span style="flex-grow:${r.v}; --c:${r.c}"></span>`).join('')}</div>
-    ${rows.map((r) => `<div class="where-row"><i style="--c:${r.c}"></i><span class="wr-main"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></span><b class="num${r.v < 0 ? ' neg' : ''}">${r.v < 0 ? '−' : ''}${fmt(Math.abs(r.v), { whole: true })}</b></div>`).join('')}
+    ${rows.map((r) => `<div class="where-row"><i style="--c:${r.c}"></i><span class="wr-main"><b>${esc(r.label)}</b><span>${esc(r.sub)}</span></span><b class="num${r.shown < 0 ? ' neg' : ''}">${r.shown < 0 ? '−' : ''}${fmt(Math.abs(r.shown), { whole: true })}</b></div>`).join('')}
     <div class="where-row total"><span class="wr-main"><b>All your money</b></span><b class="num">${fmt(m.total, { whole: true })}</b></div>
   </section>`;
 }

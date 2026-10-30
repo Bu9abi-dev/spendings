@@ -21,10 +21,15 @@ export const state = {
   sheetUrl: '',
   // payday prompts hidden for one cycle: { planId: cycle }. Kept on this phone; changes no balances.
   dismissed: read(K.dismissed, {}),
+  // newer features' saved data (budgets, goals, …), kept in the sheet's Extras tab: { key: value }
+  extras: {},
+  // keys saved while the sheet's script was older than the Extras tab: only on this phone so far,
+  // sent up (and winning over the sheet) as soon as the updated script answers
+  extrasUnsent: [],
 };
 
 const cache = read(K.cache, null);
-if (cache) Object.assign(state, { entries: cache.entries || [], settings: { ...DEFAULT_SETTINGS, ...cache.settings }, merchants: cache.merchants || {}, sheetUrl: cache.sheetUrl || '', plan: cache.plan?.length ? cache.plan : state.plan, accounts: cache.accounts?.length ? cache.accounts : state.accounts });
+if (cache) Object.assign(state, { entries: cache.entries || [], settings: { ...DEFAULT_SETTINGS, ...cache.settings }, merchants: cache.merchants || {}, sheetUrl: cache.sheetUrl || '', plan: cache.plan?.length ? cache.plan : state.plan, accounts: cache.accounts?.length ? cache.accounts : state.accounts, extras: cache.extras || {}, extrasUnsent: cache.extrasUnsent || [] });
 setAccountList(state.accounts);
 
 export const isConnected = () => !!(state.conn.url && state.conn.token);
@@ -34,7 +39,7 @@ function emit(reason) { for (const fn of listeners) fn(reason); }
 
 function persist() {
   if (state.prefs.demo) return;
-  write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl, plan: state.plan, accounts: state.accounts });
+  write(K.cache, { entries: state.entries, settings: state.settings, merchants: state.merchants, sheetUrl: state.sheetUrl, plan: state.plan, accounts: state.accounts, extras: state.extras, extrasUnsent: state.extrasUnsent });
   write(K.outbox, state.outbox);
 }
 
@@ -106,6 +111,8 @@ export function sync() {
       if (Array.isArray(data.plan) && !state.outbox.some((o) => o.op === 'plan')) state.plan = data.plan;
       if (Array.isArray(data.accounts) && data.accounts.length && !state.outbox.some((o) => o.op === 'accounts' || o.op === 'rename')) { state.accounts = data.accounts; setAccountList(state.accounts); }
       state.sheetUrl = data.sheetUrl || '';
+      // an older sheet script sends no extras: keep what this phone has
+      if (data.extras && typeof data.extras === 'object') mergeExtras(data.extras);
       const pending = new Map(state.outbox.map((o) => [o.id, o]));
       const server = (data.entries || []).filter((e) => !(pending.get(e.id)?.op === 'delete'));
       const ids = new Set(server.map((e) => e.id));
@@ -148,6 +155,16 @@ async function flushOutbox() {
     else if (op.op === 'accounts') await call({ action: 'accounts', accounts: op.accounts });
     else if (op.op === 'rename') await call({ action: 'renameAccount', from: op.from, to: op.to });
     else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
+    else if (op.op === 'extra') {
+      try {
+        await call({ action: 'extras', key: op.key, value: op.value });
+        state.extrasUnsent = state.extrasUnsent.filter((k) => k !== op.key);
+      } catch (e) {
+        // the sheet's script predates extras: keep the value on this phone and don't block the queue
+        if (!/Unknown action/i.test(e.message)) throw e;
+        if (!state.extrasUnsent.includes(op.key)) state.extrasUnsent = [...state.extrasUnsent, op.key];
+      }
+    }
     state.outbox.shift();
     sent++;
     persist();
@@ -323,6 +340,46 @@ export function restorePlan(id) {
   commitDismissed(next);
 }
 
+/* ───── Extras ─────
+   Saved data for newer features (category budgets, savings goals, …). Lives in the sheet's
+   Extras tab, one JSON value per key, so a feature never needs a new sheet column. */
+
+const EXTRA_KEY = /^[a-zA-Z][\w.-]{0,40}$/;
+export const getExtra = (key, fallback) => (Object.hasOwn(state.extras, key) ? state.extras[key] ?? fallback : fallback);
+/** True while some extras are only on this phone (the sheet's script needs updating). */
+export const extrasOnPhoneOnly = () => state.extrasUnsent.length > 0;
+
+/** Save one feature's data. `null` clears it. Undo puts back the previous value. */
+export function saveExtra(key, value, label = 'Changed a setting') {
+  if (!EXTRA_KEY.test(key)) throw new Error(`Bad extras key: ${key}`);
+  const before = Object.hasOwn(state.extras, key) ? state.extras[key] : null;
+  record(label, () => saveExtra(key, before));
+  const next = { ...state.extras, [key]: value };
+  if (value == null) delete next[key];
+  state.extras = next;
+  if (!state.prefs.demo) {
+    // only the latest value of a key needs to reach the sheet
+    state.outbox = state.outbox.filter((o) => !(o.op === 'extra' && o.key === key));
+    enqueue({ op: 'extra', id: '', key, value: value ?? null });
+  }
+  persist(); emit('extras');
+  sync();
+}
+
+/** The sheet's extras arrived. Values still on their way up, or saved only on this phone while the
+    script was old, are newer than the sheet's, so they win and get sent up. */
+function mergeExtras(server) {
+  const waiting = new Set(state.outbox.filter((o) => o.op === 'extra').map((o) => o.key));
+  const merged = Object.fromEntries(Object.entries(server).filter(([k, v]) => EXTRA_KEY.test(k) && v != null));
+  for (const k of [...waiting, ...state.extrasUnsent]) {
+    if (Object.hasOwn(state.extras, k)) merged[k] = state.extras[k]; else delete merged[k];
+  }
+  for (const k of state.extrasUnsent) if (!waiting.has(k)) enqueue({ op: 'extra', id: '', key: k, value: state.extras[k] ?? null });
+  if (state.extrasUnsent.length) again = true;
+  state.extrasUnsent = [];
+  state.extras = merged;
+}
+
 /* ───── Accounts ───── */
 
 function commitAccounts(list, { queue = true } = {}) {
@@ -414,6 +471,7 @@ export function loadDemo() {
   state.merchants = {};
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
   state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
+  state.extras = {};
   setAccountList(state.accounts);
 }
 
@@ -431,6 +489,7 @@ export function setDemo(on) {
     state.settings = { ...DEFAULT_SETTINGS, ...(c?.settings || {}) };
     state.plan = c?.plan?.length ? c.plan : DEFAULT_PLAN.map((p) => ({ ...p }));
     state.accounts = c?.accounts?.length ? c.accounts : DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
+    state.extras = c?.extras || {};
     setAccountList(state.accounts);
   }
   emit('entries');
