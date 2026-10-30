@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **30 Oct 2026**, at **v31**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **30 Oct 2026**, at **v32**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -61,16 +61,15 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v31, 30 Oct 2026)
+## 5. Current state (v32, 30 Oct 2026)
 
-**Live on main** (newest first): v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
 
 **In flight** (branches pushed, not merged):
-- Nothing merged is pending. `claude/test-stability` was stopped unfinished at wrap-up (tests-only branch; check what
-  it pushed before reusing it, or start fresh from main).
+- Nothing in flight. Test stability merged (run-all.sh exits non-zero and names failing tests).
 
 **Waiting on Abdullah** (things only he can do):
 1. **Redeploy the Apps Script** (paste the latest `apps-script/Code.gs`, Deploy → Manage deployments → ✏️ → New
@@ -104,7 +103,7 @@ left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated
 
 ## 7. Session log (newest first)
 
-### 30 Oct 2026 · loop session (v15 → v31)
+### 30 Oct 2026 · loop session (v15 → v32)
 - Took over six wave-1 threads that had hit their usage limit. Ran councils over every branch, applied fixes, merged:
   activity filters (v15), smart categories (v16), monthly report (v17), custom categories (v18, asked for by
   Abdullah), budgets (v19), subscriptions + one Home notice (v20), outbox race fix (v21, found while fixing a flaky
@@ -119,4 +118,5 @@ left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated
 - Abdullah asked for this file.
 - Later in the session: weekly summary + pace alert (v26), performance (v27), budget line in the Apple Pay
   notification (v28), accessibility (v29), Arabic + RTL (v30). Abdullah asked to wrap up at ~$10 credit left; the
-  loop stopped there with main deployed.
+  loop stopped there with main deployed. Abdullah then said $32 was left: continued with test stability, small wins
+  (v31), a whole-app audit and its nine fixes (v32), a full crawl in English/Arabic × light/dark (no errors).

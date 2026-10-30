@@ -44,7 +44,25 @@ timeline
         v29 : VoiceOver : Contrast : Larger Text
         v30 : Arabic and right to left : Match iPhone
         v31 : Tap a place : On-pace estimate : Learns only from you
+        v32 : Whole-app check-up fixes
 ```
+
+---
+
+## v32: Polish
+**30 October 2026** · sheet update optional
+
+- **Polish from a whole-app check-up**:
+  - Renaming an account now also updates buy-now-pay-later plans and your people list, so payments and Safe to spend stay right.
+  - Account names are always shown as plain text.
+  - Adding a 21st account (or person) now says there's a limit of 20 instead of the sheet quietly dropping it.
+  - Tabby and Tamara payments are no longer mistaken for a subscription.
+  - Net worth rows add up exactly to the total.
+  - Insights "By account" and the monthly report now list the same accounts, with an "Everything else" row, and both add up to Spent.
+  - The report's "allowance left" matches Home's Safe to spend.
+  - A setting you change while the app is syncing is no longer undone by the sync.
+  - Refunds export to CSV as real numbers.
+- The sheet part (optional): the sheet refuses a 21st account with a clear message instead of dropping it.
 
 ---
 
