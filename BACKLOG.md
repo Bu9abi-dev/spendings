@@ -7,11 +7,11 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 7 | First-time setup + Sign in with Google | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
+| 7 | First-time setup + Sign in with Google (council fixes) | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
+| 8 | Weekly summary and pace alert | `claude/weekly` | one Home line, "Your week" sheet |
 
 ## Next
 
-- **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning, what's due).
 - **Arabic / English toggle.** Touches every string.
 - **Tests: stable under load.** verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
