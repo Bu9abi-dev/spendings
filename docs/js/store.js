@@ -30,6 +30,9 @@ export const state = {
   // keys saved while the sheet's script was older than the Extras tab: only on this phone so far,
   // sent up (and winning over the sheet) as soon as the updated script answers
   extrasUnsent: [],
+  // what the sheet's script says it can do (`features` in its ping/install/list replies), or null until it
+  // has said. A script from before `features` sends none: then we fall back to its "Unknown action" error.
+  scriptFeatures: null,
 };
 
 const cache = read(K.cache, null);
@@ -104,10 +107,15 @@ async function call(body, { timeout = 45000 } = {}) {
   } finally { clearTimeout(t); }
 }
 
+/** Does this script's reply to the app list its features? Remember them; a reply without any changes nothing. */
+const noteFeatures = (data) => { if (Array.isArray(data?.features)) state.scriptFeatures = data.features.filter((f) => typeof f === 'string'); return data; };
+/** True when the script has said it lacks `name`; false when it has it, or hasn't said (then ask it and see). */
+export const scriptLacks = (name, features = state.scriptFeatures) => Array.isArray(features) && !features.includes(name);
+
 export async function ping(url, token) {
   const prev = state.conn;
   state.conn = { url, token };
-  try { return await call({ action: 'ping' }, { timeout: 15000 }); } finally { state.conn = prev; }
+  try { return noteFeatures(await call({ action: 'ping' }, { timeout: 15000 })); } finally { state.conn = prev; }
 }
 
 /** Asks a newly made sheet to build its tabs. An older script has no `install`; its setup is run by hand,
@@ -115,7 +123,9 @@ export async function ping(url, token) {
 export async function installSheet(url, token) {
   const prev = state.conn;
   state.conn = { url, token };
-  try { return await call({ action: 'install' }, { timeout: 90000 }); } catch (e) {
+  // the ping just before this may already have shown the script has no `install`: don't ask it
+  if (scriptLacks('install')) { state.conn = prev; return { ok: true, old: true }; }
+  try { return noteFeatures(await call({ action: 'install' }, { timeout: 90000 })); } catch (e) {
     if (/Unknown action/i.test(e.message)) return { ok: true, old: true };
     throw e;
   } finally { state.conn = prev; }
@@ -153,6 +163,7 @@ export function sync() {
       if (Array.isArray(data.plan) && !state.outbox.some((o) => o.op === 'plan')) state.plan = data.plan;
       if (Array.isArray(data.accounts) && data.accounts.length && !state.outbox.some((o) => o.op === 'accounts' || o.op === 'rename')) { state.accounts = data.accounts; setAccountList(state.accounts); }
       state.sheetUrl = data.sheetUrl || '';
+      noteFeatures(data);
       // an older sheet script sends no extras: keep what this phone has
       if (data.extras && typeof data.extras === 'object') mergeExtras(data.extras);
       const pending = new Map(state.outbox.map((o) => [o.id, o]));
@@ -201,10 +212,13 @@ async function flushOutbox() {
       else if (op.op === 'reset') await call({ action: 'reset' }, { timeout: 60000 });
       else if (op.op === 'extra') {
         try {
+          // a script that lists its features without `extras` is old: don't send, keep it on this phone
+          if (scriptLacks('extras')) throw new Error('Unknown action: extras');
           await call({ action: 'extras', key: op.key, value: op.value });
           state.extrasUnsent = state.extrasUnsent.filter((k) => k !== op.key);
         } catch (e) {
           // the sheet's script predates extras: keep the value on this phone and don't block the queue
+          // (by its features list when it sends one, else by the "Unknown action" text of the oldest scripts)
           if (!/Unknown action/i.test(e.message)) throw e;
           if (!state.extrasUnsent.includes(op.key)) state.extrasUnsent = [...state.extrasUnsent, op.key];
         }

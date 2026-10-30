@@ -504,4 +504,50 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   assert.ok(!env2.props.TOKEN);
 }
 
+// budget line in the Apple Pay reply: the category's spend so far this cycle against its limit
+{
+  const env = makeEnv();
+  env.ctx.setup();
+  const k = env.ctx.getToken_();
+  const q = (body) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify({ token: k, ...body }) } }).text);
+  const pay = (amount, merchant, category) => q({ source: 'applepay', amount: 'AED ' + amount, merchant, card: 'ADCB TouchPoints Platinum', category });
+  const old = new Date(Date.now() - 100 * 86400000).toISOString();
+  // no limit set: the message is what it always was
+  let m = pay(100, 'Spinneys A', 'Groceries').message;
+  assert.doesNotMatch(m, /this cycle/);
+  assert.match(m, /^AED 100 · Spinneys A · ADCB/);
+  q({ action: 'extras', key: 'budgets', value: { v: 1, limits: { Groceries: 500 } } });
+  // an earlier cycle, a transfer and an income in the category are not spending this cycle
+  q({ action: 'add', entry: { id: 'old1', type: 'Spend', amount: 400, account: 'ADCB', category: 'Groceries', date: old } });
+  q({ action: 'add', entry: { id: 'tr1', type: 'Transfer', amount: 300, account: 'ADCB', toAccount: 'ADIB', category: 'Groceries' } });
+  q({ action: 'add', entry: { id: 'in1', type: 'Income', amount: 50, account: 'ADCB', category: 'Groceries' } });
+  q({ action: 'add', entry: { id: 'sp2', type: 'Spend', amount: 12, account: 'ADCB', category: 'Shopping' } });
+  m = pay(312, 'Spinneys B', 'Groceries').message;
+  assert.ok(m.startsWith('AED 312 · Spinneys B · ADCB\n'), 'existing text stays first');
+  assert.ok(m.endsWith('\nGroceries: AED 412 of 500 this cycle (82%)'), m);
+  // a category without a limit gets no line
+  assert.doesNotMatch(pay(20, 'Zara', 'Shopping').message, /this cycle/);
+  // renamed category uses its label
+  q({ action: 'extras', key: 'categories', value: { v: 1, names: { Groceries: 'Food' } } });
+  assert.ok(pay(8, 'Spinneys C', 'Groceries').message.endsWith('\nFood: AED 420 of 500 this cycle (84%)'));
+  assert.ok(pay(100, 'Spinneys D', 'Groceries').message.endsWith('Food: AED 520 of 500 this cycle (104%)'));
+  // junk extras never break the logging
+  let i = 0;
+  for (const bad of ['junk', 5, { limits: 'x' }, { v: 1, limits: { Groceries: 'lots' } }, { v: 1, limits: { Groceries: -5 } }, { v: 1, limits: null }]) {
+    q({ action: 'extras', key: 'budgets', value: bad });
+    const r = pay(1, 'Spinneys E' + i++, 'Groceries');
+    assert.equal(r.ok, true);
+    assert.doesNotMatch(r.message, /this cycle/);
+  }
+  q({ action: 'extras', key: 'budgets', value: { v: 1, limits: { Groceries: 500 } } });
+  q({ action: 'extras', key: 'categories', value: 'junk' });
+  assert.match(pay(1, 'Spinneys F', 'Groceries').message, /\nGroceries: AED \d+ of 500 this cycle/);
+  // bank alerts reply the same way
+  q({ action: 'extras', key: 'budgets', value: { v: 1, limits: { Groceries: 500, Shopping: 1000 } } });
+  const b = q({ source: 'bank', title: 'ADCB', text: 'Purchase of AED 10.00 at SPINNEYS G with card XXX5247', category: 'Groceries' });
+  assert.match(b.message, /\nGroceries: AED \d+ of 500 this cycle \(\d+%\)$/, b.message);
+  // ping says what this script can do
+  assert.ok(q({ action: 'ping' }).features.includes('install'));
+}
+
 console.log('apps-script: all tests passed');
