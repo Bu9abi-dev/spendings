@@ -1,5 +1,6 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
 import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
+import { remapGoalAccounts } from './goals.js';
 import { demoEntries, DEMO_PLAN, demoExtras } from './demo.js';
 
 const K = { conn: 'sp.conn', cache: 'sp.cache', outbox: 'sp.outbox', prefs: 'sp.prefs', dismissed: 'sp.dismissed' };
@@ -496,6 +497,16 @@ export function updateAccount(oldName, patch) {
     state.settings = { ...state.settings, allowanceAccount: sw(state.settings.allowanceAccount), emergencyAccount: sw(state.settings.emergencyAccount) };
     state.outbox.forEach((o) => { if (o.entry) { o.entry.account = sw(o.entry.account); o.entry.toAccount = sw(o.entry.toAccount); } });
     if (!state.prefs.demo) enqueue({ op: 'rename', id: '', from: oldName, to: newName });
+    // goals name accounts by name: follow the rename. No undo step of its own; undoing the rename renames back and remaps again.
+    const g = remapGoalAccounts(state.extras.goals, oldName, newName);
+    if (g) {
+      state.extras = { ...state.extras, goals: g };
+      if (!state.prefs.demo) {
+        state.outbox = state.outbox.filter((o) => !(o.op === 'extra' && o.key === 'goals'));
+        enqueue({ op: 'extra', id: '', key: 'goals', value: g });
+      }
+      emit('extras');
+    }
   }
   commitAccounts(state.accounts.map((a) => (a.name === oldName ? { ...a, ...patch, name: newName } : a)));
   muted--;

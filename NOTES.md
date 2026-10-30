@@ -1,6 +1,6 @@
 # Notes for the next session
 
-Read this first. It says where the app stands, how to work on it, and what's in flight.
+Read this first (and [AI-SYNC-LOG.md](AI-SYNC-LOG.md), the hand-off file for any new AI session; keep both current). It says where the app stands, how to work on it, and what's in flight.
 Kept current by whoever is working on the app (Claude, running the improvement loop).
 
 ## Where things stand (30 Oct 2026)
@@ -52,6 +52,8 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 | `docs/js/report.js` | Monthly report sheet: per-cycle numbers (`cycleReport`), printable page, PDF/share/CSV. |
 | `docs/js/people.js` | Pure money-owed maths: split shares and USD prices (`splitPrices`), linked halves (`${id}-split`), "Change both" amounts (`rescaledPartner`), settle-up preset and account (`lentFrom`), recent people, Home line text. People flags and `peopleBalances`/`moneyTotal` live in model.js (`setPeopleList`, `isPerson`, `PEOPLE_ACCOUNTS`). |
 | `docs/js/people-ui.js` | Settings → People, add/rename/remove a person (`people` extra + account, one undo step), Home "Owed to you" line (in "Where your money is", or the lowest-rank notice), People sheet with Settle up, split sheet, "half of a split" question. |
+| `docs/js/goals.js` | Pure maths for savings goals, investments, net worth and BNPL owed (per-cycle saving needed). Tested by `tests/verify-goals.mjs`. |
+| `docs/js/goals-ui.js` | Insights Goals and Net worth cards, the Settings block, and the goal and investment sheets. |
 | `docs/sw.js` | Offline cache. Bump `VERSION` when app files change; new files go in `SHELL`. |
 
 ## Saving data for a new feature

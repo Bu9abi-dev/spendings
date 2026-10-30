@@ -7,16 +7,12 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-
-| 4 | Savings goals and net worth (council fixes) | `claude/goals` | real BNPL owed, no double counting |
 | 6 | Money owed and split bills | `claude/owed` | people as accounts, Split on an entry |
 | 7 | First-time setup + Sign in with Google | `claude/setup-wizard` | creates the sheet + script; needs a Google OAuth client ID |
-
 
 ## Next
 
 - **Weekly summary and overspend alerts** on Home (Monday card: last week vs usual, pace warning, what's due).
-- **Money owed (split expenses).** "Person" accounts so lending is a transfer, never spending. Council design pass first.
 - **Arabic / English toggle.** Touches every string.
 - **Tests: stable under load.** verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.
@@ -31,6 +27,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v23 · Savings goals and net worth (manual investments, BNPL owed subtracted)
 - v22 · Buy now, pay later: plans, auto-linked payments, due before payday, Home notice
 - v21 · Safer syncing: a change saved while another is sending is never dropped
 - v20 · Subscriptions: detector, monthly total, new-charge flag; Home shows one notice at a time

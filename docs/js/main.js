@@ -14,6 +14,7 @@ import { ACCENTS, DEFAULT_APPEARANCE, normalizeAppearance, applyAppearance } fro
 import { accountsSettingsBlock, accountsClick } from './accounts.js';
 import { peopleSettingsBlock, peopleClick, askLinked } from './people-ui.js';
 import { splitPartner } from './people.js';
+import { goalsSettingsBlock, goalsClick } from './goals-ui.js';
 import { budgetsSettingsBlock, budgetsClick } from './budgets-settings.js';
 import { categoriesSettingsBlock, categoriesClick } from './categories.js';
 import { entryRow, syncBadge, largeTitle, undoButton, doUndo, demoBanner } from './views.js';
@@ -109,6 +110,7 @@ function renderSettings() {
     <section class="group">${peopleSettingsBlock()}</section>
     <p class="group-foot">Friends you split bills with or lend to. What they owe isn’t counted as your money; Home shows it under “Where your money is”.${extrasOnPhoneOnly() && PEOPLE_ACCOUNTS.length ? ' <span class="people-script-hint">Updating your sheet’s script also makes Apple Pay card matching ignore people.</span>' : ''}</p>
 
+    ${goalsSettingsBlock()}
     <h3 class="group-title" id="categories">Categories</h3>
     <section class="group">${categoriesSettingsBlock()}</section>
     <p class="group-foot">Add your own, rename any, or hide ones you don’t use. Old entries always keep their category.</p>
@@ -428,7 +430,7 @@ window.addEventListener('scroll', () => {
 
 document.addEventListener('click', async (ev) => {
   const t = ev.target;
-  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t))) return;
+  if (view.contains(t) && (homeClick(t) || accountsClick(t) || peopleClick(t) || categoriesClick(t) || budgetsClick(t) || bnplClick(t) || goalsClick(t))) return;
   const goBtn = t.closest('[data-go]');
   if (goBtn) {
     haptic();
