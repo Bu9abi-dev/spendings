@@ -7,7 +7,6 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 | # | Item | Branch | Notes |
 | --- | --- | --- | --- |
-| 10 | Accessibility pass | `claude/a11y` | axe audit, VoiceOver labels, contrast, zoom |
 
 ## Next
 
@@ -24,6 +23,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 
 ## Done
 
+- v29 · Accessibility: axe serious/critical 45 → 0, VoiceOver labels, dialogs, contrast, Larger Text
 - v28 · Budget line in the Apple Pay notification; features-based old-script check
 - v27 · Performance pass 2: Activity ~4x faster with 3,000 entries, memoised sums, lazy rows
 - v26 · Your week + allowance pace alert (one pace rule for Home, Insights and the alert)

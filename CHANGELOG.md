@@ -41,7 +41,19 @@ timeline
         v26 : Your week : Allowance pace alert : One pace rule
         v27 : Faster Activity and search : Same numbers
         v28 : Budget line in the Apple Pay notification : Smarter script check
+        v29 : VoiceOver : Contrast : Larger Text
 ```
+
+---
+
+## v29: Accessibility
+**30 October 2026** · no sheet update needed
+
+- **VoiceOver**: every button has a name, amounts are read as "spent AED 37.50" or "received", and charts, rings and budget bars have a spoken summary. Sheets behave like proper dialogs: the screen behind them is switched off and focus returns where you were.
+- **Undo is announced** and stays reachable; Undo messages stay up a little longer (7 seconds) and wait while you're on them.
+- **Easier to read**: grey text and the amber and red tones are a touch darker, so they pass contrast checks in light and dark mode.
+- **Larger Text**: text now follows your iPhone's text size setting, and nothing scrolls sideways at bigger sizes.
+- Reduce Motion now also covers the smaller animations added recently.
 
 ---
 
