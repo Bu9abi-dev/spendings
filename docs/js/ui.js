@@ -112,6 +112,12 @@ export function openSheet({ html, label = t('ui.sheet'), onMount, onClose, tall 
   stack.push(sheet);
   document.documentElement.classList.add('sheet-open');
   app.classList.add('behind');
+  // v37: the page sinks back behind the sheet (iOS card sheet). Not while selecting in Activity, whose
+  // action bar is pinned inside the page and would be carried along.
+  if (!reduceMotion() && !document.documentElement.classList.contains('selecting')) {
+    app.style.setProperty('--behind-y', `${window.scrollY + window.innerHeight / 2}px`);
+    app.classList.add('sink');
+  }
   setBehindInert(true);
 
   let anim = null;
@@ -157,6 +163,7 @@ export function openSheet({ html, label = t('ui.sheet'), onMount, onClose, tall 
     vv?.removeEventListener('resize', fit);
     vv?.removeEventListener('scroll', fit);
     app.classList.toggle('behind', stack.length > 1);
+    if (stack.length <= 1) app.classList.remove('sink');
     animateTo(h() + 40, {
       velocity,
       done: () => {
