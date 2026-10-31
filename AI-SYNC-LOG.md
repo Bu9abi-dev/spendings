@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **31 Oct 2026**, at **v34**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **31 Oct 2026**, at **v35**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -17,7 +17,9 @@ sections at the end of every session (newest first).
   **Google Apps Script** web app bound to **his own Google Sheet**. The web app (this repo's `docs/`) reads and edits
   the same sheet.
 - Pay cycles run **27th → 26th**. Accounts: **ADIB** (main, salary lands), **ADCB** (allowance card, AED 3,000 per
-  cycle, "Safe to spend"), **BOTIM**, **Cash**. He can add his own accounts and people.
+  cycle, "Safe to spend"), **BOTIM**, **Cash**. He can add his own accounts and people. These are *his* (his sheet's
+  tabs); since v35 a brand-new user starts with plain **Account 1 / Account 2 / Cash** and an empty plan. His values
+  live on as `SAMPLE_*` in model.js (demo, tests) and `makeEnv()` in tests/fake-sheet.mjs (`{ newUser: true }` = new sheet).
 - Abdullah is **not a developer** ("vibe coder"). Keep code simple, readable and commented. Explain results in
   plain words, never jargon.
 
@@ -61,9 +63,9 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v34, 31 Oct 2026)
+## 5. Current state (v35, 31 Oct 2026)
 
-**Live on main** (newest first): v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v35 plain starting accounts for new users · v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
@@ -104,6 +106,11 @@ strings/ar.js; use t()** (`docs/js/i18n.js`; amounts via `money`/`amtAED`, dates
 left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated key).
 
 ## 7. Session log (newest first)
+
+### 31 Oct 2026 · v35 Plain starting accounts
+- Abdullah asked that new users not start with his banks. New-user defaults (app + Code.gs) are Account 1 / Account 2 /
+  Cash, empty plan, allowance 0, cycle start 1, empty card map. His sheet is untouched (defaults only fill empty tabs).
+  Tests: owner layout via `makeEnv()`, new-user checks in apps-script.test and verify-setup. Maths and undo checks pass.
 
 ### 31 Oct 2026 · v34 anyone can sign in
 - Abdullah wants anyone to sign in, not a test list. Dropped the sensitive `script.*` scopes: sign-in is now

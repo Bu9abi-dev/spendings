@@ -2,7 +2,7 @@
 // Usage: (cd docs && python3 -m http.server 8765 &) ; node tests/verify-budgets.mjs
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { DEFAULT_SETTINGS, cycleOf, cycleBounds, summarize, setCategoryList } from '../docs/js/model.js';
+import { SAMPLE_SETTINGS, cycleOf, cycleBounds, summarize, setCategoryList } from '../docs/js/model.js';
 import { limitsOf, statusOf, budgetRows, worstBudget, pctText, budgetNudge, budgetNotice, budgetsCard, budgetsSettingsRows, leftText, addableCategories } from '../docs/js/budgets.js';
 
 let n = 0;
@@ -10,7 +10,7 @@ const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg)
 const near = (a, b) => Math.abs(a - b) < 0.005;
 
 // ── maths
-const S = { ...DEFAULT_SETTINGS, usdRate: 3.6725 };
+const S = { ...SAMPLE_SETTINGS, usdRate: 3.6725 };
 const cyc = '2026-11';
 const { start } = cycleBounds(cyc, S.cycleStart);
 let id = 0;

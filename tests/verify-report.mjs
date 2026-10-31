@@ -25,8 +25,8 @@ await p.waitForSelector('.cycle-switch');
 /* ── 1. The numbers, on entries made here (cycle 2026-10 = 27 Sep → 26 Oct, Dubai time) ── */
 const r = await p.evaluate(async () => {
   const { cycleReport, cycleCSV } = await import('/js/report.js');
-  const { DEFAULT_SETTINGS, cycleOf } = await import('/js/model.js');
-  const S = { ...DEFAULT_SETTINGS };
+  const { SAMPLE_SETTINGS, cycleOf } = await import('/js/model.js');
+  const S = { ...SAMPLE_SETTINGS };
   let i = 0;
   const E = (type, amount, account, date, x = {}) => {
     const e = { id: `r${++i}`, type, amount, currency: 'AED', account, toAccount: '', category: '', merchant: '', note: '', source: 'App', status: 'OK', date: new Date(date).toISOString(), ...x };

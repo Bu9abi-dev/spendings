@@ -1,5 +1,5 @@
 // App state: a local cache of the Sheet, an offline outbox, and the Apps Script client.
-import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
+import { DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, SAMPLE_ACCOUNTS, SAMPLE_SETTINGS, setAccountList, setCategoryList, setPeopleList, balances, cycleOf, toAED, uid, money } from './model.js';
 import { remapGoalAccounts } from './goals.js';
 import { remapBnplAccounts } from './bnpl.js';
 import { remapPeopleNames } from './people.js';
@@ -611,10 +611,13 @@ export function moveAccount(name, delta) {
 export function loadDemo() {
   state.prefs.demo = true;
   state.dismissed = {};
-  state.entries = sortEntries(demoEntries(state.settings));
   state.merchants = {};
+  // the demo is a sample person's month (their banks, allowance and 27th payday), whatever your own setup is;
+  // nothing here is saved (persist() skips demo) and leaving the demo puts your own settings back
+  state.settings = { ...SAMPLE_SETTINGS };
+  state.entries = sortEntries(demoEntries(state.settings));
   state.plan = DEMO_PLAN.map((p) => ({ ...p }));
-  state.accounts = DEFAULT_ACCOUNTS.map((a) => ({ ...a }));
+  state.accounts = SAMPLE_ACCOUNTS.map((a) => ({ ...a }));
   state.extras = demoExtras();
   setAccountList(state.accounts);
   applyPeople();

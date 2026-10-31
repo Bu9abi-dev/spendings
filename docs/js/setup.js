@@ -3,7 +3,7 @@
 // connected, then go up through the normal store functions (applySetup). "Sign in with Google"
 // makes the sheet for you (provision.js), then you paste its script in and paste back the web app
 // address; without a client ID the guide offers the by-hand path.
-import { colorHex, fmt, amtAED } from './model.js';
+import { colorHex, fmt, amtAED, DEFAULT_ACCOUNTS, DEFAULT_SETTINGS } from './model.js';
 import { t, isRTL } from './i18n.js';
 import { state, isConnected, isDemo, setDemo, setConnection, ping, installSheet, applySetup, sync } from './store.js';
 import { CARD_COLORS } from './theme.js';
@@ -33,9 +33,11 @@ export function shouldAutoOpen() {
 /* ───── Answers ───── */
 
 function freshAnswers() {
-  const s = state.settings;
-  const accounts = state.accounts.filter((a) => !a.archived).map((a) => ({ name: a.name, note: a.note || '', color: a.color, wallet: a.wallet || '' }));
-  const salary = state.plan.find((p) => p.id === 'salary' && p.kind === 'Income');
+  // opened from the demo: start from the plain new-user accounts, not the demo's sample banks
+  const demo = isDemo();
+  const s = demo ? DEFAULT_SETTINGS : state.settings;
+  const accounts = (demo ? DEFAULT_ACCOUNTS : state.accounts).filter((a) => !a.archived).map((a) => ({ name: a.name, note: a.note || '', color: a.color, wallet: a.wallet || '' }));
+  const salary = demo ? null : state.plan.find((p) => p.id === 'salary' && p.kind === 'Income');
   const names = accounts.map((a) => a.name);
   return {
     accounts,

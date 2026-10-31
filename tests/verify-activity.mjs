@@ -18,7 +18,7 @@ const { state, batch, updateEntry, deleteEntry, undo, canUndo, subscribe } = sto
 
 /* ───── Part 1: filters ───── */
 const T = (iso) => new Date(iso).toISOString();
-const settings = { ...model.DEFAULT_SETTINGS, cycleStart: 27, usdRate: 3.6725 };
+const settings = { ...model.SAMPLE_SETTINGS, cycleStart: 27, usdRate: 3.6725 };
 const seed = [
   { id: 'a', date: T('2026-10-29T10:00:00+04:00'), type: 'Spend', amount: 120, currency: 'AED', account: 'ADCB', toAccount: '', category: 'Groceries', merchant: 'Carrefour', note: '', status: 'OK' },
   { id: 'b', date: T('2026-10-28T00:30:00+04:00'), type: 'Spend', amount: 20, currency: 'USD', amountAED: 73.53, account: 'BOTIM', toAccount: '', category: 'Shopping', merchant: 'Steam', note: '', status: 'OK' },

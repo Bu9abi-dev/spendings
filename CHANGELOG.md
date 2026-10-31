@@ -48,7 +48,20 @@ timeline
     section 31 October 2026
         v33 : Sign in with Google switched on
         v34 : Anyone can sign in with Google : Paste the script in 3 minutes
+        v35 : Plain starting accounts for new users : Your setup unchanged
 ```
+
+---
+
+## v35: Plain starting accounts
+**31 October 2026** · sheet update optional (only matters for brand-new sheets)
+
+- **Someone new starts with Account 1, Account 2 and Cash** instead of ADIB, ADCB and BOTIM. They rename, add or remove them in the setup guide or Settings, and type the word Apple Wallet shows for each card. No bank is assumed, and no bank names appear anywhere in a new sheet.
+- A new user also starts with an empty payday plan, no allowance and calendar-month cycles until the setup guide asks (it no longer carries over Nafis, Fuel or the 6,000 salary).
+- **Your own setup is unchanged.** Your sheet's Accounts, Settings and Plan tabs always win over these starting values, so ADIB, ADCB, BOTIM, the 3,000 allowance on ADCB, the 27th payday and BOTIM top-ups counting as moves all work exactly as before.
+- Card matching for Apple Pay and bank notifications already used each account's own name and Wallet word, so it works for any bank. A new user's card that isn't set up yet goes to Needs review instead of being guessed.
+- The demo still shows a sample month with ADIB, ADCB and BOTIM, so it looks like real use. Opening the setup guide from the demo starts from the plain names.
+- Help text no longer names your banks ("pick every card you pay with").
 
 ---
 

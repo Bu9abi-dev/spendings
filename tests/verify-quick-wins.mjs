@@ -42,6 +42,11 @@ p.on('pageerror', (e) => errors.push(e.message));
 await p.goto(BASE + '?notour=1#insights');
 await p.evaluate(async () => {
   const st = await import('/js/store.js');
+  const m = await import('/js/model.js');
+  // the owner's setup (his banks and 27th payday): the projection checks below depend on where in the cycle today is
+  st.state.settings = { ...m.SAMPLE_SETTINGS };
+  st.state.accounts = m.SAMPLE_ACCOUNTS.map((a) => ({ ...a }));
+  m.setAccountList(st.state.accounts);
   st.addEntry({ type: 'Spend', amount: 120, account: 'ADCB', category: 'Groceries', merchant: 'Carrefour' });
   st.addEntry({ type: 'Spend', amount: 55, account: 'ADCB', category: 'Groceries', merchant: 'CARREFOUR MCC 5411 ABU DHABI AE' });
   st.addEntry({ type: 'Spend', amount: 40, account: 'ADCB', category: 'Shopping', merchant: 'Noon' });

@@ -4,7 +4,15 @@ import { t, lang, locale, ltr } from './i18n.js';
 
 // The account list lives in the sheet's Accounts tab. ACCOUNTS (active) and the archive are
 // refreshed in place by setAccountList(), so every module always sees the current accounts.
+// A new user starts with plain names they rename in the setup guide or Settings: no bank is assumed.
+// Once a sheet is connected its Accounts tab wins, so an existing setup (ADIB, ADCB, BOTIM…) never sees these.
 export const DEFAULT_ACCOUNTS = [
+  { name: 'Account 1', note: 'Main · pay lands here', color: 'teal', wallet: '', archived: false },
+  { name: 'Account 2', note: 'Personal allowance', color: 'red', wallet: '', archived: false },
+  { name: 'Cash', note: 'Notes & coins', color: 'green', wallet: '', archived: false },
+];
+// The sample setup the demo (and the tests) use: the owner's own banks, so the demo looks like a real month.
+export const SAMPLE_ACCOUNTS = [
   { name: 'ADIB', note: 'Main · pay lands here', color: 'teal', wallet: 'adib', archived: false },
   { name: 'ADCB', note: 'Personal allowance', color: 'red', wallet: 'adcb', archived: false },
   { name: 'BOTIM', note: 'Extra card', color: 'purple', wallet: 'botim', archived: false },
@@ -154,8 +162,11 @@ export function pickerCategories(type = 'Spend', current = '') {
 
 export const TYPES = ['Spend', 'Income', 'Transfer'];
 
-// The payday plan. Mirrors the sheet's Plan tab; used until the sheet answers.
-export const DEFAULT_PLAN = [
+// The payday plan. Mirrors the sheet's Plan tab; used until the sheet answers. A new user starts with none:
+// the setup guide adds their salary and allowance move from what they type.
+export const DEFAULT_PLAN = [];
+// The sample (owner's) plan, for tests that check his real setup.
+export const SAMPLE_PLAN = [
   { id: 'salary', name: 'Salary', kind: 'Income', amount: 6000, day: 27, from: '', to: 'ADIB', category: 'Salary' },
   { id: 'nafis', name: 'Nafis', kind: 'Income', amount: 4500, day: 1, from: '', to: 'ADIB', category: 'Nafis' },
   { id: 'allowance', name: 'Allowance', kind: 'Move', amount: 3000, day: 27, from: 'ADIB', to: 'ADCB', category: '' },
@@ -170,7 +181,16 @@ export function planName(p) {
   return p && SHIPPED_PLAN_NAMES[p.id] && SHIPPED_PLAN_NAMES[p.id] === p.name ? t(`plan.${p.id}`) : p?.name || '';
 }
 
+// A new user: no allowance yet, cycles follow the calendar month, until the setup guide asks.
 export const DEFAULT_SETTINGS = {
+  allowance: 0,
+  allowanceAccount: 'Account 2',
+  emergencyAccount: 'Account 1',
+  cycleStart: 1,
+  usdRate: 3.6725,
+};
+// The sample (owner's) settings: AED 3,000 a cycle on ADCB, pay into ADIB, cycles 27th → 26th. The demo uses these.
+export const SAMPLE_SETTINGS = {
   allowance: 3000,
   allowanceAccount: 'ADCB',
   emergencyAccount: 'ADIB',

@@ -13,7 +13,7 @@ import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import { makeEnv } from './fake-sheet.mjs';
 import {
-  DEFAULT_SETTINGS, DEFAULT_PLAN, DEFAULT_ACCOUNTS, setAccountList, setPeopleList, cycleOf, toAED, toCSV, summarize, spentByAccount,
+  SAMPLE_SETTINGS, SAMPLE_PLAN, SAMPLE_ACCOUNTS, setAccountList, setPeopleList, cycleOf, toAED, toCSV, summarize, spentByAccount,
 } from '../docs/js/model.js';
 import { remapBnplAccounts } from '../docs/js/bnpl.js';
 import { remapPeopleNames } from '../docs/js/people.js';
@@ -23,7 +23,7 @@ const require = createRequire(import.meta.url);
 const BASE = process.env.BASE || 'http://localhost:8765';
 let n = 0, failed = 0;
 const ok = (cond, msg) => { if (cond) { n++; console.log('PASS ', msg); } else { failed++; console.log('FAIL ', msg); } };
-const S = { ...DEFAULT_SETTINGS };
+const S = { ...SAMPLE_SETTINGS };
 let k = 0;
 const E = (type, amount, account, date, extra = {}) => {
   const e = { id: `t${++k}`, type, amount, currency: 'AED', account, toAccount: '', category: type === 'Spend' ? 'Groceries' : type === 'Income' ? 'Other' : '', merchant: '', note: '', source: 'App', status: 'OK', date: new Date(date).toISOString(), ...extra };
@@ -33,7 +33,7 @@ const E = (type, amount, account, date, extra = {}) => {
 };
 
 /* ── Pure parts (Node) ── */
-setAccountList(DEFAULT_ACCOUNTS);
+setAccountList(SAMPLE_ACCOUNTS);
 
 // 1: the remap helpers
 const bx = { v: 1, plans: [{ id: 'a', account: 'ADCB' }, { id: 'b', account: 'ADIB' }] };
@@ -54,7 +54,7 @@ ok(JSON.stringify(remapPeopleNames({ v: 1, names: ['Sara', 'Omar'] }, 'Sara', 'S
 // 6: one account list that adds up to Spent
 {
   setPeopleList(['Sara']);
-  setAccountList([...DEFAULT_ACCOUNTS, { name: 'Old', note: '', color: 'graphite', wallet: '', archived: true }, { name: 'Sara', note: 'Person', color: 'graphite', wallet: '', archived: false }]);
+  setAccountList([...SAMPLE_ACCOUNTS, { name: 'Old', note: '', color: 'graphite', wallet: '', archived: true }, { name: 'Sara', note: 'Person', color: 'graphite', wallet: '', archived: false }]);
   const ents = [E('Spend', 10.4, 'ADIB', '2026-10-05T10:00:00+04:00'), E('Spend', 20.4, 'ADCB', '2026-10-05T10:00:00+04:00'),
     E('Spend', 30.4, 'Old', '2026-10-05T10:00:00+04:00'), E('Spend', 40.4, 'Sara', '2026-10-05T10:00:00+04:00')];
   const sum = summarize(ents, '2026-10', S, []);
@@ -63,13 +63,13 @@ ok(JSON.stringify(remapPeopleNames({ v: 1, names: ['Sara', 'Omar'] }, 'Sara', 'S
   ok(rows.find((r) => r.other)?.spent === 70.8, '6 a removed account and a friend who paid go in one "Everything else" row');
   ok(rows.reduce((a, r) => a + r.shown, 0) === Math.round(sum.spent), `6 the shown rows add up to Spent (${Math.round(sum.spent)})`);
   setPeopleList([]);
-  setAccountList(DEFAULT_ACCOUNTS);
+  setAccountList(SAMPLE_ACCOUNTS);
 }
 
 // 8: report allowance "left" = Home's (built here, checked in the app below, where report.js can load)
 const allow8 = (() => {
   const ents = [E('Adjustment', 8000, 'ADIB', '2026-10-07T09:00:00+04:00'), E('Adjustment', 1200, 'ADCB', '2026-10-07T09:00:00+04:00')];
-  const plan = DEFAULT_PLAN.filter((p) => p.kind !== 'Responsibility');
+  const plan = SAMPLE_PLAN.filter((p) => p.kind !== 'Responsibility');
   const now = '2026-10-07T13:00:00+04:00';
   const cyc = cycleOf(new Date(now), S.cycleStart);
   return { ents, plan, now, cyc, dis: { salary: cyc, nafis: cyc, allowance: cyc }, S };
