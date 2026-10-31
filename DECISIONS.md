@@ -4,6 +4,15 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 31 Oct 2026
 
+- **Security headers** (v36): a Content-Security-Policy in docs/vercel.json. Scripts only from the app and
+  `accounts.google.com/gsi/client`; network only to the app, the sheet's script (script.google.com /
+  script.googleusercontent.com) and the Google APIs the setup guide uses; no framing; no plugins; no forms.
+  `style-src 'unsafe-inline'` stays because the app uses inline `style="--x:…"` everywhere and the report page has
+  an inline `<style>`; scripts never get 'unsafe-inline' or 'unsafe-eval'. Checked by tests/verify-csp.mjs on a
+  server that sends the same headers (tests/csp-server.mjs).
+  - Not done: constant-time key comparison in Code.gs (timing over Google's web app front end isn't measurable)
+    and rate limiting (a 24-character random key can't be guessed).
+
 - **New users start with plain accounts** (Abdullah asked: "ADIB, ADCB and BOTIM are my personal roster").
   `DEFAULT_ACCOUNTS` (app and Code.gs) are now Account 1 (pay lands here), Account 2 (allowance) and Cash, with no
   Wallet words; the default plan is empty; default settings are allowance 0, Account 2 / Account 1, cycle start 1;

@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **31 Oct 2026**, at **v35**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **31 Oct 2026**, at **v36**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -63,9 +63,9 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v35, 31 Oct 2026)
+## 5. Current state (v36, 31 Oct 2026)
 
-**Live on main** (newest first): v35 plain starting accounts for new users · v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v36 security check-up (CSP and headers in docs/vercel.json, verify-csp) · v35 plain starting accounts for new users · v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
@@ -106,6 +106,14 @@ strings/ar.js; use t()** (`docs/js/i18n.js`; amounts via `money`/`amtAED`, dates
 left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated key).
 
 ## 7. Session log (newest first)
+
+### 31 Oct 2026 · v36 security check-up
+- Abdullah asked whether anyone can reach another person's sheet. Model: each person's sheet and script live in
+  their own Google account; the web app runs as its owner and answers only requests with that sheet's 24-character
+  key. No shared server or database. Added a CSP + X-Frame-Options + Permissions-Policy (docs/vercel.json),
+  tests/csp-server.mjs + verify-csp.mjs; escaped three toasts that showed sheet text; `<` escaped in the pace
+  chart's JSON; Code.gs currency limited to three letters (optional redeploy). Test gotcha: tests that use
+  string `page.evaluate` can't run against the CSP server (no unsafe-eval); run them on the plain server.
 
 ### 31 Oct 2026 · v35 Plain starting accounts
 - Abdullah asked that new users not start with his banks. New-user defaults (app + Code.gs) are Account 1 / Account 2 /
