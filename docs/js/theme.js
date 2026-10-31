@@ -6,13 +6,13 @@ import { t } from './i18n.js';
 export const ACCENTS = [
   // v37 redesign: Apple's vivid system colours, each nudged just enough to keep the contrast promises above.
   // Ids stay the same so a saved choice keeps working; only the names shown changed (Slate is now "Blue").
-  { id: 'slate', name: 'Blue', l: ['#0a6ee0', '#0062c9', '#ffffff', '#d4e6ff', '#9cc6ff', '#002a5c'], d: ['#3d9bff', '#5eb0ff', '#00142e', '#123c6e', '#0b2648', '#e6f1ff'] },
-  { id: 'teal', name: 'Teal', l: ['#007f8c', '#00707b', '#ffffff', '#ccf0f2', '#8edde3', '#00393f'], d: ['#40c8e0', '#5ad4e8', '#00262c', '#0d4a52', '#073238', '#e0fafc'] },
-  { id: 'sage', name: 'Green', l: ['#1a7f3a', '#17733a', '#ffffff', '#d3f5dc', '#9fe3b0', '#073a17'], d: ['#30d158', '#4cd96e', '#04260f', '#145a2a', '#0c3a1b', '#e5fbe9'] },
-  { id: 'indigo', name: 'Indigo', l: ['#5856d6', '#4f4dcc', '#ffffff', '#e2e1fb', '#bdbbf5', '#22206a'], d: ['#7d7aff', '#9896ff', '#0e0d3a', '#33317a', '#211f52', '#eeeefe'] },
-  { id: 'plum', name: 'Purple', l: ['#9a3fc4', '#8c36b5', '#ffffff', '#f1def9', '#ddb4f0', '#45165c'], d: ['#bf5af2', '#cd7cf5', '#2a0a3a', '#5a2a73', '#3b1a4d', '#f8ebfe'] },
-  { id: 'rose', name: 'Pink', l: ['#d12a5c', '#bf2553', '#ffffff', '#fde0e8', '#f7b0c4', '#5c0f27'], d: ['#ff6482', '#ff8099', '#3a0a16', '#7a2a3c', '#521a28', '#ffeef2'] },
-  { id: 'amber', name: 'Orange', l: ['#c25400', '#b04c00', '#ffffff', '#ffe6cc', '#ffc48a', '#4f2300'], d: ['#ff9f0a', '#ffb340', '#2e1a00', '#6e4210', '#4a2c08', '#fff3e0'] },
+  { id: 'slate', name: 'Blue', l: ['#0a6ee0', '#0058b8', '#ffffff', '#d4e6ff', '#9cc6ff', '#002a5c'], d: ['#3d9bff', '#5eb0ff', '#00142e', '#123c6e', '#0b2648', '#e6f1ff'] },
+  { id: 'teal', name: 'Teal', l: ['#007f8c', '#00636c', '#ffffff', '#ccf0f2', '#8edde3', '#00393f'], d: ['#40c8e0', '#5ad4e8', '#00262c', '#0d4a52', '#073238', '#e0fafc'] },
+  { id: 'sage', name: 'Green', l: ['#1a7f3a', '#156530', '#ffffff', '#d3f5dc', '#9fe3b0', '#073a17'], d: ['#30d158', '#4cd96e', '#04260f', '#145a2a', '#0c3a1b', '#e5fbe9'] },
+  { id: 'indigo', name: 'Indigo', l: ['#5856d6', '#4644c0', '#ffffff', '#e2e1fb', '#bdbbf5', '#22206a'], d: ['#7d7aff', '#9896ff', '#0e0d3a', '#33317a', '#211f52', '#eeeefe'] },
+  { id: 'plum', name: 'Purple', l: ['#9a3fc4', '#7e30a6', '#ffffff', '#f1def9', '#ddb4f0', '#45165c'], d: ['#bf5af2', '#cd7cf5', '#2a0a3a', '#5a2a73', '#3b1a4d', '#f8ebfe'] },
+  { id: 'rose', name: 'Pink', l: ['#d12a5c', '#ad1f4a', '#ffffff', '#fde0e8', '#f7b0c4', '#5c0f27'], d: ['#ff6482', '#ff8099', '#3a0a16', '#7a2a3c', '#521a28', '#ffeef2'] },
+  { id: 'amber', name: 'Orange', l: ['#c25400', '#9a4300', '#ffffff', '#ffe6cc', '#ffc48a', '#4f2300'], d: ['#ff9f0a', '#ffb340', '#2e1a00', '#6e4210', '#4a2c08', '#fff3e0'] },
   { id: 'graphite', name: 'Graphite', l: ['#4a4f57', '#3d4148', '#ffffff', '#e4e6ea', '#c9cdd4', '#1f2227'], d: ['#adb3bc', '#c0c5cd', '#1a1c20', '#3e424a', '#2b2e34', '#f0f2f5'] },
 ];
 
