@@ -239,6 +239,9 @@ const json = (route, body) => route.fulfill({ status: 200, contentType: 'applica
 const routeSheet = (c, env, url = 'https://script.google.com/macros/s/TEST/exec') => c.route(`${url}*`, (route) => json(route, env.ctx.doPost({ postData: { contents: route.request().postData() } }).text));
 async function fresh() {
   const c = await b.newContext({ viewport: { width: 390, height: 844 }, reducedMotion: 'reduce' });
+  // Tests start with no client ID (by-hand setup) whatever config.js holds; sign-in tests route their own
+  // test ID on top (Playwright tries the newest route first).
+  await c.route('**/js/config.js', (route) => route.fulfill({ contentType: 'text/javascript', body: "export const GOOGLE_CLIENT_ID = '';" }));
   const p = await c.newPage();
   p.on('pageerror', (e) => errors.push(e.message));
   return { c, p };

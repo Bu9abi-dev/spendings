@@ -45,7 +45,18 @@ timeline
         v30 : Arabic and right to left : Match iPhone
         v31 : Tap a place : On-pace estimate : Learns only from you
         v32 : Whole-app check-up fixes
+    section 31 October 2026
+        v33 : Sign in with Google switched on
 ```
+
+---
+
+## v33: Sign in with Google
+**31 October 2026** · no sheet update needed
+
+- **Sign in with Google is switched on** in the first-time setup guide. The app now has its own Google client ID, so the guide can make the sheet and its script in your Google account for you instead of sending you through the by-hand steps.
+- Nothing else changed: balances, Safe to spend, pace and undo work exactly as before.
+- Google can take from a few minutes to a few hours before a new client ID works. If the first sign-in fails, wait and try again. While the Google project is in Testing, only the test users listed there (you) can sign in.
 
 ---
 
