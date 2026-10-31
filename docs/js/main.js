@@ -409,8 +409,21 @@ function go(next) {
   // phone, or with a long list, that is the difference between a snappy tab and a stutter, so when the last swap
   // took longer than a frame budget the next one is a plain swap. Same look otherwise; Reduce Motion never fades.
   const swap = () => { const t0 = performance.now(); render(); window.scrollTo(0, 0); lastSwapMs = performance.now() - t0; };
+  enterView();
   if (document.startViewTransition && !reduceMotion() && lastSwapMs < SLOW_SWAP_MS) document.startViewTransition(swap);
   else swap();
+}
+
+/* v37: the new tab's cards rise into place one after another (CSS: #view.enter). Only on a tab change or
+   the first draw, never on a data refresh, so numbers updating in place stay calm. */
+let enterTimer = 0;
+function enterView() {
+  if (reduceMotion()) return;
+  view.classList.remove('enter');
+  void view.offsetWidth; // restart the animation if a tab is tapped again quickly
+  view.classList.add('enter');
+  clearTimeout(enterTimer);
+  enterTimer = setTimeout(() => view.classList.remove('enter'), 900);
 }
 
 /* Glass droplet that slides between tabs on a spring. */
@@ -788,6 +801,7 @@ paintChrome();
 
 bindHomeGestures(view);
 render();
+enterView();
 initLock();
 handleDeepLink();
 sync();

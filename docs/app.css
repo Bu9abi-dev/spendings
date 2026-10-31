@@ -1,4 +1,5 @@
-/* Spendings — Apple design language, Liquid Glass on floating chrome only. */
+/* Spendings — Apple design language, Liquid Glass on floating chrome only.
+   v37 redesign: vivid system colours, lifted cards, springy press and entrance motion (see the end of this file). */
 
 :root {
   color-scheme: light dark;
@@ -13,13 +14,13 @@
   --sep: rgba(60, 60, 67, 0.16);
   --fill-2: rgba(120, 120, 128, 0.16);
   --fill-3: rgba(118, 118, 128, 0.12);
-  --tint: var(--p-tint-l, #3d6ea8);
-  --tint-text: var(--p-text-l, #2f5f99);
+  --tint: var(--p-tint-l, #0a6ee0);
+  --tint-text: var(--p-text-l, #0062c9);
   --on-tint: var(--p-on-l, #ffffff);
-  --good: #2d7a45;
-  --good-fill: #3fa55c;
-  --warn: #a34809;
-  --neg: #b92f27;
+  --good: #1b7a37;
+  --good-fill: #34c759;
+  --warn: #b04a00;
+  --neg: #c8261f;
   --on-neg: #ffffff;
 
   /* dataviz reference palette — light steps, validated order */
@@ -27,7 +28,7 @@
   --series-5: #e87ba4; --series-6: #008300; --series-7: #4a3aa7; --series-8: #e34948;
   --series-other: #8e8e93;
 
-  --acc-adcb: #cf4b47; --acc-adib: #2a8a84; --acc-botim: #8360c2; --acc-cash: #47905a;
+  --acc-adcb: #e5484d; --acc-adib: #13a3a8; --acc-botim: #a259e0; --acc-cash: #2fa84f;
 
   --glass-bg: rgba(255, 255, 255, 0.55);
   --glass-rim: rgba(255, 255, 255, 0.9);
@@ -41,9 +42,9 @@
   --kbd-shadow: rgba(0, 0, 0, 0.32);
   --drop-bg: rgba(255, 255, 255, 0.7);
 
-  --liquid-top: var(--p-lt-l, #d6e4f5);
-  --liquid-bottom: var(--p-lb-l, #aac4e6);
-  --liquid-ink: var(--p-ink-l, #16304f);
+  --liquid-top: var(--p-lt-l, #d4e6ff);
+  --liquid-bottom: var(--p-lb-l, #9cc6ff);
+  --liquid-ink: var(--p-ink-l, #002a5c);
 
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro", system-ui, "Helvetica Neue", sans-serif;
   --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro", system-ui, sans-serif;
@@ -66,26 +67,26 @@
     --bg: #000000; --bg-2: #1c1c1e; --bg-3: #2c2c2e; --field: #2c2c2e;
     --label: #ffffff; --label-2: #aeaeb2; --label-3: #636366; --placeholder: #98989d;
     --sep: rgba(84, 84, 88, 0.55); --fill-2: rgba(120, 120, 128, 0.32); --fill-3: rgba(118, 118, 128, 0.24);
-    --tint: var(--p-tint-d, #86a6d4); --tint-text: var(--p-text-d, #9db8e0); --on-tint: var(--p-on-d, #101a29); --good: #6cc788; --good-fill: #4fb86c; --warn: #f0a24e; --neg: #f07067; --on-neg: #2a0b09;
+    --tint: var(--p-tint-d, #3d9bff); --tint-text: var(--p-text-d, #5eb0ff); --on-tint: var(--p-on-d, #00142e); --good: #30d158; --good-fill: #30d158; --warn: #ff9f0a; --neg: #ff6961; --on-neg: #2a0b09;
     --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
     --series-5: #d55181; --series-6: #2e9a2e; --series-7: #9085e9; --series-8: #e66767; --series-other: #8e8e93;
     --glass-bg: rgba(40, 40, 44, 0.5); --glass-rim: rgba(255, 255, 255, 0.28); --glass-rim-2: rgba(255, 255, 255, 0.06);
     --glass-edge: rgba(255, 255, 255, 0.08); --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
     --sheet-bg: rgba(28, 28, 30, 0.92); --drop-bg: rgba(255, 255, 255, 0.16); --kbd-tray: rgba(40, 40, 42, 0.9); --kbd-key: #636366; --kbd-fn: #3a3a3c; --kbd-shadow: rgba(0, 0, 0, 0.5);
-    --liquid-top: var(--p-lt-d, #33496a); --liquid-bottom: var(--p-lb-d, #223349); --liquid-ink: var(--p-ink-d, #eef3fa);
+    --liquid-top: var(--p-lt-d, #123c6e); --liquid-bottom: var(--p-lb-d, #0b2648); --liquid-ink: var(--p-ink-d, #e6f1ff);
   }
 }
 :root[data-theme="dark"] {
   --bg: #000000; --bg-2: #1c1c1e; --bg-3: #2c2c2e; --field: #2c2c2e;
   --label: #ffffff; --label-2: #aeaeb2; --label-3: #636366; --placeholder: #98989d;
   --sep: rgba(84, 84, 88, 0.55); --fill-2: rgba(120, 120, 128, 0.32); --fill-3: rgba(118, 118, 128, 0.24);
-  --tint: var(--p-tint-d, #86a6d4); --tint-text: var(--p-text-d, #9db8e0); --on-tint: var(--p-on-d, #101a29); --good: #6cc788; --good-fill: #4fb86c; --warn: #f0a24e; --neg: #f07067; --on-neg: #2a0b09;
+  --tint: var(--p-tint-d, #3d9bff); --tint-text: var(--p-text-d, #5eb0ff); --on-tint: var(--p-on-d, #00142e); --good: #30d158; --good-fill: #30d158; --warn: #ff9f0a; --neg: #ff6961; --on-neg: #2a0b09;
   --series-1: #3987e5; --series-2: #d95926; --series-3: #199e70; --series-4: #c98500;
   --series-5: #d55181; --series-6: #2e9a2e; --series-7: #9085e9; --series-8: #e66767; --series-other: #8e8e93;
   --glass-bg: rgba(40, 40, 44, 0.5); --glass-rim: rgba(255, 255, 255, 0.28); --glass-rim-2: rgba(255, 255, 255, 0.06);
   --glass-edge: rgba(255, 255, 255, 0.08); --glass-shadow: 0 10px 30px rgba(0, 0, 0, 0.5), 0 1px 3px rgba(0, 0, 0, 0.4);
   --sheet-bg: rgba(28, 28, 30, 0.92); --drop-bg: rgba(255, 255, 255, 0.16); --kbd-tray: rgba(40, 40, 42, 0.9); --kbd-key: #636366; --kbd-fn: #3a3a3c; --kbd-shadow: rgba(0, 0, 0, 0.5);
-  --liquid-top: var(--p-lt-d, #33496a); --liquid-bottom: var(--p-lb-d, #223349); --liquid-ink: var(--p-ink-d, #eef3fa);
+  --liquid-top: var(--p-lt-d, #123c6e); --liquid-bottom: var(--p-lb-d, #0b2648); --liquid-ink: var(--p-ink-d, #e6f1ff);
 }
 
 /* ───── Base ───── */
@@ -1633,3 +1634,135 @@ html.sheet-open body::after { opacity: 0; }
 [dir="rtl"] .date-field > .i { display: none; }
 /* small text links still get a 44px tap area */
 [dir="rtl"] .act-bar .text-btn, .act-bar .text-btn, .gl-manage { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* ═════════════════════════════════════════════════════════════════════════════════════════
+   v37 redesign — Apple's design language, made vivid and fluid but still light.
+   Everything here is CSS (plus a few class toggles in main.js / ui.js). Only transform and
+   opacity are animated, so motion stays on the GPU; Reduce Motion turns all of it into a blink
+   through the global rule above, and the JS checks reduceMotion() before adding any class.
+   ═════════════════════════════════════════════════════════════════════════════════════════ */
+:root {
+  --card-shadow: 0 0.5px 1px rgba(0, 0, 0, 0.04), 0 8px 24px -14px rgba(16, 24, 40, 0.18);
+  --card-rim: inset 0 0 0 0.5px rgba(0, 0, 0, 0.03);
+  --press-spring: linear(0, 0.18, 0.52, 0.86, 1.05, 1.1, 1.08, 1.03, 1, 0.99, 1);
+  --bouncy: cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --card-shadow: none; --card-rim: inset 0 0.5px 0 rgba(255, 255, 255, 0.07); }
+}
+:root[data-theme="dark"] { --card-shadow: none; --card-rim: inset 0 0.5px 0 rgba(255, 255, 255, 0.07); }
+
+/* a brighter colour field behind the glass */
+.ambient {
+  background:
+    radial-gradient(70% 45% at 0% 0%, color-mix(in srgb, var(--tint) 20%, transparent), transparent 70%),
+    radial-gradient(55% 40% at 100% 22%, color-mix(in srgb, var(--series-7) 13%, transparent), transparent 70%),
+    radial-gradient(70% 45% at 50% 100%, color-mix(in srgb, var(--series-3) 12%, transparent), transparent 70%),
+    var(--bg);
+}
+
+/* lifted cards: a soft shadow in light mode, a hairline highlight in dark */
+.group, .panel, .onboard, .payday, .flow-card, .where, .bn-plan, .su-list, .su-steps, .su-tasks, .review-row, .field-group, .review-card {
+  box-shadow: var(--card-rim), var(--card-shadow);
+}
+
+/* Settings-app style icon tiles: a solid colour with a white glyph */
+.row-icon {
+  border-radius: 10px;
+  color: #fff;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 86%, #fff), color-mix(in srgb, var(--tint) 92%, #000));
+  box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .row-icon { background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 80%, #000), color-mix(in srgb, var(--tint) 62%, #000)); }
+}
+:root[data-theme="dark"] .row-icon { background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 80%, #000), color-mix(in srgb, var(--tint) 62%, #000)); }
+
+/* Large titles: tighter, like iOS */
+.large-title h1 { letter-spacing: -0.02em; }
+
+/* Primary actions glow softly in their own colour */
+.btn-primary, .save-btn:not(:disabled):not(.off), .rc-accept-all {
+  background: linear-gradient(180deg, color-mix(in srgb, var(--tint) 88%, #fff), var(--tint));
+  box-shadow: 0 6px 16px -6px color-mix(in srgb, var(--tint) 65%, transparent), inset 0 0.5px 0 rgba(255, 255, 255, 0.3);
+}
+.fchip.on { background: var(--tint); color: var(--on-tint); }
+.fab {
+  background: linear-gradient(160deg, color-mix(in srgb, var(--tint) 78%, #fff), var(--tint) 55%, color-mix(in srgb, var(--tint) 85%, #000));
+  box-shadow: 0 10px 26px -8px color-mix(in srgb, var(--tint) 75%, transparent), inset 0 1px 0.5px rgba(255, 255, 255, 0.45), 0 0 0 0.5px var(--glass-edge);
+}
+.fab .i { transition: transform 0.6s var(--spring); }
+.fab:active .i { transform: rotate(90deg) scale(0.9); transition-duration: 0.2s; }
+
+/* ── Press: shrink fast, spring back with a little overshoot (UIKit's highlight feel) ── */
+.review-row, .link-row, .btn-primary, .btn-plain, .btn-tinted, .chip, .fchip, .filter-btn, .save-btn, .rc-cat, .rc-suggest,
+.cat-icon, .fab, .tabbar button, .icon-btn, .bulk-btn, .acct-chip, .toast-action, .text-btn {
+  transition-property: transform, background-color, color, box-shadow, opacity;
+  transition-duration: 0.55s;
+  transition-timing-function: var(--press-spring);
+}
+.review-row:active, .btn-primary:active, .btn-plain:active, .btn-tinted:active, .save-btn:active:not(:disabled),
+.rc-suggest:active, .acct-chip:active { transform: scale(0.96); transition-duration: 0.12s; transition-timing-function: var(--ease-out); }
+.chip:active, .fchip:active, .rc-cat:active, .toast-action:active, .text-btn:active { transform: scale(0.93); transition-duration: 0.12s; transition-timing-function: var(--ease-out); }
+.fab:active, .filter-btn:active, .icon-btn:active, .bulk-btn:active { transform: scale(0.88); transition-duration: 0.12s; transition-timing-function: var(--ease-out); }
+.tabbar button:active { transform: scale(0.9); transition-duration: 0.12s; }
+.group > .link-row:active, .group > button.row:active { transform: none; }
+
+/* ── Tab bar: the chosen icon gives a small bounce, like an SF Symbol ── */
+.tabbar button.on .i { animation: sym-bounce 0.6s var(--spring) both; }
+@keyframes sym-bounce { 0% { transform: scale(1); } 30% { transform: scale(0.82) translateY(1px); } 100% { transform: scale(1); } }
+.droplet { background: color-mix(in srgb, var(--tint) 14%, var(--drop-bg)); }
+
+/* ── Tab change: cards rise into place one after another ── */
+@keyframes rise-in { from { opacity: 0; transform: translateY(14px) scale(0.985); } }
+#view.enter > * { animation: rise-in 0.62s var(--spring-smooth) both; }
+#view.enter > :nth-child(2) { animation-delay: 25ms; }
+#view.enter > :nth-child(3) { animation-delay: 50ms; }
+#view.enter > :nth-child(4) { animation-delay: 75ms; }
+#view.enter > :nth-child(5) { animation-delay: 100ms; }
+#view.enter > :nth-child(6) { animation-delay: 125ms; }
+#view.enter > :nth-child(7) { animation-delay: 150ms; }
+#view.enter > :nth-child(8) { animation-delay: 175ms; }
+#view.enter > :nth-child(n+9) { animation-delay: 200ms; }
+/* the cross-fade itself: quick, with a hint of depth */
+::view-transition-old(root) { animation: vt-out 0.18s var(--ease-out) both; }
+::view-transition-new(root) { animation: vt-in 0.32s var(--ease-out) both; }
+@keyframes vt-in { from { opacity: 0; transform: scale(0.992); } }
+
+/* ── Sheets: the page behind sinks back like an iOS card sheet ── */
+#app { transition: transform 0.5s var(--spring-smooth), border-radius 0.5s var(--spring-smooth), filter 0.4s var(--ease-out); transform-origin: 50% var(--behind-y, 50vh); }
+#app.behind.sink { transform: scale(0.94); border-radius: 22px; overflow: hidden; filter: brightness(0.92); }
+.sheet { border-radius: 30px 30px 0 0; box-shadow: 0 -0.5px 0 var(--glass-rim) inset, 0 -16px 50px rgba(0, 0, 0, 0.22); }
+.sheet-backdrop { background: rgba(0, 0, 0, 0.36); }
+
+/* ── Toasts arrive on a spring ── */
+.toast { transition: transform 0.6s var(--spring), opacity 0.25s var(--ease-out); box-shadow: var(--glass-shadow); }
+
+/* ── Category picker: the chosen one pops ── */
+.cat.on .cat-icon { animation: pick-pop 0.5s var(--bouncy) both; }
+@keyframes pick-pop { 0% { transform: scale(0.9); } 100% { transform: scale(1.06); } }
+
+/* ── Payday "liquid": a brighter surface and highlight ── */
+.capsule { box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 18px 40px -18px color-mix(in srgb, var(--tint) 55%, transparent); }
+
+@media (prefers-reduced-motion: reduce) {
+  #app.behind.sink { transform: none; filter: none; border-radius: 0; }
+}
+
+/* ── Home: the balance sits on a card that glows in the colour of the account you're looking at ── */
+.lens {
+  --lens-glow: var(--lens-c);
+  margin: 4px var(--gutter) 0;
+  padding: 18px 18px 10px;
+  border-radius: 30px;
+  background:
+    radial-gradient(110% 80% at 100% 0%, color-mix(in srgb, var(--lens-glow) 24%, transparent), transparent 62%),
+    radial-gradient(90% 70% at 0% 100%, color-mix(in srgb, var(--lens-glow) 10%, transparent), transparent 70%),
+    var(--bg-2);
+  box-shadow: var(--card-rim), 0 1px 2px rgba(0, 0, 0, 0.04), 0 18px 40px -22px color-mix(in srgb, var(--lens-glow) 60%, transparent);
+}
+.lens[data-focus="all"] { --lens-glow: var(--tint); }
+.lens .keys { margin: 12px -12px 0; padding: 0 6px 2px; }
+.lens .lens-amount { font-size: clamp(30px, min(14vw, calc((100vw - 2 * var(--gutter) - 76px) / (var(--chars, 7) * 0.6))), 64px); }
+.lens .strip { margin-top: 16px; }
+.seg { box-shadow: inset 0 0.5px 0 rgba(255, 255, 255, 0.35); }
