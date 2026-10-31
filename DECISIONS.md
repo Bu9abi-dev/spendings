@@ -2,6 +2,21 @@
 
 Choices made while running the app on my own, newest first, with the reason for each.
 
+## 31 Oct 2026
+
+- **Sign in with Google asks only for `drive.file`** (v34). Abdullah wants anyone to be able to sign in, not just
+  people on Google's test-user list. The `script.projects` and `script.deployments` scopes are "sensitive": a
+  published app using them needs Google's verification (weeks, a privacy policy, a demo video) and shows the
+  "unverified app" screen until then. `drive.file` is non-sensitive, so the app can be published straight away.
+  - Cost: the app can no longer create, push and deploy the Apps Script itself. The guide now makes the sheet
+    (Drive + Sheets, as before, with the app key in the Setup tab), then shows six steps to paste the script and
+    deploy it, and a box for the Web app URL. The script already adopts the key from the Setup tab
+    (`installerKey_`), so the person never copies the key. No Code.gs change.
+  - The "Turn on the Apps Script API" step, the `?setup=1` allow link, and the polling are gone.
+  - Considered and rejected: copying a template sheet (its bound script comes along) via a `/copy` link. It
+    would need a public template kept in step with Code.gs, and the deploy still has to be done by hand.
+  - Supersedes the scopes and the "Apps Script API step" points in the 30 Oct setup-guide entries below.
+
 ## 30 Oct 2026
 
 - **Setup guide: the council's fixes** (council/council-transcript-2026-10-30-setup.md; these replace the

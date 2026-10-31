@@ -1445,7 +1445,6 @@ html.sheet-open body::after { opacity: 0; }
 .su-steps li::marker { color: var(--tint-text); font-weight: 600; }
 .su-steps li b { color: var(--label); font-weight: 600; }
 .su-steps li + li { border-top: 0.5px solid var(--sep); }
-a.su-api { display: flex; margin: 4px var(--gutter) 0; width: calc(100% - 2 * var(--gutter)); text-decoration: none; }
 .su-needs { padding-top: 14px; }
 .su-storage { padding-top: 12px; }
 .su-footer { flex: none; display: grid; gap: 8px; padding: 10px var(--gutter) 14px; }
@@ -1490,8 +1489,9 @@ a.su-api { display: flex; margin: 4px var(--gutter) 0; width: calc(100% - 2 * va
 .su-error p { line-height: 1.4; }
 .su-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
 .su-actions a, .su-actions button { text-decoration: none; }
-.su-allow { padding: 0 0 6px; }
-.su-allow .su-wide { display: flex; margin: 8px var(--gutter) 0; width: calc(100% - 2 * var(--gutter)); text-decoration: none; }
+.su-paste { padding: 0 0 6px; }
+.su-paste > .su-wide { display: flex; margin: 8px var(--gutter) 0; width: calc(100% - 2 * var(--gutter)); text-decoration: none; }
+.su-paste .su-steps .su-wide { display: flex; margin: 8px 0 2px; height: 44px; text-decoration: none; }
 .su-check { display: block; margin: 2px auto 0; min-height: 44px; font-size: 0.941rem; }
 .su-manual { margin: 18px 0 0; }
 .su-manual > summary { list-style: none; display: flex; align-items: center; justify-content: space-between; min-height: 44px; padding: 0 calc(var(--gutter) + 4px); font-size: 0.941rem; font-weight: 600; color: var(--tint-text); cursor: pointer; }

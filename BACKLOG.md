@@ -11,7 +11,7 @@ project thread; the loop thread merges it. Move an item to Done with its version
 ## Next
 
 - **Abdullah to read the Arabic** (Home, Settings, setup guide) and flag wording.
-- **Try Sign in with Google for real** (client ID added in v33): run the guide in Safari, then the home-screen app; fix whatever real Google does differently from the fakes.
+- **Try Sign in with Google for real** (client ID added in v33; `drive.file` only and published for everyone in v34): run the guide in Safari, then the home-screen app; fix whatever real Google does differently from the fakes.
 - **Tests: stable under load.** verify-categorize fails on its first run right after the heavy suites (3 times on 30 Oct),
   passes on rerun. verify-iphone and verify-categorize each failed once while other Playwright runs
   shared the machine; passed on rerun. Look for fixed waits after the extras fix lands.

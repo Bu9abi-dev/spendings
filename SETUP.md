@@ -8,8 +8,9 @@ Allow about 15 minutes, once. There are four parts:
 4. **Optional:** Face ID lock.
 
 **The easy way:** open the app on a new phone and its setup guide walks you through your cards, your
-allowance and your sheet. With **Sign in with Google** switched on (below), it makes the sheet and its
-script for you; without it, the guide sends you through part 1 by hand. Either way, part 1 below still works.
+allowance and your sheet. With **Sign in with Google** switched on (below), it makes the sheet for you and
+then walks you through pasting in its script (about 3 minutes); without it, the guide sends you through part 1
+by hand. Either way, part 1 below still works.
 
 **Run the guide in Safari first**, before adding the app to your Home Screen. Google's sign-in window often
 can't open inside a Home Screen app, and Safari and the Home Screen app keep separate storage. At the end the
@@ -21,20 +22,24 @@ guide shows your Web app URL and app key with copy buttons: add the app to your 
 ## Switch on Sign in with Google (one time, about 10 minutes)
 
 This lets the app's setup guide make the sheet in your Google account by itself. You do it once, for the app;
-after that anyone using the app just taps **Sign in with Google**.
+after that anyone with a Google account can tap **Sign in with Google**.
+
+The app only asks for `drive.file` ("see and edit only the files this app makes"). Google counts that as
+non-sensitive, so the app can be **published for everyone** without Google's verification and without the
+"Google hasn't verified this app" screen. The flip side: the app can't write the sheet's script itself, so
+the guide shows you how to paste it in.
 
 1. Open **console.cloud.google.com** and sign in. At the top, open the project list and choose **New project**.
    Call it "Spendings" and press **Create**. Make sure it's selected at the top.
-2. Go to **APIs & Services → Library**. Search for and **Enable** each of these three:
-   **Google Sheets API**, **Google Drive API**, **Apps Script API**.
+2. Go to **APIs & Services → Library**. Search for and **Enable** both of these:
+   **Google Sheets API** and **Google Drive API**.
 3. Go to **APIs & Services → OAuth consent screen** (it may be called **Google Auth Platform → Branding**):
    - App name: Spendings. Support email: yours. **Audience / User type: External.** Press **Create** / **Save**.
-   - Leave it in **Testing**. Under **Audience → Test users**, press **Add users** and add your own Gmail
-     address (and anyone else who will use the app).
-   - Under **Data access → Add or remove scopes**, add these three and **Save**:
-     `https://www.googleapis.com/auth/drive.file`,
-     `https://www.googleapis.com/auth/script.projects`,
-     `https://www.googleapis.com/auth/script.deployments`.
+   - Under **Data access → Add or remove scopes**, add only this one and **Save**:
+     `https://www.googleapis.com/auth/drive.file`. (If `script.projects` or `script.deployments` are listed
+     from an older setup, remove them: they're sensitive and would need verification.)
+   - Under **Audience**, press **Publish app** and confirm, so the status says **In production**. Anyone with a
+     Google account can now sign in; there's no test-user list to keep.
 4. Go to **APIs & Services → Credentials → Create credentials → OAuth client ID**:
    - Application type: **Web application**. Name: Spendings.
    - **Authorized JavaScript origins:** your app's address, e.g. `https://spendings-xxxx.vercel.app`
@@ -44,14 +49,12 @@ after that anyone using the app just taps **Sign in with Google**.
 5. Open [`docs/js/config.js`](docs/js/config.js) and paste the client ID between the quotes:
    `export const GOOGLE_CLIENT_ID = '1234-abc.apps.googleusercontent.com';`. Commit to `main`; Vercel updates the app.
 
-**Each person who signs in** must also turn on one switch in their own Google account, once:
-**script.google.com/home/usersettings → Google Apps Script API → On**. The guide has its own step for this
-just before sign-in, with a link; come back to the app afterwards and it's on the same step.
-
-While the app is in **Testing**, Google shows a "Google hasn't verified this app" screen at sign-in: choose
-**Continue**. When the guide has made the sheet, Google asks once more to allow the sheet's own script
-(**Review permissions** → your account → **Advanced** → **Go to Spendings (unsafe)** → **Allow**, as in part 1
-below). Then go back to the app: it's on the same step and carries on by itself.
+After sign-in the guide makes a sheet called **Spendings** in your Drive with your app key in it, then shows
+six short steps: **Copy the script**, **Open your sheet** → **Extensions → Apps Script**, paste and **Save**,
+**Deploy → New deployment → Web app** (Execute as: Me, Who has access: Anyone), allow it (**Authorize access** →
+your account → **Advanced** → **Go to … (unsafe)** → **Allow**; "unsafe" only because the script is yours), and
+paste the **Web app URL** back into the app. The script picks up the app key from the sheet by itself, so you
+never copy the key. Nobody needs to turn on the Apps Script API any more.
 
 The guide only sends your answers (cards, allowance, payday) to a sheet nobody has used yet. If you connect a
 sheet that already has entries, or its own accounts, settings or plan, it keeps exactly what it has.

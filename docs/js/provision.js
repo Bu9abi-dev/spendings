@@ -1,40 +1,24 @@
 import { t } from './i18n.js';
-// Makes a new Spendings sheet in your Google account: the spreadsheet, its Apps Script, and a web app
-// deployment, using the access token from "Sign in with Google". No DOM here; fetch is passed in so
-// tests/verify-setup.mjs can run it against a fake Google.
+// Makes a new Spendings sheet in your Google account, using the access token from "Sign in with Google".
+// It only asks Google for `drive.file` (the app can see the files it makes, nothing else), so the app can be
+// published for anyone without Google's verification. The sheet's script is then pasted in by hand (the
+// guide walks you through it): the script takes the app key from the sheet's "Setup" tab the first time it
+// runs, so the app already knows the key and you only paste back the web app address.
+// No DOM here; fetch is passed in so tests/verify-setup.mjs can run it against a fake Google.
 //
 // Every step saves what it made (`save(progress)`) before the next one starts, so a retry after a
 // failure carries on where it stopped instead of making a second sheet. The sheet is made through Drive
 // with a random setup id on it (saved here first), so if Google's reply is lost, the retry finds that
 // sheet instead of making another one.
 
-export const SCOPES = [
-  'https://www.googleapis.com/auth/drive.file',
-  'https://www.googleapis.com/auth/script.projects',
-  'https://www.googleapis.com/auth/script.deployments',
-];
+export const SCOPES = ['https://www.googleapis.com/auth/drive.file'];
 
 const SHEETS = 'https://sheets.googleapis.com/v4/spreadsheets';
 const DRIVE = 'https://www.googleapis.com/drive/v3/files';
 export const SHEET_MIME = 'application/vnd.google-apps.spreadsheet';
-const SCRIPT = 'https://script.googleapis.com/v1/projects';
-export const USER_SETTINGS_URL = 'https://script.google.com/home/usersettings';
 // Code.gs reads it in Code.gs's installerKey_(): A1 must start with this, A2 is the key
 export const SETUP_TAB = 'Setup';
 export const SETUP_MARK = 'Spendings app key (the script keeps it safe and removes this tab)';
-
-/** The Apps Script manifest. Scopes are exactly what Code.gs uses: only the spreadsheet it's bound to
-    (SpreadsheetApp.getActive, never another file) and its menu and popups in the sheet (getUi). */
-export const MANIFEST = {
-  timeZone: 'Asia/Dubai',
-  runtimeVersion: 'V8',
-  exceptionLogging: 'STACKDRIVER',
-  oauthScopes: [
-    'https://www.googleapis.com/auth/spreadsheets.currentonly',
-    'https://www.googleapis.com/auth/script.container.ui',
-  ],
-  webapp: { access: 'ANYONE_ANONYMOUS', executeAs: 'USER_DEPLOYING' },
-};
 
 /** A 24-character app key from the browser's secure random numbers (letters and digits, no bias). */
 export function makeKey(rand = (a) => crypto.getRandomValues(a)) {
@@ -61,27 +45,22 @@ export function explain(status, body) {
   if (status === 403 && (/has not been used in project|is disabled/i.test(msg) || /SERVICE_DISABLED/.test(reasons))) {
     return new SetupError('api-disabled', t('prov.apiOff'), msg);
   }
-  if (status === 403 && /Apps Script API|usersettings/i.test(msg)) {
-    return new SetupError('script-api-off', t('prov.scriptOff'), msg);
-  }
   if (status === 403) return new SetupError('denied', t('prov.denied'), msg);
   if (status === 429 || status >= 500) return new SetupError('busy', t('prov.busy'), msg);
   return new SetupError('google', t('prov.step', { msg: msg || t('prov.error', { status }) }), msg);
 }
 
 /**
- * Runs (or resumes) the whole provisioning.
+ * Runs (or resumes) making the sheet.
  *   token     the OAuth access token
- *   code      the text of Code.gs
- *   progress  what earlier attempts made: { key, setupId, sheetAsked, spreadsheetId, spreadsheetUrl, keyWritten,
- *             scriptId, pushed, versionNumber, deploymentId, url }
+ *   progress  what earlier attempts made: { key, setupId, sheetAsked, spreadsheetId, spreadsheetUrl, keyWritten }
  *   save      called with the progress after every step
- *   onStep    called with the step's name as it starts ('sheet' | 'script' | 'code' | 'publish')
+ *   onStep    called with the step's name as it starts ('sheet')
  *   makeKey   makes the app key and the setup id (tests pass their own)
  *   fetch     the fetch to use
- * Returns the finished progress (url = the web app's /exec address, key = the app key).
+ * Returns the finished progress (spreadsheetUrl = the new sheet, key = the app key its script will adopt).
  */
-export async function provision({ token, code, progress = {}, save = () => {}, onStep = () => {}, fetch: f = globalThis.fetch, makeKey: mk = makeKey }) {
+export async function provision({ token, progress = {}, save = () => {}, onStep = () => {}, fetch: f = globalThis.fetch, makeKey: mk = makeKey }) {
   const p = { ...progress };
   const keep = () => save({ ...p });
   const api = async (method, url, body) => {
@@ -146,54 +125,8 @@ export async function provision({ token, code, progress = {}, save = () => {}, o
     keep();
   }
 
-  if (!p.scriptId) {
-    onStep('script');
-    const r = await api('POST', SCRIPT, { title: 'Spendings', parentId: p.spreadsheetId });
-    if (!r.scriptId) throw new SetupError('google', t('prov.noScript'));
-    p.scriptId = r.scriptId;
-    keep();
-  }
-
-  if (!p.pushed) {
-    onStep('code');
-    await api('PUT', `${SCRIPT}/${p.scriptId}/content`, {
-      files: [
-        { name: 'Code', type: 'SERVER_JS', source: code },
-        { name: 'appsscript', type: 'JSON', source: JSON.stringify(MANIFEST, null, 2) },
-      ],
-    });
-    p.pushed = true;
-    keep();
-  }
-
-  if (!p.versionNumber) {
-    onStep('publish');
-    const r = await api('POST', `${SCRIPT}/${p.scriptId}/versions`, { description: 'Set up by the Spendings app' });
-    if (!r.versionNumber) throw new SetupError('google', t('prov.noVersion'));
-    p.versionNumber = r.versionNumber;
-    keep();
-  }
-
-  if (!p.deploymentId || !p.url) {
-    onStep('publish');
-    let d = p.deploymentId ? await api('GET', `${SCRIPT}/${p.scriptId}/deployments/${p.deploymentId}`)
-      : await api('POST', `${SCRIPT}/${p.scriptId}/deployments`, { versionNumber: p.versionNumber, manifestFileName: 'appsscript', description: 'Spendings web app' });
-    if (d.deploymentId) { p.deploymentId = d.deploymentId; keep(); }
-    let url = webAppUrl(d);
-    if (!url && p.deploymentId) url = webAppUrl(await api('GET', `${SCRIPT}/${p.scriptId}/deployments/${p.deploymentId}`));
-    if (!url) throw new SetupError('google', t('prov.noUrl'));
-    p.url = url;
-    keep();
-  }
   return p;
 }
 
-/** The /exec address from a deployment. */
-export function webAppUrl(d) {
-  const ep = (d?.entryPoints || []).find((e) => e.entryPointType === 'WEB_APP');
-  return ep?.webApp?.url || '';
-}
-
-/** Where to allow the script: the web app itself (Google asks for permission there), or the editor as a fallback. */
-export const allowUrl = (p) => (p.url ? `${p.url}${p.url.includes('?') ? '&' : '?'}setup=1` : '');
-export const editorUrl = (p) => (p.scriptId ? `https://script.google.com/d/${encodeURIComponent(p.scriptId)}/edit` : '');
+/** A pasted web app address that can be a Spendings script: Google's /exec (or /dev) address. */
+export const isWebAppUrl = (u) => /^https:\/\/script\.google(usercontent)?\.com\/.+/.test(String(u || '').trim());

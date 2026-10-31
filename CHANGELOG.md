@@ -47,7 +47,18 @@ timeline
         v32 : Whole-app check-up fixes
     section 31 October 2026
         v33 : Sign in with Google switched on
+        v34 : Anyone can sign in with Google : Paste the script in 3 minutes
 ```
+
+---
+
+## v34: Anyone can sign in
+**31 October 2026** · no sheet update needed
+
+- **Sign in with Google now works for anyone with a Google account**, not just people on a test list. The app only asks to see the files it makes itself, which Google lets any app do without a review, so there's no "Google hasn't verified this app" screen either.
+- Because of that, the guide makes your sheet and then shows you how to **paste its script in** (about 3 minutes): copy the script, open your sheet, paste, deploy, allow, and paste the Web app URL back. You never copy the app key; the sheet hands it to the script.
+- The "Turn on the Apps Script API" step is gone. Nobody needs it now.
+- Nothing about your money changed: balances, Safe to spend, pace and undo work exactly as before.
 
 ---
 
