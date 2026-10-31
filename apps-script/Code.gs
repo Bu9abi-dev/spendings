@@ -636,7 +636,8 @@ function retagCycles_(startDay) {
 
 function normalise_(raw, s) {
   var type = TYPES.indexOf(raw.type) >= 0 ? raw.type : 'Spend';
-  var currency = String(raw.currency || 'AED').toUpperCase().trim().slice(0, 3) || 'AED';
+  var currency = String(raw.currency || 'AED').toUpperCase().trim().slice(0, 3);
+  if (!/^[A-Z]{3}$/.test(currency)) currency = 'AED'; // three letters only: nothing a sheet could read as a formula
   var amount = Math.round((type === 'Adjustment' ? Number(raw.amount) || 0 : Math.abs(Number(raw.amount) || 0)) * 100) / 100;
   var date = raw.date ? new Date(raw.date) : new Date();
   if (isNaN(date.getTime())) date = new Date();

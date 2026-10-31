@@ -4,6 +4,15 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 31 Oct 2026
 
+- **Security headers** (v35): a Content-Security-Policy in docs/vercel.json. Scripts only from the app and
+  `accounts.google.com/gsi/client`; network only to the app, the sheet's script (script.google.com /
+  script.googleusercontent.com) and the Google APIs the setup guide uses; no framing; no plugins; no forms.
+  `style-src 'unsafe-inline'` stays because the app uses inline `style="--x:…"` everywhere and the report page has
+  an inline `<style>`; scripts never get 'unsafe-inline' or 'unsafe-eval'. Checked by tests/verify-csp.mjs on a
+  server that sends the same headers (tests/csp-server.mjs).
+  - Not done: constant-time key comparison in Code.gs (timing over Google's web app front end isn't measurable)
+    and rate limiting (a 24-character random key can't be guessed).
+
 - **Sign in with Google asks only for `drive.file`** (v34). Abdullah wants anyone to be able to sign in, not just
   people on Google's test-user list. The `script.projects` and `script.deployments` scopes are "sensitive": a
   published app using them needs Google's verification (weeks, a privacy policy, a demo video) and shows the

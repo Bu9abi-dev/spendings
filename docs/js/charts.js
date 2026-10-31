@@ -97,7 +97,7 @@ export function paceLine({ days, cumulative, pace, todayIndex, labels }) {
       ${ticks}
     </svg>
     <div class="tip" hidden></div>
-    <script type="application/json">${JSON.stringify({ cumulative, pace, labels, todayIndex })}</script>
+    <script type="application/json">${JSON.stringify({ cumulative, pace, labels, todayIndex }).replace(/</g, '\\u003c')}</script>
   </div>`;
 }
 

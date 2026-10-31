@@ -48,7 +48,19 @@ timeline
     section 31 October 2026
         v33 : Sign in with Google switched on
         v34 : Anyone can sign in with Google : Paste the script in 3 minutes
+        v35 : Security check-up : Stricter browser rules
 ```
+
+---
+
+## v35: Security check-up
+**31 October 2026** · sheet update optional
+
+- **A security check of the whole app.** Nobody can read or change your sheet without its own web address *and* its app key, and every person's sheet lives in their own Google account. Nothing about that changed.
+- **Stricter browser rules** on the live app: it now refuses to run any code that isn't the app's own (or Google's sign-in), can't be shown inside another website, and never sends your data anywhere except your sheet and Google.
+- A few more places now show text from your sheet as plain text only.
+- The sheet part (optional): a currency is only ever three letters, so nothing odd can land in that column.
+- Nothing about your money changed.
 
 ---
 

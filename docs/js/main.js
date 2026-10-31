@@ -510,7 +510,7 @@ document.addEventListener('click', async (ev) => {
   const act = tg.closest('[data-act]')?.dataset.act;
   if (!act || !view.contains(tg)) return;
   if (act === 'reset-look') return setAppearance({ ...DEFAULT_APPEARANCE });
-  if (act === 'sync') { haptic(); await sync(); if (state.sync.status === 'error') toast(state.sync.error, { icon: icon('warn', { size: 18 }), tone: 'warn' }); }
+  if (act === 'sync') { haptic(); await sync(); if (state.sync.status === 'error') toast(esc(state.sync.error), { icon: icon('warn', { size: 18 }), tone: 'warn' }); }
   if (act === 'review') openReview();
   if (act === 'shortcut') openShortcutGuide();
   if (act === 'setup-guide') { haptic(); openGuide(); }
@@ -556,11 +556,11 @@ async function connect(btn) {
     const r = await ping(url, token);
     setConnection(url, token);
     if (isDemo()) setDemo(false);
-    toast(r.message || t('set.connected'), { icon: icon('check', { size: 18 }), tone: 'good' });
+    toast(r.message ? esc(r.message) : t('set.connected'), { icon: icon('check', { size: 18 }), tone: 'good' });
     await sync();
     render();
   } catch (e) {
-    toast(e.message, { icon: icon('warn', { size: 18 }), tone: 'warn' });
+    toast(esc(e.message), { icon: icon('warn', { size: 18 }), tone: 'warn' });
   } finally { btn.disabled = false; btn.classList.remove('busy'); }
 }
 
