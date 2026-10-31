@@ -1,12 +1,13 @@
 // The first-run setup guide and "Sign in with Google" sheet provisioning.
-// Real Google can't be reached from a test, so Google is faked: the Sheets and Apps Script REST APIs
-// (fakeGoogle below), Google's sign-in script (FAKE_GIS), and the new web app (Code.gs on the fake sheet).
+// Real Google can't be reached from a test, so Google is faked: the Drive and Sheets REST APIs
+// (fakeGoogle below), Google's sign-in script (FAKE_GIS), and the web app you deploy by hand (Code.gs on
+// the fake sheet).
 // Usage: (cd docs && python3 -m http.server 8765 &) ; node tests/verify-setup.mjs
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 import { makeEnv } from './fake-sheet.mjs';
-import { provision, makeKey, MANIFEST, SCOPES, explain, webAppUrl, SHEET_MIME } from '../docs/js/provision.js';
+import { provision, makeKey, SCOPES, explain, isWebAppUrl, SHEET_MIME } from '../docs/js/provision.js';
 
 const BASE = process.env.BASE || 'http://localhost:8765';
 let failed = 0;
@@ -18,10 +19,10 @@ await check('docs/setup/Code.gs.txt is byte-identical to apps-script/Code.gs (cp
   assert.ok(fs.readFileSync(new URL('../docs/setup/Code.gs.txt', import.meta.url)).equals(fs.readFileSync(new URL('../apps-script/Code.gs', import.meta.url))));
 });
 
-/* ───── A fake Google: Drive v3, Sheets v4 and Apps Script v1, enough for provision.js ───── */
+/* ───── A fake Google: Drive v3 and Sheets v4, enough for provision.js ───── */
 const EXEC = 'https://script.google.com/macros/s/NEWDEPLOY/exec';
 function fakeGoogle() {
-  const g = { calls: [], sheets: 0, scripts: 0, key: '', files: null, drive: [], scriptApiOff: false, offlineAt: '', lostReplyAt: '', status401At: '', serviceDisabledAt: '' };
+  const g = { calls: [], sheets: 0, key: '', drive: [], offlineAt: '', lostReplyAt: '', status401At: '', serviceDisabledAt: '' };
   g.handle = (method, url, body) => {
     const u = new URL(url);
     const tag = `${method} ${u.host.split('.')[0]}${u.pathname.replace(/\/v\d+/, '')}`;
@@ -29,7 +30,7 @@ function fakeGoogle() {
     const err = (status, message, extra = {}) => ({ status, body: { error: { code: status, message, status: 'PERMISSION_DENIED', ...extra } } });
     if (g.offlineAt && tag.includes(g.offlineAt)) { g.offlineAt = ''; return 'offline'; }
     if (g.status401At && tag.includes(g.status401At)) { g.status401At = ''; return err(401, 'Request had invalid authentication credentials.'); }
-    if (g.serviceDisabledAt && tag.includes(g.serviceDisabledAt)) return err(403, 'Apps Script API has not been used in project 123 before or it is disabled.', { details: [{ reason: 'SERVICE_DISABLED' }] });
+    if (g.serviceDisabledAt && tag.includes(g.serviceDisabledAt)) return err(403, 'Google Drive API has not been used in project 123 before or it is disabled.', { details: [{ reason: 'SERVICE_DISABLED' }] });
     const out = (() => {
       // Drive: make a spreadsheet file, or list the files this app made
       if (u.host === 'www.googleapis.com' && u.pathname === '/drive/v3/files') {
@@ -64,15 +65,6 @@ function fakeGoogle() {
           return { status: 200, body: { spreadsheetId: id, replies: [] } };
         }
       }
-      if (u.host === 'script.googleapis.com') {
-        if (g.scriptApiOff) return err(403, 'User has not enabled the Apps Script API. Enable it by visiting https://script.google.com/home/usersettings then retry.');
-        if (method === 'POST' && u.pathname === '/v1/projects') { g.scripts++; g.parent = body.parentId; return { status: 200, body: { scriptId: `SC${g.scripts}`, title: body.title } }; }
-        if (method === 'PUT' && /\/content$/.test(u.pathname)) { g.files = body.files; return { status: 200, body: { scriptId: 'SC1', files: body.files } }; }
-        if (method === 'POST' && /\/versions$/.test(u.pathname)) return { status: 200, body: { versionNumber: 1 } };
-        const dep = { deploymentId: 'DEP1', entryPoints: [{ entryPointType: 'WEB_APP', webApp: { url: EXEC, entryPointConfig: { access: 'ANYONE_ANONYMOUS', executeAs: 'USER_DEPLOYING' } } }] };
-        if (method === 'POST' && /\/deployments$/.test(u.pathname)) { g.deployBody = body; return { status: 200, body: dep }; }
-        if (method === 'GET' && /\/deployments\/DEP1$/.test(u.pathname)) return { status: 200, body: dep };
-      }
       return { status: 404, body: { error: { code: 404, message: 'Not found' } } };
     })();
     // Google did the work, but the answer never arrived
@@ -90,14 +82,14 @@ function fakeGoogle() {
 const MADE = ['POST www/drive/files', 'GET sheets/spreadsheets/SS1', 'POST sheets/spreadsheets/SS1:batchUpdate'];
 
 /* ───── (a) provision.js against the fake ───── */
-await check('provision: the calls in order, with the token, the code and a 24-character key', async () => {
+await check('provision: makes the sheet and writes the key, nothing else, with the token and a 24-character key', async () => {
   const g = fakeGoogle();
   const saves = [];
   let savedAtCreate = null;
   const f0 = g.fetch;
   g.fetch = (url, init) => { if (url.startsWith('https://www.googleapis.com/drive/v3/files') && init.method === 'POST') savedAtCreate = saves.at(-1); return f0(url, init); };
-  const p = await provision({ token: 'ya29.t', code: CODE, fetch: g.fetch, save: (x) => saves.push(x) });
-  assert.deepEqual(g.calls, [...MADE, 'POST script/projects', 'PUT script/projects/SC1/content', 'POST script/projects/SC1/versions', 'POST script/projects/SC1/deployments']);
+  const p = await provision({ token: 'ya29.t', fetch: g.fetch, save: (x) => saves.push(x) });
+  assert.deepEqual(g.calls, MADE, 'only Drive and Sheets: no Apps Script API');
   assert.equal(g.auth, 'Bearer ya29.t');
   assert.match(p.key, /^[A-Za-z0-9]{24}$/);
   // made through Drive as a Google Sheet, labelled with a setup id that was saved before asking
@@ -115,86 +107,56 @@ await check('provision: the calls in order, with the token, the code and a 24-ch
   assert.equal(g.tab, 'Setup');
   assert.deepEqual(g.sheetProps, { timeZone: 'Asia/Dubai', locale: 'en_GB' });
   assert.match(g.mark, /^Spendings app key/, 'marked the way Code.gs looks for it');
-  assert.equal(g.parent, 'SS1', 'the script is bound to the new sheet');
-  assert.equal(p.url, EXEC);
-  assert.equal(p.spreadsheetId, 'SS1'); assert.equal(p.scriptId, 'SC1'); assert.equal(p.deploymentId, 'DEP1');
-  assert.equal(g.deployBody.manifestFileName, 'appsscript');
-  assert.equal(g.deployBody.versionNumber, 1);
-  const code = g.files.find((f) => f.name === 'Code'), man = g.files.find((f) => f.name === 'appsscript');
-  assert.equal(code.type, 'SERVER_JS'); assert.equal(code.source, CODE);
-  assert.equal(man.type, 'JSON');
-  const m = JSON.parse(man.source);
-  assert.deepEqual(m.webapp, { access: 'ANYONE_ANONYMOUS', executeAs: 'USER_DEPLOYING' });
-  assert.equal(m.timeZone, 'Asia/Dubai'); assert.equal(m.runtimeVersion, 'V8');
-  assert.ok(saves.length >= 5 && saves.at(-1).url === EXEC, 'progress saved after every step');
+  assert.equal(p.spreadsheetId, 'SS1');
+  assert.equal(p.spreadsheetUrl, 'https://docs.google.com/spreadsheets/d/SS1/edit');
+  assert.equal(p.keyWritten, true);
+  assert.ok(saves.length >= 4 && saves.at(-1).keyWritten, 'progress saved after every step');
+  // done: running again makes nothing
+  g.calls.length = 0;
+  await provision({ token: 't', fetch: g.fetch, progress: p });
+  assert.deepEqual(g.calls, []);
 });
 
-await check('manifest scopes cover what Code.gs uses, and nothing it doesn\'t', () => {
-  // only the sheet the script is bound to: Code.gs never opens another spreadsheet
-  assert.ok(/SpreadsheetApp\.getActive/.test(CODE) && MANIFEST.oauthScopes.includes('https://www.googleapis.com/auth/spreadsheets.currentonly'));
-  assert.ok(!/openById|openByUrl|SpreadsheetApp\.open\(/.test(CODE), 'Code.gs opens another spreadsheet: currentonly is not enough');
-  assert.ok(!MANIFEST.oauthScopes.includes('https://www.googleapis.com/auth/spreadsheets'));
-  assert.ok(/getUi\(\)/.test(CODE) && MANIFEST.oauthScopes.includes('https://www.googleapis.com/auth/script.container.ui'));
-  for (const svc of ['UrlFetchApp', 'DriveApp', 'GmailApp', 'MailApp', 'ScriptApp.', 'CalendarApp']) assert.ok(!CODE.includes(svc), `Code.gs uses ${svc}: add its scope to MANIFEST`);
-  assert.equal(MANIFEST.oauthScopes.length, 2);
-  assert.deepEqual(SCOPES, ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/script.projects', 'https://www.googleapis.com/auth/script.deployments']);
-});
-
-await check('Apps Script API off: plain words, then Try again carries on without a second sheet', async () => {
-  const g = fakeGoogle();
-  g.scriptApiOff = true;
-  let saved = {};
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g.fetch, save: (x) => { saved = x; } }), (e) => e.code === 'script-api-off' && /Apps Script settings/.test(e.message));
-  assert.equal(saved.spreadsheetId, 'SS1');
-  assert.ok(!saved.scriptId);
-  g.scriptApiOff = false;
-  const p = await provision({ token: 't', code: CODE, fetch: g.fetch, progress: saved, save: (x) => { saved = x; } });
-  assert.equal(g.sheets, 1, 'no second spreadsheet');
-  assert.equal(g.scripts, 1);
-  assert.equal(p.key, saved.key);
-  assert.equal(p.url, EXEC);
+await check('sign-in asks only for drive.file (non-sensitive, so the app can be published without verification)', () => {
+  assert.deepEqual(SCOPES, ['https://www.googleapis.com/auth/drive.file']);
 });
 
 await check('a dropped connection mid-way resumes at the step that failed', async () => {
   const g = fakeGoogle();
-  g.offlineAt = 'versions';
+  g.offlineAt = 'batchUpdate';
   let saved = {};
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g.fetch, save: (x) => { saved = x; } }), (e) => e.code === 'offline');
-  assert.ok(saved.pushed && !saved.versionNumber);
+  await assert.rejects(provision({ token: 't', fetch: g.fetch, save: (x) => { saved = x; } }), (e) => e.code === 'offline');
+  assert.ok(saved.spreadsheetId && !saved.keyWritten);
   g.calls.length = 0;
-  await provision({ token: 't', code: CODE, fetch: g.fetch, progress: saved, save: (x) => { saved = x; } });
-  assert.deepEqual(g.calls, ['POST script/projects/SC1/versions', 'POST script/projects/SC1/deployments']);
+  await provision({ token: 't', fetch: g.fetch, progress: saved, save: (x) => { saved = x; } });
+  assert.deepEqual(g.calls, ['GET sheets/spreadsheets/SS1', 'POST sheets/spreadsheets/SS1:batchUpdate']);
   assert.equal(g.listQ, undefined, 'no need to look for the sheet: its id was saved');
-  assert.equal(g.sheets, 1); assert.equal(g.scripts, 1);
-  // all done: running again makes nothing
-  g.calls.length = 0;
-  await provision({ token: 't', code: CODE, fetch: g.fetch, progress: saved });
-  assert.deepEqual(g.calls, []);
+  assert.equal(g.sheets, 1);
+  assert.ok(saved.keyWritten);
 });
 
 await check('the reply to "make the sheet" is lost: Try again finds that sheet instead of making a second', async () => {
   const g = fakeGoogle();
   g.lostReplyAt = 'POST www/drive/files';
   let saved = {};
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g.fetch, save: (x) => { saved = x; } }), (e) => e.code === 'offline');
+  await assert.rejects(provision({ token: 't', fetch: g.fetch, save: (x) => { saved = x; } }), (e) => e.code === 'offline');
   assert.equal(g.sheets, 1, 'Google did make it');
   assert.ok(saved.setupId && saved.sheetAsked && !saved.spreadsheetId, 'the phone never heard which sheet');
   g.calls.length = 0;
-  const p = await provision({ token: 't', code: CODE, fetch: g.fetch, progress: saved, save: (x) => { saved = x; } });
+  const p = await provision({ token: 't', fetch: g.fetch, progress: saved, save: (x) => { saved = x; } });
   assert.equal(g.calls[0], 'GET www/drive/files', 'looked for it first');
   assert.equal(g.listQ, `appProperties has { key='setupId' and value='${saved.setupId}' } and trashed=false`);
   assert.ok(!g.calls.includes('POST www/drive/files'), 'no second sheet');
   assert.equal(g.sheets, 1);
   assert.equal(p.spreadsheetId, 'SS1');
   assert.equal(g.key, p.key, 'the found sheet gets the key');
-  assert.equal(p.url, EXEC);
   // looked, found nothing (it really failed): makes one, with the same setup id
   const g2 = fakeGoogle();
   g2.offlineAt = 'POST www/drive/files';
   let s2 = {};
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g2.fetch, save: (x) => { s2 = x; } }));
+  await assert.rejects(provision({ token: 't', fetch: g2.fetch, save: (x) => { s2 = x; } }));
   assert.equal(g2.sheets, 0);
-  await provision({ token: 't', code: CODE, fetch: g2.fetch, progress: s2, save: (x) => { s2 = x; } });
+  await provision({ token: 't', fetch: g2.fetch, progress: s2, save: (x) => { s2 = x; } });
   assert.deepEqual(g2.calls.slice(1, 3), ['GET www/drive/files', 'POST www/drive/files']);
   assert.equal(g2.sheets, 1);
   assert.equal(g2.createBody.appProperties.setupId, s2.setupId);
@@ -202,22 +164,25 @@ await check('the reply to "make the sheet" is lost: Try again finds that sheet i
   const g3 = fakeGoogle();
   g3.lostReplyAt = 'batchUpdate';
   let s3 = {};
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g3.fetch, save: (x) => { s3 = x; } }));
+  await assert.rejects(provision({ token: 't', fetch: g3.fetch, save: (x) => { s3 = x; } }));
   assert.ok(s3.spreadsheetId && !s3.keyWritten);
-  const p3 = await provision({ token: 't', code: CODE, fetch: g3.fetch, progress: s3 });
+  const p3 = await provision({ token: 't', fetch: g3.fetch, progress: s3 });
   assert.equal(g3.sheets, 1); assert.equal(g3.key, p3.key); assert.equal(g3.tab, 'Setup');
 });
 
 await check('expired sign-in (401) and an API switched off in Google Cloud are told apart', async () => {
   const g = fakeGoogle();
-  g.status401At = 'projects';
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g.fetch }), (e) => e.code === 'auth');
+  g.status401At = 'spreadsheets';
+  await assert.rejects(provision({ token: 't', fetch: g.fetch }), (e) => e.code === 'auth');
   const g2 = fakeGoogle();
   g2.serviceDisabledAt = 'drive';
-  await assert.rejects(provision({ token: 't', code: CODE, fetch: g2.fetch }), (e) => e.code === 'api-disabled');
+  await assert.rejects(provision({ token: 't', fetch: g2.fetch }), (e) => e.code === 'api-disabled');
   assert.equal(explain(500, {}).code, 'busy');
   assert.equal(explain(403, { error: { message: 'The caller does not have permission' } }).code, 'denied');
-  assert.equal(webAppUrl({ entryPoints: [{ entryPointType: 'EXECUTION_API' }] }), '');
+  assert.ok(isWebAppUrl('https://script.google.com/macros/s/ABC/exec'));
+  assert.ok(isWebAppUrl('  https://script.googleusercontent.com/macros/echo?x=1 '));
+  assert.ok(!isWebAppUrl('https://docs.google.com/spreadsheets/d/SS1/edit'));
+  assert.ok(!isWebAppUrl(''));
 });
 
 await check('makeKey: 24 letters and digits, skips biased bytes', () => {
@@ -373,13 +338,13 @@ const FAKE_GIS = `window.google = { accounts: { oauth2: {
   hasGrantedAllScopes(r, ...s) { return s.every((x) => r.scope.split(' ').includes(x)); },
 } } };`;
 
-await check('Sign in with Google (all Google calls faked): Apps Script API off → Try again → allow → sheet ready with the answers', async () => {
+await check('Sign in with Google (all Google calls faked): sheet made → paste the script by hand → paste the URL → sheet ready with the answers', async () => {
   const g = fakeGoogle();
-  g.scriptApiOff = true;
-  let env = null, allowed = false;
+  let env = null;
   const { c, p } = await fresh();
   await c.route('**/js/config.js', (route) => route.fulfill({ contentType: 'text/javascript', body: "export const GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';" }));
   await c.route('https://accounts.google.com/gsi/client', (route) => route.fulfill({ contentType: 'text/javascript', body: FAKE_GIS }));
+  await c.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: BASE });
   const api = async (route) => {
     const r = route.request();
     if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
@@ -396,13 +361,13 @@ await check('Sign in with Google (all Google calls faked): Apps Script API off �
   };
   await c.route('https://sheets.googleapis.com/**', api);
   await c.route('https://www.googleapis.com/drive/**', api);
-  await c.route('https://script.googleapis.com/**', api);
+  let scriptCalls = 0;
+  await c.route('https://script.googleapis.com/**', (route) => { scriptCalls++; return route.abort(); });
   const pings = [];
+  // the web app you deploy by hand from the sheet's Apps Script, running the script you pasted
   await c.route(`${EXEC}*`, (route) => {
     const body = route.request().postData();
     pings.push(JSON.parse(body || '{}').action);
-    // until you allow the script, Google answers with a sign-in page instead of the script
-    if (!allowed) return route.fulfill({ status: 200, contentType: 'text/html', body: '<html>Authorization needed</html>' });
     return json(route, env.ctx.doPost({ postData: { contents: body } }).text);
   });
   await p.goto(`${BASE}/`);
@@ -412,50 +377,43 @@ await check('Sign in with Google (all Google calls faked): Apps Script API off �
   await p.click('[data-su="next"]');
   await p.fill('input[name="su-allowance"]', '1800');
   await p.click('[data-su="next"]');
-  // its own step: turn on the Apps Script API, before sign-in
-  await p.waitForSelector('.su-h:text("Turn on the Apps Script API")');
-  assert.equal(await p.getAttribute('a.su-api', 'href'), 'https://script.google.com/home/usersettings');
-  assert.equal(await p.getAttribute('a.su-api', 'target'), '_blank');
-  assert.match(await p.textContent('.su-body'), /same step/);
-  // going off to Google and coming back (a reload) lands on the same step
-  await p.reload();
-  await p.waitForSelector('.su-h:text("Turn on the Apps Script API")');
-  await p.click('[data-su="next"]');
+  // no Apps Script API step any more: straight to the sheet
   await p.waitForSelector('[data-su="signin"]');
-  assert.deepEqual(await p.$$eval('.su-tasks li span', (els) => els.map((e) => e.textContent)), ['1. Sign in', '2. Make your sheet', '3. Allow it'], 'plain three-step progress');
+  assert.equal(await p.locator('.su-h:text("Turn on the Apps Script API")').count(), 0);
+  assert.deepEqual(await p.$$eval('.su-tasks li span', (els) => els.map((e) => e.textContent)), ['1. Sign in', '2. Make your sheet', '3. Add the script'], 'plain three-step progress');
   assert.match(await p.textContent('.su-body'), /isn’t kept/);
+  assert.match(await p.textContent('.su-body'), /only see the files it makes/);
   assert.equal(await p.locator('.su-manual[open]').count(), 0, 'by-hand path tucked away');
   await p.click('[data-su="signin"]');
-  await p.waitForSelector('.su-error');
-  assert.match(await p.textContent('.su-error'), /Google Apps Script API/);
-  assert.equal(await p.getAttribute('.su-error a', 'href'), 'https://script.google.com/home/usersettings');
+  await p.waitForSelector('.su-paste', { timeout: 10000 });
   assert.deepEqual(await p.evaluate(() => window.__gisCfg.scope.split(' ')), SCOPES);
-  g.scriptApiOff = false;
-  await p.click('[data-su="retry"]');
-  await p.waitForSelector('.su-allow', { timeout: 10000 });
-  assert.equal(g.sheets, 1, 'Try again reused the sheet it had made');
-  assert.ok(g.calls.includes('POST www/drive/files'));
-  assert.equal(await p.evaluate(() => window.__gisAsked), 1, 'the token from the first sign-in was reused');
-  assert.equal(await p.getAttribute('[data-su-allow]', 'href'), `${EXEC}?setup=1`);
-  assert.equal(await p.getAttribute('[data-su-allow]', 'target'), '_blank');
-  assert.match(await p.textContent('.su-allow'), /Review permissions/);
-  assert.match(await p.textContent('.su-allow'), /Go to Spendings \(unsafe\)/, 'Google\'s exact wording');
-  assert.match(await p.textContent('.su-allow'), /Come back to this app/);
-  assert.match(await p.textContent('.su-body'), /Safari and the Home Screen app keep separate storage/);
+  assert.deepEqual(g.calls, MADE);
+  assert.equal(scriptCalls, 0, 'never calls the Apps Script API');
   assert.equal(await p.locator('.su-tasks li.done').count(), 2);
-  assert.equal(await p.locator('.su-tasks li.now span:text("3. Allow it")').count(), 1);
-  assert.match(await p.getAttribute('.su-allow a[href*="/edit"]', 'href'), /script\.google\.com\/d\/SC1\/edit/);
-  // reload mid-way: it comes back at the allow step, not at the start
+  assert.equal(await p.locator('.su-tasks li.now span:text("3. Add the script")').count(), 1);
+  assert.equal(await p.getAttribute('a.su-opensheet', 'href'), 'https://docs.google.com/spreadsheets/d/SS1/edit');
+  assert.equal(await p.getAttribute('a.su-opensheet', 'target'), '_blank');
+  const text = await p.textContent('.su-paste');
+  for (const words of ['Extensions → Apps Script', 'New deployment', 'Web app', 'Execute as: Me', 'Who has access: Anyone', 'Authorize access', 'Go to … (unsafe)', '/exec']) assert.ok(text.includes(words), `says "${words}"`);
+  assert.match(await p.textContent('.su-body'), /Safari and the Home Screen app keep separate storage/);
+  // Copy the script puts all of Code.gs on the clipboard
+  await p.click('[data-su="copycode"]');
+  await p.waitForSelector('#toast:has-text("Script copied")');
+  assert.equal(await p.evaluate(() => navigator.clipboard.readText()), CODE);
+  // reload mid-way: it comes back at the paste step, not at the start
   await p.reload();
-  await p.waitForSelector('.su-allow');
-  for (const t0 = Date.now(); !pings.length && Date.now() - t0 < 15000;) await new Promise((r) => setTimeout(r, 100));
-  assert.ok(pings.length >= 1, 'it keeps asking the sheet');
+  await p.waitForSelector('.su-paste');
+  // a wrong address: plain words, nothing connected
+  await p.fill('input[name="su-paste-url"]', 'https://docs.google.com/spreadsheets/d/SS1/edit');
+  await p.click('[data-su="connectpasted"]');
+  await p.waitForSelector('#toast:has-text("doesn’t look like a Web app URL")');
   assert.ok(!env.props.TOKEN, 'nothing reached the script yet');
-  allowed = true;
+  await p.fill('input[name="su-paste-url"]', EXEC);
+  await p.click('[data-su="connectpasted"]');
   await p.waitForSelector('.su-h:text("Log Apple Pay by itself")', { timeout: 15000 });
-  assert.equal(env.props.TOKEN, g.key, 'the script adopted the app\'s key');
+  assert.equal(env.props.TOKEN, g.key, 'the script adopted the app\'s key from the Setup tab');
   assert.ok(env.ss.getSheetByName('Ledger') && !env.ss.getSheetByName('Setup'));
-  assert.ok(pings.includes('install'));
+  assert.ok(pings.includes('ping') && pings.includes('install'));
   const s = sheetList(env, g.key);
   assert.deepEqual(s.accounts.map((a) => a.name), ['FAB', 'ADCB', 'BOTIM', 'Cash']);
   assert.equal(s.accounts[0].wallet, 'fab');
@@ -466,6 +424,48 @@ await check('Sign in with Google (all Google calls faked): Apps Script API off �
   assert.deepEqual(conn, { url: EXEC, token: g.key });
   assert.equal(await p.evaluate(() => JSON.parse(localStorage.getItem('sp.setup')).progress), null, 'progress cleared once connected');
   await p.screenshot({ path: '/tmp/verify-setup-shortcut.png' });
+  await c.close();
+});
+
+await check('the pasted address answers with Google\'s sign-in page (not deployed for Anyone): plain words, try again works', async () => {
+  const g = fakeGoogle();
+  let env = null, open = false;
+  const { c, p } = await fresh();
+  await c.route('**/js/config.js', (route) => route.fulfill({ contentType: 'text/javascript', body: "export const GOOGLE_CLIENT_ID = 'test-client.apps.googleusercontent.com';" }));
+  await c.route('https://accounts.google.com/gsi/client', (route) => route.fulfill({ contentType: 'text/javascript', body: FAKE_GIS }));
+  const api = async (route) => {
+    const r = route.request();
+    if (r.method() === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': '*' } });
+    const out = g.handle(r.method(), r.url(), r.postData() ? JSON.parse(r.postData()) : null);
+    if (g.key && !env) {
+      env = makeEnv();
+      const t = env.ss.insertSheet('Setup');
+      t.getRange(1, 1).setValue(g.mark); t.getRange(2, 1).setValue(g.key);
+    }
+    return route.fulfill({ status: out.status, contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(out.body) });
+  };
+  await c.route('https://sheets.googleapis.com/**', api);
+  await c.route('https://www.googleapis.com/drive/**', api);
+  await c.route(`${EXEC}*`, (route) => {
+    if (!open) return route.fulfill({ status: 200, contentType: 'text/html', body: '<html>Sign in</html>' });
+    return json(route, env.ctx.doPost({ postData: { contents: route.request().postData() } }).text);
+  });
+  await p.goto(`${BASE}/`);
+  await p.click('[data-su="have"]');
+  await p.evaluate(() => { document.querySelector('.su-manual').open = false; });
+  await p.click('[data-su="signin"]');
+  await p.waitForSelector('.su-paste', { timeout: 10000 });
+  await p.fill('input[name="su-paste-url"]', EXEC);
+  await p.click('[data-su="connectpasted"]');
+  await p.waitForSelector('.su-error');
+  assert.match(await p.textContent('.su-error'), /Anyone/);
+  assert.equal(await p.locator('.su-error [data-su="retry"]').count(), 0, 'no Try again that would make another sheet');
+  assert.equal(await p.inputValue('input[name="su-paste-url"]'), EXEC, 'the address is kept');
+  open = true;
+  await p.click('[data-su="connectpasted"]');
+  await p.waitForSelector('.su-h:text("Log Apple Pay by itself")', { timeout: 15000 });
+  assert.equal(env.props.TOKEN, g.key);
+  assert.equal(g.sheets, 1);
   await c.close();
 });
 

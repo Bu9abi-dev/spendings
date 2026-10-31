@@ -1,7 +1,8 @@
-// First-run setup guide: welcome → your cards → your money → (turn on the Apps Script API) →
-// make (or connect) your sheet → Apple Pay Shortcut → done. Answers stay in this phone's storage (sp.setup) until a sheet is
+// First-run setup guide: welcome → your cards → your money → make (or connect) your sheet →
+// Apple Pay Shortcut → done. Answers stay in this phone's storage (sp.setup) until a sheet is
 // connected, then go up through the normal store functions (applySetup). "Sign in with Google"
-// makes the sheet for you (provision.js); without a client ID the guide offers the by-hand path.
+// makes the sheet for you (provision.js), then you paste its script in and paste back the web app
+// address; without a client ID the guide offers the by-hand path.
 import { colorHex, fmt, amtAED } from './model.js';
 import { t, isRTL } from './i18n.js';
 import { state, isConnected, isDemo, setDemo, setConnection, ping, installSheet, applySetup, sync } from './store.js';
@@ -9,7 +10,7 @@ import { CARD_COLORS } from './theme.js';
 import { openSheet, toast, haptic, esc, reduceMotion } from './ui.js';
 import { icon } from './icons.js';
 import { GOOGLE_CLIENT_ID } from './config.js';
-import { provision, SCOPES, SetupError, USER_SETTINGS_URL, allowUrl, editorUrl } from './provision.js';
+import { provision, SCOPES, SetupError, isWebAppUrl } from './provision.js';
 
 const KEY = 'sp.setup';
 const MANUAL_GUIDE = 'https://github.com/Bu9abi-dev/spendings/blob/main/SETUP.md#1-the-google-sheet-5-min';
@@ -144,19 +145,19 @@ function signIn() {
 const TASKS = [
   ['signin', 'Sign in'],
   ['sheet', 'Make your sheet'],
-  ['allow', 'Allow it'],
+  ['script', 'Add the script'],
 ];
 
 export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => {} } = {}) {
   saved = load();
   const connectedAtStart = isConnected();
-  // with Sign in with Google, turning on the Apps Script API gets its own step first (every new account needs it)
   const steps = connectedAtStart ? ['welcome', 'sheet', 'shortcut', 'done']
-    : ['welcome', 'accounts', 'money', ...(GOOGLE_CLIENT_ID ? ['api'] : []), 'sheet', 'shortcut', 'done'];
+    : ['welcome', 'accounts', 'money', 'sheet', 'shortcut', 'done'];
   let step = steps.includes(start) ? start : steps.includes(saved.step) && !saved.done ? saved.step : 'welcome';
-  // the sheet step's own state
-  let phase = saved.progress?.url && !isConnected() ? 'allow' : 'idle';
-  let error = null, pollTimer = null, polling = false, manualOpen = !GOOGLE_CLIENT_ID;
+  // the sheet step's own state: idle → signing → working (making the sheet) → paste (you add its script) → installing
+  let phase = saved.progress?.keyWritten && !isConnected() ? 'paste' : 'idle';
+  let error = null, manualOpen = !GOOGLE_CLIENT_ID;
+  let codeText = ''; // the script's text, loaded before you tap Copy so the copy happens within the tap
   let sheetEl = null, closeFn = null;
 
   const go = (next, dir = 1) => {
@@ -164,8 +165,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     saved.step = next;
     persist();
     draw(dir);
-    if (next === 'sheet') { prepareSignIn().catch(() => {}); if (phase === 'allow') startPolling(); }
-    else stopPolling();
+    if (next === 'sheet') { prepareSignIn().catch(() => {}); if (phase === 'paste') loadCode(); }
   };
   const idx = () => steps.indexOf(step);
   const next = () => go(steps[idx() + 1] || 'done', 1);
@@ -230,23 +230,12 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     <p class="group-foot">${t('su.paydayTap')}</p>`;
   };
 
-  const apiStep = () => `<div class="su-hero">${icon('gear', { size: 34 })}</div>
-    <h2 class="su-h">${t('su.apiTitle')}</h2>
-    <p class="su-p">${t('su.apiLede')}</p>
-    <ol class="su-steps">
-      <li>${t('su.api1')}</li>
-      <li>${t('su.api2')}</li>
-      <li>${t('su.api3')}</li>
-    </ol>
-    <a class="btn-tinted su-wide su-api" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">${icon('gear', { size: 18 })}${t('su.openApiSettings')}</a>
-    <p class="group-foot su-foot-note">${t('su.alreadyOn')}</p>`;
-
   const p = () => saved.progress || {};
   const taskState = (id) => {
     const pr = p();
     const i = TASKS.findIndex((tk) => tk[0] === id);
-    const doneN = isConnected() ? 3 : phase === 'allow' || phase === 'installing' || pr.url ? 2 : phase === 'working' || tokenValid() ? 1 : 0;
-    const nowN = phase === 'signing' ? 0 : phase === 'working' ? 1 : phase === 'allow' || phase === 'installing' ? 2 : -1;
+    const doneN = isConnected() ? 3 : phase === 'paste' || phase === 'installing' || pr.keyWritten ? 2 : phase === 'working' || tokenValid() ? 1 : 0;
+    const nowN = phase === 'signing' ? 0 : phase === 'working' ? 1 : phase === 'paste' || phase === 'installing' ? 2 : -1;
     return i === nowN ? 'now' : i < doneN ? 'done' : '';
   };
   const tasks = () => `<ol class="su-tasks" aria-label="${t('su.progress')}">${TASKS.map(([id, label], i) => {
@@ -258,14 +247,13 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     if (!error) return '';
     const e = error;
     const acts = [];
-    if (e.code === 'script-api-off') acts.push(`<a class="btn-plain" href="${USER_SETTINGS_URL}" target="_blank" rel="noopener">${t('su.openApiSettings')}</a>`);
     if (e.code === 'popup') {
       // never an endless "tap again": Safari, or the by-hand path just below
       acts.push(`<a class="btn-primary" href="${esc(appLink())}" target="_blank" rel="noopener" data-su-safari="1">${t('su.openSafari')}</a>`);
       acts.push(`<button type="button" class="btn-plain" data-copy="${esc(appLink())}">${icon('copy', { size: 16 })}${t('su.copyAddr')}</button>`);
       if (!standalone() && popupMisses < 2) acts.push(`<button type="button" class="btn-plain" data-su="signin">${t('su.tryAgain')}</button>`);
     } else if (['auth', 'cancelled', 'scopes'].includes(e.code)) acts.push(`<button type="button" class="btn-primary" data-su="signin">${t('su.signInGoogle')}</button>`);
-    else if (e.code !== 'api-disabled' && e.code !== 'manual') acts.push(`<button type="button" class="btn-primary" data-su="retry">${t('su.tryAgain')}</button>`);
+    else if (e.code !== 'api-disabled' && e.code !== 'manual' && e.code !== 'paste') acts.push(`<button type="button" class="btn-primary" data-su="retry">${t('su.tryAgain')}</button>`);
     return `<div class="tip-card su-error" role="alert">${icon('warn', { size: 18 })}<div><p>${esc(e.message)}</p>${acts.length ? `<div class="su-actions">${acts.join('')}</div>` : ''}</div></div>`;
   };
 
@@ -293,21 +281,23 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
         <div class="tip-card">${icon('sparkle', { size: 18 })}<p>${t('su.noGoogle')}</p></div>
         ${manual()}`;
     }
-    if (phase === 'allow' || phase === 'installing') {
+    if (phase === 'paste' || phase === 'installing') {
       return `${head}${tasks()}
-        <div class="su-allow">
-          <p class="su-p">${t('su.lastThing')}</p>
+        <div class="su-paste">
+          <p class="su-p">${t('su.pasteLede')}</p>
           <ol class="su-steps">
-            <li>${t('su.allow1')}</li>
-            <li>${t('su.allow2')}</li>
-            <li>${t('su.allow3')}</li>
-            <li>${t('su.allow4')}</li>
+            <li>${t('su.paste1')}<button type="button" class="btn-tinted su-wide su-copycode" data-su="copycode">${icon('copy', { size: 18 })}${t('su.copyScript')}</button></li>
+            <li>${t('su.paste2')}<a class="btn-tinted su-wide su-opensheet" href="${esc(pr.spreadsheetUrl || '')}" target="_blank" rel="noopener">${icon('sheet', { size: 18 })}${t('su.openYourSheet')}</a></li>
+            <li>${t('su.paste3')}</li>
+            <li>${t('su.paste4')}</li>
+            <li>${t('su.paste5')}</li>
+            <li>${t('su.paste6')}</li>
           </ol>
           <p class="su-small">${t('su.unsafe')}</p>
-          <a class="btn-primary su-wide" href="${esc(allowUrl(pr))}" target="_blank" rel="noopener" data-su-allow="1">${t('su.allowSp')}</a>
-          <p class="su-small center" aria-live="polite">${phase === 'installing' ? t('su.allowedSetting') : t('su.waitingAllow')}</p>
-          <button type="button" class="text-btn su-check" data-su="check">${t('su.checkAgain')}</button>
-          <p class="su-small">${t('su.didntAsk', { a: `<a href="${esc(editorUrl(pr))}" target="_blank" rel="noopener">`, b: '</a>' })}</p>
+          <section class="group form">
+            <label class="row input-row"><span>${t('set.webUrl')}</span><input name="su-paste-url" type="url" inputmode="url" placeholder="https://script.google.com/…/exec" value="${esc(saved.pasteUrl || '')}" autocomplete="off" autocapitalize="off" spellcheck="false"></label>
+          </section>
+          <button type="button" class="btn-primary su-wide su-connect-pasted" data-su="connectpasted" ${phase === 'installing' ? 'disabled' : ''}>${phase === 'installing' ? `<span class="su-spin" aria-hidden="true"></span>${t('su.settingUp')}` : `${icon('link', { size: 18 })}${t('set.connect')}`}</button>
         </div>
         ${errorCard()}
         <p class="su-small su-storage">${t('su.storage')}</p>
@@ -344,7 +334,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       <p class="group-foot su-foot-note">${t('su.keepThese')}</p>` : ''}`;
   };
 
-  const BODY = { welcome, accounts: accountsStep, money: moneyStep, api: apiStep, sheet: sheetStep, shortcut: shortcutStep, done: doneStep };
+  const BODY = { welcome, accounts: accountsStep, money: moneyStep, sheet: sheetStep, shortcut: shortcutStep, done: doneStep };
   const footer = () => {
     if (step === 'welcome') {
       return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.getStarted')}</button>
@@ -356,7 +346,6 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
         : `<button type="button" class="text-btn su-have" data-su="next">${t('su.skipNow')}</button>`;
     }
     if (step === 'done') return `<button type="button" class="btn-primary su-wide" data-su="finish">${t('su.startUsing')}</button>`;
-    if (step === 'api') return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.itsOn')}</button><button type="button" class="text-btn su-have" data-su="have">${t('su.byHandMine')}</button>`;
     if (step === 'shortcut') return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.continue')}</button><button type="button" class="text-btn su-have" data-su="next">${t('su.later')}</button>`;
     return `<button type="button" class="btn-primary su-wide" data-su="next">${t('su.continue')}</button>`;
   };
@@ -402,17 +391,14 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
   async function runProvision(token) {
     phase = 'working'; error = null; redrawBody();
     try {
-      const res = await fetch('setup/Code.gs.txt', { cache: 'no-cache' });
-      if (!res.ok) throw new SetupError('offline', t('su.noScript'));
-      const code = await res.text();
       const done = await provision({
-        token, code, progress: p(),
+        token, progress: p(),
         save: (pr) => { saved.progress = pr; persist(); },
       });
       saved.progress = done; persist();
-      phase = 'allow';
+      phase = 'paste';
       redrawBody();
-      startPolling();
+      loadCode();
     } catch (e) {
       phase = 'idle';
       error = e instanceof SetupError ? e : new SetupError('google', t('su.wrong', { msg: e.message }));
@@ -438,38 +424,47 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     await runProvision(token);
   }
 
-  function startPolling() {
-    stopPolling();
-    if (!sheetEl || step !== 'sheet' || isConnected()) return;
-    const tick = async () => {
-      if (!sheetEl || step !== 'sheet' || phase !== 'allow') return;
-      if (!document.hidden) await checkAllowed();
-      if (phase === 'allow') pollTimer = setTimeout(tick, 4000);
-    };
-    pollTimer = setTimeout(tick, 2500);
+  /** Loads the script's text ahead of the Copy tap (Safari only lets a tap copy straight away). */
+  function loadCode() {
+    if (codeText) return Promise.resolve(codeText);
+    return fetch('setup/Code.gs.txt', { cache: 'no-cache' }).then((r) => (r.ok ? r.text() : '')).then((x) => (codeText = x)).catch(() => '');
   }
-  function stopPolling() { clearTimeout(pollTimer); pollTimer = null; }
-  async function checkAllowed() {
-    if (polling) return;
-    const pr = p();
-    if (!pr.url || !pr.key) return;
-    polling = true;
+  async function copyCode() {
     try {
-      await ping(pr.url, pr.key);
-    } catch { polling = false; return; } // not allowed yet: Google answers with a sign-in page, not the script
-    polling = false;
-    if (phase !== 'allow') return;
+      await navigator.clipboard.writeText(codeText || await loadCode());
+      if (!codeText) throw new Error('no script');
+      haptic();
+      toast(t('su.scriptCopied'), { icon: icon('check', { size: 18 }), tone: 'good' });
+    } catch {
+      toast(t('su.noScript'), { tone: 'warn', icon: icon('warn', { size: 18 }) });
+    }
+  }
+
+  /** You pasted the web app address: the script took the key from the sheet's Setup tab, so the app knows it. */
+  async function connectPasted() {
+    const pr = p();
+    const url = sheetEl.querySelector('input[name="su-paste-url"]').value.trim();
+    saved.pasteUrl = url; persist();
+    if (!isWebAppUrl(url)) return warn(t('misc.badUrl'));
+    if (!pr.key) return warn(t('misc.pasteKey'));
     phase = 'installing'; error = null; redrawBody();
     try {
-      const inst = await installSheet(pr.url, pr.key);
-      await finishConnect(pr.url, pr.key, { fresh: inst?.fresh === true });
+      await ping(url, pr.key);
     } catch (e) {
-      phase = 'allow';
-      error = new SetupError('busy', t('su.notFinished', { msg: e.message }));
+      phase = 'paste';
+      error = new SetupError('paste', t('su.pasteFail', { msg: e.message }));
+      redrawBody();
+      return;
+    }
+    try {
+      const inst = await installSheet(url, pr.key);
+      await finishConnect(url, pr.key, { fresh: inst?.fresh === true });
+    } catch (e) {
+      phase = 'paste';
+      error = new SetupError('paste', t('su.notFinished', { msg: e.message }));
       redrawBody();
     }
   }
-  const onVisible = () => { if (!document.hidden && phase === 'allow' && step === 'sheet') checkAllowed(); };
 
   /** Connected: save the connection, send your answers to a new sheet, and move on.
       `fresh` comes from the sheet itself (`install`): only a sheet nobody has used yet takes your answers.
@@ -483,7 +478,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     if (!connectedAtStart && a.touched) {
       if (fresh) { applySetup(setupPlan(a)); await sync(); } else kept = true;
     }
-    saved.progress = null; saved.answers = null; saved.done = true;
+    saved.progress = null; saved.answers = null; saved.pasteUrl = ''; saved.done = true;
     persist();
     phase = 'idle';
     toast(state.sync.status === 'error' ? esc(state.sync.error) : kept ? t('su.kept') : t('su.connectedSheet'), { icon: icon(state.sync.status === 'error' ? 'warn' : 'check', { size: 18 }), tone: state.sync.status === 'error' ? 'warn' : 'good' });
@@ -514,8 +509,6 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
     html: `<div class="su-headwrap"></div><div class="sheet-scroll su-scroll"><div class="su-body"></div></div><div class="su-footer"></div>`,
     onClose() {
       sheetEl = null;
-      stopPolling();
-      document.removeEventListener('visibilitychange', onVisible);
       if (!saved.done) { saved.dismissed = true; persist(); }
       onFinish();
     },
@@ -523,9 +516,8 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       sheetEl = sheet;
       sheet.classList.add('setup-sheet');
       closeFn = closeSheet;
-      document.addEventListener('visibilitychange', onVisible);
       draw();
-      if (step === 'sheet') { prepareSignIn().catch(() => {}); if (phase === 'allow') startPolling(); }
+      if (step === 'sheet') { prepareSignIn().catch(() => {}); if (phase === 'paste') loadCode(); }
 
       sheet.addEventListener('input', (ev) => {
         const el = ev.target, a = answers();
@@ -553,6 +545,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
       });
       sheet.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' && ev.target.matches('input[name="su-token"]')) { ev.preventDefault(); sheet.querySelector('[data-su="connect"]')?.click(); }
+        if (ev.key === 'Enter' && ev.target.matches('input[name="su-paste-url"]')) { ev.preventDefault(); sheet.querySelector('[data-su="connectpasted"]')?.click(); }
       });
       sheet.addEventListener('click', async (ev) => {
         const tg = ev.target;
@@ -607,8 +600,7 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           try { await navigator.clipboard.writeText(cp.dataset.copy); haptic(); toast(t('guide.copied'), { icon: icon('check', { size: 18 }), tone: 'good' }); } catch { toast(t('guide.noCopy')); }
           return;
         }
-        if (tg.closest('[data-su-allow]')) { setTimeout(startPolling, 0); return; } // the link opens Google in a new tab
-        if (tg.closest('.su-api, [data-su-safari]')) return; // plain links to a new tab
+        if (tg.closest('.su-opensheet, [data-su-safari]')) return; // plain links to a new tab
         const act = tg.closest('[data-su]')?.dataset.su;
         if (!act) return;
         if (act === 'signin') { haptic(); return signInAndRun(); }
@@ -617,10 +609,11 @@ export function openSetup({ start = '', onShortcut = () => {}, onFinish = () => 
           if (tokenValid()) return runProvision(accessToken.token);
           return signInAndRun();
         }
-        if (act === 'check') { haptic(); return checkAllowed(); }
+        if (act === 'copycode') return copyCode();
+        if (act === 'connectpasted') { haptic(); return connectPasted(); }
         if (act === 'startover') {
           if (!confirm(t('su.confirmStart'))) return;
-          saved.progress = null; persist(); phase = 'idle'; error = null; stopPolling(); redrawBody(); return;
+          saved.progress = null; saved.pasteUrl = ''; persist(); phase = 'idle'; error = null; redrawBody(); return;
         }
         if (act === 'connect') return connectManual(tg.closest('[data-su]'));
         if (act === 'shortcut') { haptic(); return onShortcut(); }

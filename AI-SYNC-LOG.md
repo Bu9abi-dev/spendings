@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **31 Oct 2026**, at **v33**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **31 Oct 2026**, at **v34**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -61,9 +61,9 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v33, 31 Oct 2026)
+## 5. Current state (v34, 31 Oct 2026)
 
-**Live on main** (newest first): v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
@@ -76,10 +76,10 @@ and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
    version). Covers v12 Extras tab, v13 Shortcut fixes, v18 custom categories from the Shortcut, v22 BNPL guard,
    v24 people/split guards, v25 setup install + key adoption, v28 budget line in the
    Apple Pay notification. Until then, feature settings live on the phone only and sync later.
-2. **Sign in with Google**: done 31 Oct. Google Cloud project `spendings-513314` (Testing, External, Abdullah the only
-   test user), Web client with origins `https://spendings-six.vercel.app` and `http://localhost:8765`; client ID is in
-   `docs/js/config.js` (v33). Apps Script API user setting is On. Still to do: try the guide's sign-in once on the
-   live app. Publishing the app beyond Testing would need Google verification (the `script.*` scopes are sensitive).
+2. **Sign in with Google**: Google Cloud project `spendings-513314` (account abdullahyusri61@gmail.com), Web client
+   with origins `https://spendings-six.vercel.app` and `http://localhost:8765`; client ID in `docs/js/config.js`.
+   Since v34 the app asks only for `drive.file`. **Abdullah to do:** in Google Auth Platform → Data access, remove
+   `script.projects` and `script.deployments`; then Audience → **Publish app** (In production). Then try the guide.
 3. Check on a real iPhone: "Save as PDF" in the monthly report from the home-screen app, and the Arabic mode.
 4. Read the Arabic wording (Settings → Language → العربية).
 
@@ -104,6 +104,11 @@ strings/ar.js; use t()** (`docs/js/i18n.js`; amounts via `money`/`amtAED`, dates
 left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated key).
 
 ## 7. Session log (newest first)
+
+### 31 Oct 2026 · v34 anyone can sign in
+- Abdullah wants anyone to sign in, not a test list. Dropped the sensitive `script.*` scopes: sign-in is now
+  `drive.file` only, the guide makes the sheet + Setup-tab key, then shows paste-the-script steps and a Web app
+  URL box (the script adopts the key). Removed the Apps Script API step and polling. No Code.gs or money change.
 
 ### 31 Oct 2026 · v33 Sign in with Google
 - Abdullah set up the Google Cloud project and OAuth client (his own browser session). Put the client ID in
