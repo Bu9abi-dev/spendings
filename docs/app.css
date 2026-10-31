@@ -750,8 +750,11 @@ html.selecting .tabbar, html.selecting .fab { opacity: 0; pointer-events: none; 
 .block-label { font-size: 0.765rem; font-weight: 600; color: var(--label-2); padding: 14px calc(var(--gutter) + 4px) 8px; text-transform: none; }
 .suggest { font-weight: 500; color: var(--tint-text); }
 .chips { display: flex; gap: 8px; padding: 0 var(--gutter); flex-wrap: wrap; }
-.chips.accounts { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
-.chips.accounts .chip { justify-content: center; padding: 0 6px; gap: 6px; }
+/* account pickers: each chip as wide as its name (never two lines, so every chip is the same height); a row's chips
+   stretch to fill it, and a long list wraps onto more rows */
+.chips.accounts { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips.accounts .chip { flex: 1 0 auto; min-width: 78px; max-width: 100%; justify-content: center; padding: 0 12px; gap: 6px; white-space: nowrap; overflow: hidden; }
+.chips.accounts .chip .acc-dot { flex: none; }
 .chip {
   height: 38px; padding: 0 14px;
   border-radius: 999px;
@@ -1065,7 +1068,7 @@ html.sheet-open { overflow: hidden; }
   transition: color 0.25s var(--ease-out);
 }
 .key-acc.on { color: var(--label); }
-.ka-name { display: flex; align-items: center; gap: 5px; font-size: 0.765rem; font-weight: 650; }
+.ka-name { display: flex; align-items: center; gap: 5px; font-size: 0.765rem; font-weight: 650; white-space: nowrap; }
 .ka-name::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--c); flex: none; }
 .ka-val { font-size: 0.735rem; font-weight: 500; }
 
@@ -1505,7 +1508,7 @@ html.sheet-open body::after { opacity: 0; }
 .su-body > .tip-card { margin: 0 var(--gutter) 6px; }
 @media (prefers-reduced-motion: reduce) { .su-spin { animation-duration: 2.4s; } .su-dots i { transition: none; } }
 /* Money owed: people, splits, the Home line */
-.chip-group-label { grid-column: 1 / -1; font-size: 0.706rem; font-weight: 600; color: var(--label-2); padding: 8px 4px 0; }
+.chip-group-label { grid-column: 1 / -1; flex-basis: 100%; font-size: 0.706rem; font-weight: 600; color: var(--label-2); padding: 8px 4px 0; }
 .chip.person-chip { height: 44px; --chip: var(--tint); min-width: 0; }
 .chip.person-chip.new { color: var(--tint-text); }
 .chips.accounts .chip.person-chip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

@@ -50,7 +50,15 @@ timeline
         v34 : Anyone can sign in with Google : Paste the script in 3 minutes
         v35 : Plain starting accounts for new users : Your setup unchanged
         v36 : Security check-up : Stricter browser rules
+        v37 : Account buttons stay on one line
 ```
+
+---
+
+## v37: Tidy account buttons
+**31 October 2026** · no sheet update needed
+
+- **Account buttons stay on one line.** In the setup guide (and anywhere else you pick an account), a name like "Account 1" no longer breaks onto two lines. Every button is the same height, each one is as wide as its name, and a row fills the width. On a small iPhone or with many accounts they wrap onto another row instead. The account names under the balance on Home also stay on one line.
 
 ---
 
