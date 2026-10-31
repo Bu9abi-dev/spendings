@@ -49,8 +49,12 @@ const seed = [
   // Apple Pay row flagged Review by the sheet because the card was unknown, though it has a category
   { id: 's7', date: T('2026-10-03T12:00:00+04:00'), type: 'Spend', amount: 33, currency: 'AED', account: 'ADCB', toAccount: '', category: 'Food & Drinks', merchant: 'Salt', note: '', source: 'Apple Pay', status: 'Review' },
 ].map((e) => ({ ...e, cycle: model.cycleOf(e.date, 27), amountAED: e.amountAED ?? e.amount }));
+// the owner's setup (his banks, allowance and 27th payday), as his sheet sends it
+state.settings = { ...model.SAMPLE_SETTINGS };
+state.accounts = model.SAMPLE_ACCOUNTS.map((a) => ({ ...a }));
+model.setAccountList(state.accounts);
 state.entries = seed.map((e) => ({ ...e }));
-state.plan = [...model.DEFAULT_PLAN.map((p) => ({ ...p })), { id: 'botim', name: 'BOTIM top-up', kind: 'Move', amount: 400, day: 28, from: 'ADIB', to: 'BOTIM', category: '' }];
+state.plan = [...model.SAMPLE_PLAN.map((p) => ({ ...p })), { id: 'botim', name: 'BOTIM top-up', kind: 'Move', amount: 400, day: 28, from: 'ADIB', to: 'BOTIM', category: '' }];
 
 console.log('── Entries ──');
 check('add spend', () => addEntry({ type: 'Spend', amount: 42, account: 'ADCB', category: 'Food & Drinks', merchant: 'Talabat' }));

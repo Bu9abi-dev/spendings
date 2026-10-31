@@ -550,4 +550,39 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   assert.ok(q({ action: 'ping' }).features.includes('install'));
 }
 
+// A brand-new user's sheet: plain starting accounts, no bank assumed, an empty plan, no allowance yet
+{
+  const env = makeEnv({ newUser: true });
+  env.ctx.setup();
+  const key = env.ctx.getToken_();
+  const q = (body) => JSON.parse(env.ctx.doPost({ postData: { contents: JSON.stringify({ token: key, ...body }) } }).text);
+  const l = q({ action: 'list' });
+  assert.deepEqual(l.accounts.map((a) => a.name), ['Account 1', 'Account 2', 'Cash']);
+  assert.ok(l.accounts.every((a) => a.wallet === ''), 'no Wallet words to start');
+  assert.deepEqual(l.plan, []);
+  assert.equal(l.settings.allowance, 0);
+  assert.equal(l.settings.allowanceAccount, 'Account 2');
+  assert.equal(l.settings.emergencyAccount, 'Account 1');
+  assert.equal(l.settings.cycleStart, 1);
+  assert.match(JSON.stringify(env.ss.getSheets().map((sh) => sh.cells)), /^(?!.*\b(ADIB|ADCB|BOTIM)\b)/s, 'no bank names anywhere in a new sheet');
+  // a card nobody named yet goes to Needs review, it is never guessed as someone else's bank
+  let r = q({ source: 'applepay', amount: 'AED 20', merchant: 'Carrefour', card: 'ADCB Platinum', category: 'Groceries' });
+  assert.equal(r.entry.status, 'Review');
+  assert.equal(r.entry.account, 'ADCB Platinum');
+  // the user's own names and Wallet words do the matching: rename, set the word, and payments land there
+  q({ action: 'renameAccount', from: 'Account 2', to: 'Mashreq' });
+  q({ action: 'accounts', accounts: q({ action: 'list' }).accounts.map((a) => (a.name === 'Mashreq' ? { ...a, wallet: 'mashreq' } : a.name === 'Account 1' ? { ...a, name: 'Account 1', wallet: 'wio' } : a)) });
+  assert.equal(q({ action: 'list' }).settings.allowanceAccount, 'Mashreq', 'the allowance account followed the rename');
+  r = q({ source: 'applepay', amount: 'AED 15', merchant: 'Starbucks', card: 'Mashreq Visa', category: 'Food & Drinks' });
+  assert.equal(r.entry.account, 'Mashreq');
+  assert.equal(r.entry.status, 'OK');
+  // paying one of your own accounts (its Wallet word in the merchant) is a move, not spending
+  r = q({ source: 'applepay', amount: 'AED 100', merchant: 'WIO TOPUP', card: 'Mashreq Visa', category: 'Decide later' });
+  assert.equal(r.entry.type, 'Transfer');
+  assert.equal(r.entry.toAccount, 'Account 1');
+  // a bank alert is matched the same way
+  r = q({ source: 'bank', app: 'Mashreq', title: 'Mashreq', body: 'Purchase of AED 12.00 at NOON with card XXX1111', category: 'Shopping' });
+  assert.equal(r.entry.account, 'Mashreq');
+}
+
 console.log('apps-script: all tests passed');

@@ -4,6 +4,16 @@ Choices made while running the app on my own, newest first, with the reason for 
 
 ## 31 Oct 2026
 
+- **New users start with plain accounts** (Abdullah asked: "ADIB, ADCB and BOTIM are my personal roster").
+  `DEFAULT_ACCOUNTS` (app and Code.gs) are now Account 1 (pay lands here), Account 2 (allowance) and Cash, with no
+  Wallet words; the default plan is empty; default settings are allowance 0, Account 2 / Account 1, cycle start 1;
+  the Settings card map starts empty. Why safe for Abdullah: every one of these is only used when a tab is empty
+  or missing (`ensureAccounts_`, `ensurePlan_`, empty Settings) or before the sheet answers; his sheet has all of
+  them. His old values live on as `SAMPLE_ACCOUNTS/PLAN/SETTINGS` in model.js (the demo uses them, so it still looks
+  like a real month) and as the owner defaults in `tests/fake-sheet.mjs` (`makeEnv()` = his sheet,
+  `makeEnv({ newUser: true })` = a new one). Bank-specific behaviour was already per account: card matching uses
+  each account's name and Wallet word, and "paying one of your own accounts is a move" uses the Wallet word, so
+  nothing else needed to change.
 - **Sign in with Google asks only for `drive.file`** (v34). Abdullah wants anyone to be able to sign in, not just
   people on Google's test-user list. The `script.projects` and `script.deployments` scopes are "sensitive": a
   published app using them needs Google's verification (weeks, a privacy policy, a demo video) and shows the

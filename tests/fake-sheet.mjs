@@ -50,7 +50,27 @@ class Sheet {
 }
 for (const m of ['setFrozenRows', 'setColumnWidth', 'setColumnWidths', 'setHiddenGridlines', 'hideSheet']) Sheet.prototype[m] = function () { return this; };
 
-export function makeEnv() {
+// The owner's own sheet was set up with these (before new sheets started with plain "Account 1/2" names).
+// Most tests check his real setup, so makeEnv() seeds a new sheet this way; makeEnv({ newUser: true }) keeps
+// the plain starting accounts a brand-new user gets.
+const OWNER_DEFAULTS = `
+DEFAULT_ACCOUNTS = [
+  ['ADIB', 'Main · pay lands here', 'teal', 'adib', ''],
+  ['ADCB', 'Personal allowance', 'red', 'adcb', ''],
+  ['BOTIM', 'Extra card', 'purple', 'botim', ''],
+  ['Cash', 'Notes & coins', 'green', '', ''],
+];
+DEFAULT_PLAN = [
+  ['salary', 'Salary', 'Income', 6000, 27, '', 'ADIB', 'Salary'],
+  ['nafis', 'Nafis', 'Income', 4500, 1, '', 'ADIB', 'Nafis'],
+  ['allowance', 'Allowance', 'Move', 3000, 27, 'ADIB', 'ADCB', ''],
+  ['fuel', 'Fuel', 'Responsibility', 0, '', 'ADIB', '', 'Transport & Fuel'],
+];
+DEFAULT_SETTINGS[0][1] = 3000; DEFAULT_SETTINGS[1][1] = 'ADCB'; DEFAULT_SETTINGS[2][1] = 'ADIB'; DEFAULT_SETTINGS[3][1] = 27;
+DEFAULT_CARD_MAP = [['adib', 'ADIB'], ['adcb', 'ADCB'], ['botim', 'BOTIM']];
+`;
+
+export function makeEnv({ newUser = false } = {}) {
   const sheets = [new Sheet('Sheet1')];
   const props = {};
   const ss = {
@@ -85,6 +105,7 @@ export function makeEnv() {
   };
   vm.createContext(ctx);
   vm.runInContext(code, ctx);
+  if (!newUser) vm.runInContext(OWNER_DEFAULTS, ctx);
   return { ctx, ss, props };
 }
 

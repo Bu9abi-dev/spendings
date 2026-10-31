@@ -35,13 +35,12 @@ var C = {}; COLS.forEach(function (n, i) { C[n] = i; });
 
 // Adjustment = "match my bank": a signed correction that makes an account's balance equal the bank's.
 var TYPES = ['Spend', 'Income', 'Transfer', 'Adjustment'];
-// Starting accounts. After setup the Accounts tab is the source of truth; ACCOUNTS is refreshed from it per request.
-var ACCOUNTS = ['ADIB', 'ADCB', 'BOTIM', 'Cash'];
+// Starting accounts for a brand-new sheet: plain names you rename in the app (no bank is assumed). After
+// setup the Accounts tab is the source of truth, so a sheet that already has accounts never sees these.
 var ACCOUNT_COLS = ['Name', 'Note', 'Colour', 'Wallet name contains', 'Archived'];
 var DEFAULT_ACCOUNTS = [
-  ['ADIB', 'Main · pay lands here', 'teal', 'adib', ''],
-  ['ADCB', 'Personal allowance', 'red', 'adcb', ''],
-  ['BOTIM', 'Extra card', 'purple', 'botim', ''],
+  ['Account 1', 'Main · pay lands here', 'teal', '', ''],
+  ['Account 2', 'Personal allowance', 'red', '', ''],
   ['Cash', 'Notes & coins', 'green', '', ''],
 ];
 var COLOUR_IDS = ['red', 'orange', 'gold', 'green', 'teal', 'sky', 'blue', 'indigo', 'purple', 'pink', 'graphite'];
@@ -51,23 +50,19 @@ var INCOME_CATEGORIES = ['Salary', 'Nafis', 'Allowance', 'Gift', 'Refund', 'Othe
 
 var PLAN_COLS = ['ID', 'Name', 'Kind', 'Amount', 'Day', 'From', 'To', 'Category'];
 var PLAN_KINDS = ['Income', 'Move', 'Responsibility'];
-var DEFAULT_PLAN = [
-  ['salary', 'Salary', 'Income', 6000, 27, '', 'ADIB', 'Salary'],
-  ['nafis', 'Nafis', 'Income', 4500, 1, '', 'ADIB', 'Nafis'],
-  ['allowance', 'Allowance', 'Move', 3000, 27, 'ADIB', 'ADCB', ''],
-  ['fuel', 'Fuel', 'Responsibility', 0, '', 'ADIB', '', 'Transport & Fuel'],
-];
+// A new sheet starts with an empty plan; the app's setup guide adds salary and the allowance move.
+var DEFAULT_PLAN = [];
 
 var DEFAULT_SETTINGS = [
-  ['Allowance (AED per cycle)', 3000, 'How much of your own money you plan to spend each cycle.'],
-  ['Allowance account', 'ADCB', 'Spending on this account counts against the allowance.'],
-  ['Emergency account', 'ADIB', 'Spending here gets a gentle warning.'],
-  ['Cycle start day', 27, 'Day of the month a new cycle starts (1–28).'],
+  ['Allowance (AED per cycle)', 0, 'How much of your own money you plan to spend each cycle.'],
+  ['Allowance account', 'Account 2', 'Spending on this account counts against the allowance.'],
+  ['Emergency account', 'Account 1', 'Spending here gets a gentle warning.'],
+  ['Cycle start day', 1, 'Day of the month a new cycle starts (1–28).'],
   ['USD → AED rate', 3.6725, 'The AED is pegged to the USD.'],
 ];
-var DEFAULT_CARD_MAP = [
-  ['adib', 'ADIB'], ['adcb', 'ADCB'], ['botim', 'BOTIM'],
-];
+// Extra "Wallet name contains → account" rows. None to start: each account's own Wallet-name word (Accounts tab)
+// and its name already match cards. A sheet that has rows here keeps them.
+var DEFAULT_CARD_MAP = [];
 
 // what this version of the script can do, so the app can tell an old script from a new one
 var FEATURES = ['extras', 'install'];
@@ -128,7 +123,7 @@ function setupSheet_() {
     settings.getRange(2, 1, DEFAULT_SETTINGS.length, 3).setValues(DEFAULT_SETTINGS);
     var mapRow = DEFAULT_SETTINGS.length + 4;
     settings.getRange(mapRow - 1, 1, 1, 3).setValues([['Wallet card name contains', 'Account', 'Add a row if Apple Wallet calls a card something else.']]);
-    settings.getRange(mapRow, 1, DEFAULT_CARD_MAP.length, 2).setValues(DEFAULT_CARD_MAP);
+    if (DEFAULT_CARD_MAP.length) settings.getRange(mapRow, 1, DEFAULT_CARD_MAP.length, 2).setValues(DEFAULT_CARD_MAP);
     styleHeader_(settings, 3);
     settings.getRange(mapRow - 1, 1, 1, 3).setFontWeight('bold').setBackground(SOFT);
     settings.setColumnWidth(1, 230); settings.setColumnWidth(2, 120); settings.setColumnWidth(3, 380);
@@ -321,7 +316,7 @@ function addApplePay_(body) {
 }
 
 /**
- * Called by the bank-notification Shortcut. Fields: app (ADCB/ADIB/…), title, body (the notification's text).
+ * Called by the bank-notification Shortcut. Fields: app (the bank app's name), title, body (the notification's text).
  * Only card purchases are logged. Transfers, salary, refunds, ATM withdrawals, OTPs and the rest are
  * ignored, so money moving between accounts never counts as spending.
  */
@@ -723,7 +718,7 @@ function ensurePlan_() {
   if (sh) return sh;
   sh = ensureSheet_(PLAN);
   sh.getRange(1, 1, 1, PLAN_COLS.length).setValues([PLAN_COLS]);
-  sh.getRange(2, 1, DEFAULT_PLAN.length, PLAN_COLS.length).setValues(DEFAULT_PLAN);
+  if (DEFAULT_PLAN.length) sh.getRange(2, 1, DEFAULT_PLAN.length, PLAN_COLS.length).setValues(DEFAULT_PLAN);
   styleHeader_(sh, PLAN_COLS.length);
   sh.setFrozenRows(1);
   sh.setColumnWidth(2, 150); sh.setColumnWidth(3, 120); sh.setColumnWidth(8, 170);
@@ -919,10 +914,10 @@ function getSettings_() {
   }
   if (!cardMap.length) cardMap = DEFAULT_CARD_MAP;
   return {
-    allowance: Number(v(0, 3000)) || 0,
-    allowanceAccount: String(v(1, 'ADCB')),
-    emergencyAccount: String(v(2, 'ADIB')),
-    cycleStart: Math.min(28, Math.max(1, parseInt(v(3, 27), 10) || 1)),
+    allowance: Number(v(0, DEFAULT_SETTINGS[0][1])) || 0,
+    allowanceAccount: String(v(1, DEFAULT_SETTINGS[1][1])),
+    emergencyAccount: String(v(2, DEFAULT_SETTINGS[2][1])),
+    cycleStart: Math.min(28, Math.max(1, parseInt(v(3, DEFAULT_SETTINGS[3][1]), 10) || 1)),
     usdRate: Number(v(4, 3.6725)) || 3.6725,
     cardMap: cardMap,
   };

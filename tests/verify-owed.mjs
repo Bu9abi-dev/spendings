@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 import {
-  ACCOUNTS, PEOPLE_ACCOUNTS, DEFAULT_ACCOUNTS, DEFAULT_SETTINGS, setAccountList, setPeopleList, isPerson, balances, moneyTotal,
+  ACCOUNTS, PEOPLE_ACCOUNTS, SAMPLE_ACCOUNTS, SAMPLE_SETTINGS, setAccountList, setPeopleList, isPerson, balances, moneyTotal,
   peopleBalances, homeNumbers, whereRows, summarize, cycleOf, cycleBounds, toAED,
 } from '../docs/js/model.js';
 import {
@@ -20,16 +20,16 @@ const fils = (x) => Math.round(x * 100);
 
 /* ───── 1. People are accounts, flagged ───── */
 const PEOPLE = [{ name: 'Ahmed', note: 'Person', color: 'graphite', wallet: '' }, { name: 'Sara', note: 'Person', color: 'graphite', wallet: '' }];
-setAccountList([...DEFAULT_ACCOUNTS, ...PEOPLE]);
+setAccountList([...SAMPLE_ACCOUNTS, ...PEOPLE]);
 ok(ACCOUNTS.some((a) => a.id === 'Ahmed'), 'before they are flagged, a person account is just an account');
 setPeopleList(['Ahmed', 'Sara']);
 ok(!ACCOUNTS.some((a) => a.id === 'Ahmed' || a.id === 'Sara') && ACCOUNTS.length === 4, 'flagged people leave ACCOUNTS (balance bar, pay pickers, Where your money is)');
 ok(PEOPLE_ACCOUNTS.map((a) => a.id).join() === 'Ahmed,Sara' && isPerson('Ahmed') && !isPerson('ADCB') && !isPerson(''), 'PEOPLE_ACCOUNTS holds them; isPerson knows them');
-setAccountList([...DEFAULT_ACCOUNTS, ...PEOPLE]);
+setAccountList([...SAMPLE_ACCOUNTS, ...PEOPLE]);
 ok(!ACCOUNTS.some((a) => a.id === 'Ahmed') && PEOPLE_ACCOUNTS.length === 2, 'the flag survives the account list being refreshed (a sync)');
 
 /* ───── 2. Totals, owed, allowance ───── */
-const S = { ...DEFAULT_SETTINGS };
+const S = { ...SAMPLE_SETTINGS };
 const PLAN = [
   { id: 'allowance', name: 'Allowance', kind: 'Move', amount: 3000, day: 27, from: 'ADIB', to: 'ADCB', category: '' },
 ];
@@ -90,11 +90,11 @@ ok(near(homeNumbers([...withSplit, lendHub], PLAN, S, now).safe, m.safe), 'lendi
 const next = homeNumbers([...withSplit, lend], PLAN, S, new Date('2026-11-28T12:00:00+04:00'));
 ok(next.sum.allowanceUsed === 0 && next.cyc === '2026-12', 'Safe to spend still resets at payday');
 // a removed (archived) person stays flagged, so old loans keep meaning allowance used
-setAccountList([...DEFAULT_ACCOUNTS, { ...PEOPLE[0], archived: true }, PEOPLE[1]]);
+setAccountList([...SAMPLE_ACCOUNTS, { ...PEOPLE[0], archived: true }, PEOPLE[1]]);
 ok(!ACCOUNTS.some((a) => a.id === 'Ahmed') && !PEOPLE_ACCOUNTS.some((a) => a.id === 'Ahmed') && isPerson('Ahmed'), 'a removed person is in neither list but is still a person');
 ok(peopleBalances(withSplit, S).people.some((p) => p.id === 'Ahmed' && p.archived), 'a removed person who is still owed is still listed');
 ok(!peopleBalances([...withSplit, E('Transfer', 50, 'Ahmed', '2026-11-09T10:00:00+04:00', { toAccount: 'ADIB' })], S).people.some((p) => p.id === 'Ahmed'), 'a removed, settled person drops out of the list');
-setAccountList([...DEFAULT_ACCOUNTS, ...PEOPLE]);
+setAccountList([...SAMPLE_ACCOUNTS, ...PEOPLE]);
 
 /* ───── 2b. A buy-now-pay-later plan and a split in the same cycle: Home and the report agree ─────
    (the report half runs in the browser, below: report.js needs the app) */
@@ -188,7 +188,7 @@ ok(recentPeople([]).map((p) => p.id).join() === 'Ahmed,Sara', 'no history: A–Z
 ok(JSON.stringify(withPerson({ v: 1, names: ['Ahmed'] }, 'Sara')) === '{"v":1,"names":["Ahmed","Sara"]}' && JSON.stringify(renamedPerson({ v: 1, names: ['Ahmed', 'Sara'] }, 'Sara', 'Sarah')) === '{"v":1,"names":["Ahmed","Sarah"]}', 'the people extra: add and rename');
 ok(peopleNames({ names: ['A', '', 3, 'A', ' '] }).join() === 'A' && peopleNames(null).length === 0, 'the people extra is cleaned when read');
 setPeopleList([]);
-setAccountList(DEFAULT_ACCOUNTS);
+setAccountList(SAMPLE_ACCOUNTS);
 
 /* ───── 5. The real app (demo, 390 px) ───── */
 const require = createRequire(import.meta.url);
@@ -443,7 +443,7 @@ ok(await ev(async (c) => {
   const [m, rp] = await Promise.all([import('/js/model.js'), import('/js/report.js')]);
   const was = [...m.PEOPLE_ACCOUNTS.map((a) => a.id)];
   m.setPeopleList(['Ahmed', 'Sara']);
-  const S = { ...m.DEFAULT_SETTINGS };
+  const S = { ...m.SAMPLE_SETTINGS };
   const PLAN = [{ id: 'allowance', name: 'Allowance', kind: 'Move', amount: 3000, day: 27, from: 'ADIB', to: 'ADCB', category: '' }];
   const r = rp.cycleReport(c.entries, c.cyc, S, PLAN, null, new Date(c.now));
   const h = m.homeNumbers(c.entries, PLAN, S, new Date(c.now));

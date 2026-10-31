@@ -3,14 +3,14 @@
 // Usage: (cd docs && python3 -m http.server 8765 &) ; node tests/verify-weekly.mjs
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { DEFAULT_SETTINGS, cycleOf, cycleBounds, summarize, homeNumbers, allowancePace } from '../docs/js/model.js';
+import { SAMPLE_SETTINGS, cycleOf, cycleBounds, summarize, homeNumbers, allowancePace } from '../docs/js/model.js';
 import {
   lastFullWeek, mondayOf, weekdayOf, weekTotals, usualWeek, median, compareToUsual, topCategories, weeklySummary, paceAlert, paceSeen, summaryDue, summaryLine,
 } from '../docs/js/weekly.js';
 
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };
-const S = { ...DEFAULT_SETTINGS, usdRate: 3.6725 };
+const S = { ...SAMPLE_SETTINGS, usdRate: 3.6725 };
 
 // ── week boundaries (Dubai days, Monday to Sunday)
 const at = (iso) => new Date(iso);

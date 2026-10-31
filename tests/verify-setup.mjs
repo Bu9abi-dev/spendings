@@ -255,21 +255,26 @@ await check('links straight to Settings, ?notour and "Not now" don\'t open it ag
 });
 
 await check('no client ID: accounts and money, then "Paste URL and key" sends the answers to the sheet', async () => {
-  const env = makeEnv(); env.ctx.setup();
+  const env = makeEnv({ newUser: true }); env.ctx.setup();
   const token = env.ctx.getToken_();
   const { c, p } = await fresh();
   await routeSheet(c, env);
   await p.goto(`${BASE}/`);
   await p.click('[data-su="next"]');
   await p.waitForSelector('.su-acct');
-  // BOTIM becomes Wio; ADIB is removed; Wio gets pay, ADCB the allowance; a new Revolut card
-  await p.fill('.su-acct[data-i="2"] .su-name', 'Wio');
-  await p.fill('.su-acct[data-i="2"] [data-su-field="wallet"]', 'wio');
-  await p.click('[data-su-del="0"]');
+  // a new user starts with plain names, no bank assumed and no Wallet words filled in
+  assert.deepEqual(await p.$$eval('.su-name', (els) => els.map((e) => e.value)), ['Account 1', 'Account 2', 'Cash']);
+  assert.deepEqual(await p.$$eval('[data-su-field="wallet"]', (els) => els.map((e) => e.value)), ['', '', '']);
+  assert.doesNotMatch(await p.textContent('.su-body'), /ADIB|ADCB|BOTIM/);
+  // Account 1 becomes Wio, Account 2 becomes ADCB; a new Revolut card; Cash is removed; Wio gets pay, ADCB the allowance
+  await p.fill('.su-acct[data-i="0"] .su-name', 'Wio');
+  await p.fill('.su-acct[data-i="0"] [data-su-field="wallet"]', 'wio');
+  await p.fill('.su-acct[data-i="1"] .su-name', 'ADCB');
   await p.click('[data-su-add]');
   await p.fill('.su-acct[data-i="3"] .su-name', 'Revolut <b>');
   await p.click('[data-su-colours="3"]');
   await p.click('[data-su-colour="3:pink"]');
+  await p.click('[data-su-del="2"]');
   await p.click('[data-su-role="pay"][data-name="Wio"]');
   await p.click('[data-su-role="allowanceAccount"][data-name="ADCB"]');
   assert.equal(await p.locator('.su-roles b').count(), 0, 'names are escaped');
@@ -288,7 +293,7 @@ await check('no client ID: accounts and money, then "Paste URL and key" sends th
   await p.click('[data-su="connect"]');
   await p.waitForSelector('.su-h:text("Log Apple Pay by itself")', { timeout: 10000 });
   const s = sheetList(env, token);
-  assert.deepEqual(s.accounts.map((a) => a.name), ['ADCB', 'Wio', 'Cash', 'Revolut <b>']);
+  assert.deepEqual(s.accounts.map((a) => a.name), ['Wio', 'ADCB', 'Revolut <b>']);
   assert.equal(s.accounts.find((a) => a.name === 'Wio').wallet, 'wio');
   assert.equal(s.accounts.find((a) => a.name === 'Revolut <b>').color, 'pink');
   assert.equal(s.accounts.find((a) => a.name === 'Wio').note, 'Main · pay lands here');
@@ -299,7 +304,7 @@ await check('no client ID: accounts and money, then "Paste URL and key" sends th
   assert.deepEqual(s.plan.map((x) => [x.id, x.kind, x.amount, x.day, x.from, x.to]), [['salary', 'Income', 8000, 25, '', 'Wio'], ['allowance', 'Move', 2500, 25, 'Wio', 'ADCB']]);
   await p.click('[data-su="next"]');
   await p.waitForSelector('.su-h:text("You’re all set")');
-  assert.match(await p.textContent('.su-body'), /4 accounts, pay lands in Wio/);
+  assert.match(await p.textContent('.su-body'), /3 accounts, pay lands in Wio/);
   await p.click('[data-su="finish"]');
   await p.waitForSelector('.setup-sheet', { state: 'detached' });
   await p.goto(`${BASE}/#home`);
@@ -352,7 +357,7 @@ await check('Sign in with Google (all Google calls faked): sheet made → paste 
     if (out === 'offline') return route.abort('internetdisconnected');
     // the new sheet: just the Setup tab with the key, like Google would make it
     if (g.key && !env) {
-      env = makeEnv();
+      env = makeEnv({ newUser: true });
       const t = env.ss.insertSheet('Setup');
       t.getRange(1, 1).setValue(g.mark); t.getRange(2, 1).setValue(g.key);
       env.ss.deleteSheet(env.ss.getSheetByName('Sheet1'));
@@ -415,11 +420,11 @@ await check('Sign in with Google (all Google calls faked): sheet made → paste 
   assert.ok(env.ss.getSheetByName('Ledger') && !env.ss.getSheetByName('Setup'));
   assert.ok(pings.includes('ping') && pings.includes('install'));
   const s = sheetList(env, g.key);
-  assert.deepEqual(s.accounts.map((a) => a.name), ['FAB', 'ADCB', 'BOTIM', 'Cash']);
+  assert.deepEqual(s.accounts.map((a) => a.name), ['FAB', 'Account 2', 'Cash'], 'a new user: plain starting names, the one they renamed');
   assert.equal(s.accounts[0].wallet, 'fab');
   assert.equal(s.settings.emergencyAccount, 'FAB', 'pay followed the rename');
   assert.equal(s.settings.allowance, 1800);
-  assert.ok(s.plan.some((x) => x.id === 'allowance' && x.from === 'FAB' && x.to === 'ADCB' && x.amount === 1800));
+  assert.ok(s.plan.some((x) => x.id === 'allowance' && x.from === 'FAB' && x.to === 'Account 2' && x.amount === 1800));
   const conn = await p.evaluate(async () => (await import('/js/store.js')).state.conn);
   assert.deepEqual(conn, { url: EXEC, token: g.key });
   assert.equal(await p.evaluate(() => JSON.parse(localStorage.getItem('sp.setup')).progress), null, 'progress cleared once connected');

@@ -34,7 +34,7 @@ for (const x of [...ACCENTS, ...CARD_COLORS]) Object.defineProperty(x, 'name', {
 export const DEFAULT_APPEARANCE = {
   theme: 'system',
   accent: 'slate',
-  cards: { ADCB: 'red', ADIB: 'teal', BOTIM: 'purple', Cash: 'green' },
+  cards: { 'Account 1': 'teal', 'Account 2': 'red', Cash: 'green' },
 };
 
 const KEYS = ['tint', 'text', 'on', 'lt', 'lb', 'ink'];

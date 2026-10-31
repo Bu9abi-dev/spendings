@@ -5,7 +5,7 @@
 // Another port: BASE=http://localhost:8843 node tests/verify-bnpl.mjs
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
-import { DEFAULT_SETTINGS, balances, summarize, cycleOf, dayKey } from '../docs/js/model.js';
+import { SAMPLE_SETTINGS, balances, summarize, cycleOf, dayKey } from '../docs/js/model.js';
 import {
   instalmentAmounts, dueDates, planState, bnplSummary, autoLink, linkCandidates, likelyPayment, paymentEntry, withPaid, withUnlinked,
   normalizePlan, addDays, dueBetween, byFit, bnplNotice, dueBeforePayday,
@@ -16,7 +16,7 @@ const BASE = process.env.BASE || 'http://localhost:8765';
 let n = 0;
 const ok = (cond, msg) => { assert.ok(cond, msg); n++; console.log('PASS ', msg); };
 const sum = (a) => Math.round(a.reduce((x, y) => x + y, 0) * 100) / 100;
-const S = { ...DEFAULT_SETTINGS };
+const S = { ...SAMPLE_SETTINGS };
 
 // ── payment amounts: equal shares, the last one takes the rounding
 ok(JSON.stringify(instalmentAmounts(1000, 3)) === '[333.33,333.33,333.34]', '1,000 in 3: the last payment absorbs the rounding');
