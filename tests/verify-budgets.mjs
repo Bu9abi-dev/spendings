@@ -20,23 +20,24 @@ const E = (type, amount, day, extra = {}) => {
 };
 const entries = [
   E('Spend', 300, 1), E('Spend', 100, 2, { currency: 'USD', amount: 10 }), // 300 + 36.725
-  E('Spend', 450, 3, { category: 'Groceries' }),
+  E('Spend', 450, 3, { category: 'Groceries', merchant: 'Lulu' }),
   E('Transfer', 5000, 0, { account: 'ADIB', toAccount: 'ADCB', category: 'Food & Drinks' }),
-  E('Income', 50, 4, { category: 'Refund' }),
-  E('Spend', 999, 0, { cycle: '2026-10' }),
+  E('Income', 50, 4, { category: 'Refund', merchant: 'LULU' }), // comes off Groceries (the shop it was bought at)
+  E('Spend', 999, -1, { cycle: '2026-11' }), // dated the day before the cycle: never counts here, whatever its Cycle column says
+  E('Spend', 700, 5, { exclude: true }),     // paid for someone else: not my spending
 ];
 const sum = summarize(entries, cyc, S, []);
 
 ok(statusOf(79.99, 100) === 'ok' && statusOf(80, 100) === 'near' && statusOf(99.99, 100) === 'near' && statusOf(100, 100) === 'over', 'status flips at 80% and at 100%');
 ok(statusOf(5, 0) === 'ok', 'a zero limit never divides by zero');
-const limits = limitsOf({ v: 1, limits: { 'Food & Drinks': 400, Groceries: '450', Travel: 0, Health: -5, Other: 'abc', 'Old Category': 100 } });
+const limits = limitsOf({ v: 1, limits: { 'Food & Drinks': 400, Groceries: '400', Travel: 0, Health: -5, Other: 'abc', 'Old Category': 100 } });
 ok(JSON.stringify(Object.keys(limits).sort()) === JSON.stringify(['Food & Drinks', 'Groceries', 'Old Category']), 'bad or empty limits are dropped');
 ok(Object.keys(limitsOf(null)).length === 0 && Object.keys(limitsOf({ v: 1 })).length === 0 && Object.keys(limitsOf('x')).length === 0, 'no saved budgets gives an empty map');
 const rows = budgetRows(sum.byCategory, limits);
 ok(rows.map((r) => r.id).join('|') === 'Food & Drinks|Groceries|Old Category', 'rows follow the usual category order, unknown ids last');
 const food = rows[0];
-ok(Math.abs(food.spent - 336.725) < 0.01 && Math.abs(food.left - 63.275) < 0.01 && food.status === 'near' && pctText(food) === '84%', 'spent counts USD in AED, ignores transfers, refunds and other cycles');
-ok(rows[1].status === 'over' && near(rows[1].left, 0) === true && pctText(rows[1]) === '100%', 'exactly at the limit counts as over');
+ok(Math.abs(food.spent - 336.725) < 0.01 && Math.abs(food.left - 63.275) < 0.01 && food.status === 'near' && pctText(food) === '84%', 'spent counts USD in AED, ignores transfers, excluded entries and entries dated in other cycles');
+ok(near(rows[1].spent, 400) && rows[1].status === 'over' && near(rows[1].left, 0) === true && pctText(rows[1]) === '100%', 'a refund comes off its own category (450 − 50 = 400), and exactly at the limit counts as over');
 ok(rows[2].spent === 0 && rows[2].meta.short === 'Old Category' && rows[2].status === 'ok', 'an unknown category id is tolerated');
 const w = worstBudget(rows);
 ok(w.row.id === 'Groceries' && w.more === 1, 'Home picks the fullest budget and counts the rest');
@@ -108,7 +109,7 @@ await p.waitForSelector('[data-pick]');
 ok(await p.$$eval('[data-pick]', (x) => x.length) === (await p.evaluate(async () => (await import('/js/model.js')).SPEND_CATEGORIES.length)), 'the chooser lists the shown categories');
 await p.click(`[data-pick="${food2.id}"]`);
 await p.waitForSelector('#bf-amount');
-ok(/Refunds aren/.test(await p.textContent('.sheet .group-foot')), 'the sheet footer explains refunds');
+ok(/A refund comes off the category/.test(await p.textContent('.sheet .group-foot')), 'the sheet footer explains refunds');
 await p.fill('#bf-amount', String(Math.ceil(food2.spent / 0.9))); // about 90% used
 await p.click('[data-act="save"]');
 await p.waitForSelector('#bf-amount', { state: 'detached' });

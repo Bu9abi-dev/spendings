@@ -44,7 +44,7 @@ const entries = [
 {
   const t = weekTotals(entries, S, '2026-10-26', 2);
   const w = t.get('2026-10-26');
-  ok(Math.abs(w.spent - (100 + 40 + 36.73 + 250)) < 0.001 && w.count === 4, 'spent is Spend only: no transfer, refund, adjustment, or entry from the neighbouring days');
+  ok(Math.abs(w.spent - (100 + 40 + 36.73 + 250 - 50)) < 0.001 && w.count === 4, 'spent is Spend less the week\'s refund: no transfer, adjustment, or entry from the neighbouring days');
   ok(w.biggest.amount === 250 && w.biggest.merchant === 'Amazon' && w.biggest.day === '2026-10-30', 'the biggest single payment is found');
   ok(t.get('2026-10-19').spent === 888 && t.size === 2, 'the Sunday before belongs to the earlier week, and next week is left out');
 }
@@ -138,22 +138,25 @@ const entries = [
     const r = read(list, now);
     ok(r.home === r.insights && (!r.alert || r.home === 'over'), `${name}: Home and Insights both say "${r.home}"${r.alert ? ', and the alert only shows when that is over pace' : ', no alert'}`);
   }
-  const at10 = read(steady(150, 10), dayAt(10));
-  ok(at10.alert && at10.alert.outDay === '2026-11-16' && at10.alert.early === 10
-    && at10.alert.text === 'At this pace (~AED 150 a day) your allowance runs out around 16 Nov, 10 days early', `steady overspend: "${at10.alert?.text}"`);
-  ok(read([spend(0, 1500)], dayAt(1.5)).home === 'over' && !read([spend(0, 1500)], dayAt(1.5)).alert, 'a day-1 spike is over pace, but no alert before day 7');
-  ok(!read([spend(0, 1500), spend(2, 50), spend(4, 50)], dayAt(9.5)).alert, 'nor later: one payment over a quarter of the pot does not set the daily rate');
-  ok(read(steady(90, 10), dayAt(10)).home === 'on' && read(steady(105, 10), dayAt(10)).home === 'on' && read(steady(40, 10), dayAt(10)).home === 'under', 'within the tolerance is on track; well under is under pace');
-  ok(!read([spend(0, 700), spend(5, 700)], dayAt(10)).alert && read([spend(0, 700), spend(3, 700), spend(5, 700)], dayAt(10)).alert, 'needs spending on three different days');
-  const late = read(steady(101.5, 20), dayAt(20));
-  ok(late.home === 'over' && !late.alert && read(steady(125, 10), dayAt(10)).alert?.early === 6, 'over pace but running out under 3 days early: no alert; 6 days early: alert');
-  ok(!read(steady(200, 6), dayAt(5.5)).alert && read(steady(200, 6), dayAt(6.2)).alert, 'the alert starts on the 7th day of the cycle');
+  // daily pace = allowance used ÷ days so far (today counts); run-out = today + left ÷ pace; on track when that's after the last day
+  const at10 = read(steady(150, 10), dayAt(10)); // day 11 of 31: 1,500 ÷ 11 = 136 a day, 1,500 left lasts 11 more days
+  ok(at10.alert && at10.alert.outDay === '2026-11-17' && at10.alert.early === 9 && Math.abs(at10.m.pace.perDay - 1500 / 11) < 1e-9
+    && at10.alert.text === 'At this pace (~AED 136 a day) your allowance runs out around 17 Nov, 9 days early', `steady overspend: "${at10.alert?.text}"`);
+  const spike = read([spend(0, 1500)], dayAt(1.5));
+  ok(spike.home === 'over' && spike.m.pace.days === 2 && spike.alert?.outDay === '2026-10-30', 'a day-1 spike: 750 a day over 2 days, so it says it runs out on 30 Oct');
+  ok(read([spend(0, 10)], dayAt(0.2)).m.pace.days === 1, 'on the first day the pace divides by 1 day, never 0');
+  ok(read(steady(90, 10), dayAt(10)).home === 'on' && read(steady(40, 10), dayAt(10)).home === 'on', 'slower than the allowance lasts: on track');
+  const edge = read(steady(105, 10), dayAt(10)); // 95 a day: 1,950 left lasts until 26 Nov, the last day
+  ok(edge.home === 'over' && edge.alert?.outDay === '2026-11-26' && edge.alert.early === 0, 'running out on the last day itself is not past the cycle end: over pace');
   ok(read(steady(400, 9), dayAt(10)).home === 'spent' && !read(steady(400, 9), dayAt(10)).alert, 'allowance already gone: Home says over the allowance, no "runs out" alert');
   const ref = read([...steady(150, 10), E('Income', 600, dayAt(9.6).toISOString(), { category: 'Refund' })], dayAt(10));
   ok(ref.m.pace.spent === 900 && ref.home === 'on' && !ref.alert, 'a refund into the allowance account counts the same everywhere (900 used: on track, no alert)');
+  // a top-up from the main account refills the card but isn't spending and doesn't change the pace
+  const tu = read([...steady(150, 10), E('Transfer', 800, dayAt(9.7).toISOString(), { account: 'ADIB', toAccount: 'ADCB' })], dayAt(10));
+  ok(tu.m.pace.spent === 1500 && tu.m.sum.allowancePot === 3000 && tu.alert?.outDay === '2026-11-17', 'an unmarked top-up changes neither the budget nor the pace');
   // the same rule from summarize directly: Home's pace object is allowancePace
   const sum = summarize(steady(150, 10), '2026-11', S, []);
-  ok(allowancePace(sum, '2026-11', S, dayAt(10)).runsOut.outDay === '2026-11-16', 'allowancePace works on a plain summary too');
+  ok(allowancePace(sum, '2026-11', S, dayAt(10)).runsOut.outDay === '2026-11-17', 'allowancePace works on a plain summary too');
   // dismissal: seen for the cycle until the day moves 3 or more days earlier
   const a = { outDay: '2026-11-16' }, seenAt = { cycle: '2026-11', outDay: '2026-11-16' };
   ok(paceSeen(a, '2026-11', seenAt) && paceSeen({ outDay: '2026-11-14' }, '2026-11', seenAt) && paceSeen({ outDay: '2026-11-20' }, '2026-11', seenAt), 'seen: the same day, 2 days earlier, or later stays quiet');

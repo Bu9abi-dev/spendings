@@ -79,7 +79,7 @@ const mLend = homeNumbers([...withSplit, lend], PLAN, S, now);
 ok(near(mLend.safe, m.safe - 200) && near(mLend.total, m.total - 200), 'lending 200 from the allowance card uses 200 of allowance (Safe to spend and your money drop)');
 const back = E('Transfer', 250, 'Ahmed', '2026-11-08T10:00:00+04:00', { toAccount: 'ADCB' });
 const mBack = homeNumbers([...withSplit, lend, back], PLAN, S, now);
-ok(near(mBack.safe, m.safe + 50) && near(mBack.sum.topUps, 250), 'being paid back into the allowance card is a top-up (Safe to spend goes back up)');
+ok(near(mBack.safe, m.safe + 50) && near(mBack.sum.topUps, 0), 'being paid back into the allowance card gives that allowance back (Safe to spend goes back up), without counting as a top-up');
 ok(near(peopleBalances([...withSplit, lend, back], S).owedToYou, 0), 'once paid back, Ahmed owes nothing');
 const backHub = E('Transfer', 250, 'Ahmed', '2026-11-08T10:00:00+04:00', { toAccount: 'ADIB' });
 const mHub = homeNumbers([...withSplit, lend, backHub], PLAN, S, now);
@@ -237,8 +237,11 @@ ok(!(await p.$('.key-acc[data-focus="Ahmed"]')) && !(await p.$('.seg[data-seg="A
 
 // split an Apple Pay payment on the allowance card
 const spend = await ev(async () => {
-  const s = await import('/js/store.js');
-  const e = s.state.entries.find((x) => x.type === 'Spend' && x.account === s.state.settings.allowanceAccount && x.amount > 20 && x.merchant);
+  const [s, m] = await Promise.all([import('/js/store.js'), import('/js/model.js')]);
+  const cyc = m.cycleOf(new Date().toISOString(), s.state.settings.cycleStart);
+  const refunded = new Set(s.state.entries.filter(m.isRefund).map((x) => x.merchant));
+  // a personal spend this cycle (not ticked "not my spending", no refund at the same shop)
+  const e = s.state.entries.find((x) => m.isPersonalSpend(x) && m.entryCycle(x, s.state.settings) === cyc && x.account === s.state.settings.allowanceAccount && x.amount > 20 && x.merchant && x.category && !refunded.has(x.merchant));
   s.updateEntry(e.id, { source: 'Apple Pay', amount: 87.35 });
   return s.state.entries.find((x) => x.id === e.id);
 });

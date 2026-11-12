@@ -22,6 +22,8 @@ class Sheet {
     return 0;
   }
   getMaxRows() { return 1000; }
+  getMaxColumns() { return this.maxCols ?? 26; }
+  insertColumnsAfter(after, n) { this.maxCols = Math.max(this.getMaxColumns(), after + n); return this; }
   get(r, c) { return (this.cells[r - 1] || [])[c - 1] ?? ''; }
   set(r, c, v) { (this.cells[r - 1] ||= [])[c - 1] = v; }
   getRange(r, c, nr = 1, nc = 1) {

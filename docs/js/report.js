@@ -6,7 +6,7 @@ import { cleanMerchant } from './categorize.js';
 import { detectRecurring, monthlyTotal } from './recurring.js';
 import {
   categoryMeta, accountMeta, apportion, cycleOf, shiftCycle, cycleName, cycleRange, cycleBounds, summarize, balances, toAED, toCSV, fmt, dubaiParts, shortDay, dayKey,
-  isPerson, moneyTotal, peopleBalances, amtAED, homeNumbers, spentByAccount } from './model.js';
+  isPerson, moneyTotal, peopleBalances, amtAED, spentByAccount, isPersonalSpend, isRefund, lessRefunds } from './model.js';
 import { state, getExtra } from './store.js';
 import { openSheet, toast, haptic, esc } from './ui.js';
 import { icon } from './icons.js';
@@ -26,7 +26,7 @@ function cleanShop(m) {
   let t = String(m || '').trim().replace(/\s+/g, ' ');
   for (let prev = ''; prev !== t;) {
     prev = t;
-    t = t.replace(/[\s,\-–]*\b(abu\s*dhabi|dubai|sharjah|ae|uae|are)$/i, '').replace(/[\s,\-–]*\bmcc\s*#?\d+$/i, '').replace(/[\s,\-–]*(#|no\.?\s*|store\s*|branch\s*)?\d+$/i, '').trim();
+    t = t.replace(/[\s,.\-–]*\b(abu\s*dhabi|dubai|sharjah|ae|uae|are)$/i, '').replace(/[\s,\-–]*\bmcc\s*#?\d+$/i, '').replace(/[\s,\-–]*(#|no\.?\s*|store\s*|branch\s*)?\d+$/i, '').trim();
   }
   return t;
 }
@@ -43,14 +43,14 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
   const s = settings;
   const { start, end } = cycleBounds(cycle, s.cycleStart);
   const isCurrent = cycle === cycleOf(now, s.cycleStart);
-  // the cycle we're in uses Home's own summary (adjusted for spending before tracking began), like Insights,
-  // so the allowance "left" here is the same number as Home's Safe to spend works from
-  const sum = isCurrent ? homeNumbers(entries, plan, s, now, dismissed).sum : summarize(entries, cycle, s, plan);
+  // the same summary Home and Insights read (model.js summarize), so every number agrees
+  const sum = summarize(entries, cycle, s, plan);
   const prev = summarize(entries, shiftCycle(cycle, -1), s, plan);
 
-  // Same rules as Insights: Spent is gross (a refund is income, not netted off). Money in includes
-  // refunds; "refunds" is shown on its own as the part of it that was money back.
-  const refunds = sum.byIncome.get('Refund') || 0;
+  // Same rules as Insights (model.js cycleSpend): Spent is real personal spending less refunds; money that
+  // isn't yours (marked "Not my spending", Investing) is left out. Money in doesn't include refunds:
+  // they come off Spent instead, and are shown on their own.
+  const refunds = sum.refunds;
   const income = sum.income;
   const spent = sum.spent;
 
@@ -69,18 +69,22 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
   const categories = rowsOf(cats, 8, '_rest');
 
   // shops, grouped by one shared name cleaner
-  const shops = new Map();
+  const shops = new Map(), refundOffs = [];
   let moved = 0, moves = 0;
   for (const e of sum.entries) {
     if (e.type === 'Transfer') { moved += toAED(e, s); moves++; continue; }
-    if (e.type !== 'Spend') continue;
+    if (isRefund(e)) { refundOffs.push([merchantKey(e.merchant) || null, toAED(e, s)]); continue; }
+    if (!isPersonalSpend(e)) continue;
     const k = merchantKey(e.merchant) || '(no merchant)';
     const g = shops.get(k) || shops.set(k, { id: k, name: shopName(e.merchant) || t('rp.noMerchant'), value: 0, count: 0, category: e.category }).get(k);
     g.value += toAED(e, s);
     g.count++;
   }
-  const merchants = rowsOf([...shops.values()].sort((a, b) => b.value - a.value), 8, '_rest');
-  const biggest = sum.entries.filter((e) => e.type === 'Spend').sort((a, b) => toAED(b, s) - toAED(a, s)).slice(0, 5);
+  // a refund comes off its own shop (the rest in proportion), so the shops add up to Spent like the categories
+  const netShop = lessRefunds(new Map([...shops].map(([k, g]) => [k, g.value])), refundOffs);
+  for (const [k, g] of shops) g.value = netShop.get(k) || 0;
+  const merchants = rowsOf([...shops.values()].filter((g) => g.value > 0).sort((a, b) => b.value - a.value), 8, '_rest');
+  const biggest = sum.entries.filter((e) => isPersonalSpend(e)).sort((a, b) => toAED(b, s) - toAED(a, s)).slice(0, 5);
 
   // total money when the cycle ended (or now, for the cycle we're in)
   const asOf = isCurrent ? now : end;
@@ -101,7 +105,7 @@ export function cycleReport(entries, cycle, settings, plan = [], budgetsExtra = 
     subsMonthly, subsCount,
     cycle, isCurrent, start, end, asOf,
     income, refunds, spent, whole, saved: income - spent, prevSpent: prev.spent,
-    byIncome: [...sum.byIncome].filter(([k]) => k !== 'Refund').sort((a, b) => b[1] - a[1]),
+    byIncome: [...sum.byIncome].sort((a, b) => b[1] - a[1]),
     // the same accounts as Insights (your active ones, then "Everything else"), so both add up to Spent
     byAccount: spentByAccount(sum).filter((a) => a.spent > 0).sort((a, b) => (!!a.other - !!b.other) || b.spent - a.spent),
     categories, merchants, biggest, moved, moves,

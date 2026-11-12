@@ -1,7 +1,7 @@
 // Activity filters: which entries match, and what they add up to. Pure functions (no page, no state),
 // so tests can run them in Node.
 import { merchantKey } from './categorize.js';
-import { cycleOf, shiftCycle, dayKey, toAED, fmt, amtAED, shortDay, categoryMeta } from './model.js';
+import { cycleOf, shiftCycle, dayKey, toAED, fmt, amtAED, shortDay, categoryMeta, isPersonalSpend, isExcluded, isRefund } from './model.js';
 import { t } from './i18n.js';
 
 // Everything the Activity tab can filter on. Empty string = "any".
@@ -53,12 +53,13 @@ export function matchEntries(entries, f, settings, now = new Date()) {
   });
 }
 
-/** What a list adds up to, in AED. Transfers and bank matches move money around, so they count in neither. */
+/** What a list adds up to, in AED. Transfers and bank matches move money around, so they count in neither, and
+    entries kept out of spending (Not my spending, Investing) count in nothing (model.js isPersonalSpend). */
 export function totals(list, settings) {
   let spent = 0, income = 0, refunds = 0;
   for (const e of list) {
-    if (e.type === 'Spend') spent += toAED(e, settings);
-    else if (e.type === 'Income') { income += toAED(e, settings); if (e.category === 'Refund') refunds += toAED(e, settings); }
+    if (isPersonalSpend(e)) spent += toAED(e, settings);
+    else if (e.type === 'Income' && !isExcluded(e)) { income += toAED(e, settings); if (isRefund(e)) refunds += toAED(e, settings); }
   }
   const r = (x) => Math.round(x * 100) / 100;
   // spent is gross (refunds are not netted off); refunds is the part of income that is a Refund

@@ -1,5 +1,5 @@
 // Bits every screen shares: an entry row, the sync badge, the large title with undo, the demo banner.
-import { categoryMeta, seriesColor, accountMeta, fmt, timeLabel, toAED, amtAED } from './model.js';
+import { categoryMeta, seriesColor, accountMeta, fmt, timeLabel, toAED, amtAED, isExcluded, addsToAllowance } from './model.js';
 import { state, isConnected, isDemo, undo, canUndo, lastAction } from './store.js';
 import { toast, haptic, esc } from './ui.js';
 import { t, ltr } from './i18n.js';
@@ -29,6 +29,10 @@ export function entryRow(e, pick) {
   if (!isTr) bits.push(`<bdi>${esc(accountMeta(e.account).name)}</bdi>`);
   else if (e.merchant) bits.push(`<bdi>${esc(e.account)} → ${esc(e.toAccount)}</bdi>`);
   bits.push(timeLabel(e.date));
+  // kept out of spending (Not my spending, Investing) or a top-up that raised the allowance: say so on the row
+  const notMine = isExcluded(e);
+  if (notMine) bits.push(`<span class="not-mine-tag">${t('row.notMine')}</span>`);
+  else if (addsToAllowance(e)) bits.push(`<span class="not-mine-tag">${t('row.addsAllow')}</span>`);
   const amt = ltr(`${isIn ? '+' : ''}${e.currency === 'USD' ? '$' : ''}${fmt(e.amount, { fixed: true })}`);
   // what a screen reader says for the amount: the verb, the currency and the number ("spent AED 37.50")
   const amtSaid = e.currency === 'USD' ? t('row.usdSaid', { n: fmt(e.amount, { fixed: true }), aed: amtAED(fmt(toAED(e, state.settings), { fixed: true })) }) : amtAED(fmt(e.amount, { fixed: true }));
@@ -36,7 +40,7 @@ export function entryRow(e, pick) {
   return `<div class="swipe" data-id="${esc(e.id)}"><button class="swipe-del" type="button" tabindex="-1" aria-hidden="true">${icon('trash', { size: 20 })}<span>${t('row.del')}</span></button><button class="row entry${e.status === 'Review' ? ' review' : ''}${sel}" type="button" data-id="${esc(e.id)}"${aria}>
     ${tick}<span class="row-icon" style="--tint:${tint}">${icon(ic, { size: 20 })}</span>
     <span class="row-main"><span class="row-title">${esc(title)}</span><span class="row-sub">${bits.join(' · ')}${e.note ? ` · <bdi class="row-note">${esc(e.note)}</bdi>` : ''}</span></span>
-    <span class="row-amt num ${isIn ? 'in' : isTr ? 'tr' : ''}" role="text" aria-label="${said}">${amt}${e.currency === 'USD' ? `<small>≈ ${amtAED(fmt(toAED(e, state.settings), { fixed: true }))}</small>` : ''}</span>
+    <span class="row-amt num ${isIn ? 'in' : isTr ? 'tr' : ''}${notMine ? ' not-mine' : ''}" role="text" aria-label="${said}">${amt}${e.currency === 'USD' ? `<small>≈ ${amtAED(fmt(toAED(e, state.settings), { fixed: true }))}</small>` : ''}</span>
   </button></div>`;
 }
 

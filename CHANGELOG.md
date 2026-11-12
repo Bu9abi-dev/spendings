@@ -51,7 +51,27 @@ timeline
         v35 : Plain starting accounts for new users : Your setup unchanged
         v36 : Security check-up : Stricter browser rules
         v37 : Account buttons stay on one line
+    section 12 November 2026
+        v38 : Only real spending counts : Exclude from my spending : Investing : Sheet update needed
 ```
+
+---
+
+## v38: Only your real spending counts
+**12 November 2026** · **sheet update needed** (paste `apps-script/Code.gs`, then Deploy → Manage deployments → ✏️ → New version)
+
+- **One rule for "spending", used everywhere.** Spent, the category totals and donut, the daily bars and average, allowance left and "% spent", the pace and run-out date, Safe to spend, category limits, Your week, the monthly report and the Apple Pay reply all count the same thing: your own Spend entries, in the cycle their **date** falls in, minus refunds.
+- **Never counted as spending:** moving money between your accounts, "Checked with bank" corrections, income, anything marked **Exclude from my spending**, and the new **Investing** category.
+- **New switch: Exclude from my spending.** In the entry editor. For money that passes through you: mom's flight on Tamara, eToro profits you forward, groceries mom paid you back for. It still moves the balance exactly as before; it just never counts in spending, averages, pace, insights or limits. Saved to a new sheet column, "Not my spending" (old rows read as not excluded).
+- **New category: Investing** (IBKR, eToro…). Never counts as spending, so a 2,500 deposit doesn't look like you blew 2,500.
+- **Top-ups don't raise your allowance any more** unless you switch on **Add to my allowance** on that transfer. By default a top-up from ADIB just refills the ADCB card. A marked top-up made before payday still carries into the new cycle. Saved to a second new sheet column, "Add to allowance".
+- **Refunds take spending off.** A refund (sister pays back her Amazon order, a friend's cinema share) now lowers Spent and comes off the category of the shop it came from. It is no longer counted as money in.
+- **Pace, the simple way:** daily pace = allowance used ÷ days of the cycle so far (today counts). Run-out date = what's left ÷ that pace. "On track" when that date is after payday.
+- **Safe to spend** = allowance left − bills still due on the card before payday (subscriptions it charges, pay-later instalments set to it). Never below 0.
+- **Entries dated before the cycle started** (25 or 26 Oct when the cycle starts on the 27th) never count in it, even if the sheet's Cycle column says otherwise.
+- Removed: the "spent before you started tracking" guess, which turned a bank correction into spending.
+- Demo mode shows all of this: mom's flight and groceries (excluded), an IBKR deposit, a top-up that only refills the card, a refund.
+- **Numbers that will look different:** "% spent · X of Y" now reads against 3,000 (not 3,000 + top-ups) and leaves out excluded money, so the % can go up or down; the daily pace and run-out date drop when pass-through money was in them; Safe to spend has upcoming card bills taken off; Spent and category totals drop by excluded money, Investing and refunds; Money in no longer includes refunds.
 
 ---
 

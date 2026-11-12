@@ -176,7 +176,26 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   add('a4', { type: 'Transfer', amount: 1000, account: 'ADCB', toAccount: 'BOTIM' });
   assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2589, 'moving money on is not spending');
   add('a5', { type: 'Transfer', amount: 200, account: 'ADIB', toAccount: 'ADCB', note: 'top-up' });
-  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2789, 'a top-up adds to the allowance');
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2589, 'a top-up only refills the card: the allowance stays');
+  add('a6', { type: 'Transfer', amount: 200, account: 'ADIB', toAccount: 'ADCB', note: 'top-up', addToAllowance: true });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2789, 'a top-up marked "Add to allowance" raises it');
+  // money that isn't yours, Investing and a bank check never use the allowance or count as spent
+  const spentBefore = env.ctx.cycleSummary_(cyc).spent;
+  add('x1', { type: 'Spend', amount: 900, account: 'ADCB', category: 'Travel', merchant: 'Tamara', exclude: true });
+  add('x2', { type: 'Spend', amount: 2500, account: 'ADCB', category: 'Investing', merchant: 'IBKR' });
+  add('x3', { type: 'Adjustment', amount: -150, account: 'ADCB' });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2789, '"Not my spending", Investing and a bank check leave the allowance alone');
+  assert.equal(env.ctx.cycleSummary_(cyc).spent, spentBefore, '…and are not counted as spent');
+  const x1 = p2({ action: 'list' }).entries.find((e) => e.id === 'x1');
+  assert.ok(x1.exclude === true && x1.addToAllowance === false, 'the tick is saved and read back');
+  assert.equal(env.ss.getSheetByName('Ledger').getRange(1, 17).getValue(), 'Not my spending', 'the new column has its header');
+  // an older row (nothing in the new columns) reads as not excluded; an edit that doesn't mention the tick keeps it
+  p2({ action: 'update', id: 'x1', fields: { note: 'mom flight' } });
+  assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'x1').exclude, true, 'editing the note keeps the tick');
+  assert.equal(p2({ action: 'list' }).entries.find((e) => e.id === 'a2').exclude, false);
+  // an entry dated in the last cycle (e.g. the 25th, when the cycle starts on the 27th) never counts in this one
+  add('old', { type: 'Spend', amount: 333, account: 'ADCB', category: 'Shopping', date: new Date(Date.now() - 40 * 864e5).toISOString() });
+  assert.equal(env.ctx.cycleSummary_(cyc).allowanceLeft, 2789, 'an entry dated before the cycle started does not count in it');
   // USD: changing only the note keeps the price; an undo can send the old price back
   add('u1', { type: 'Spend', amount: 20, currency: 'USD', account: 'BOTIM', category: 'Shopping' });
   const priced = p2({ action: 'list' }).entries.find((e) => e.id === 'u1').amountAED;
@@ -321,7 +340,7 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   p3({ action: 'add', entry: { id: 'x1', type: 'Spend', amount: 5, account: 'ADCB', category: 'Other' } });
   p3({ action: 'reset' });
   assert.deepEqual(p3({ action: 'list' }).extras.budgets, { 'Food & Drinks': 900 }, 'reset keeps extras');
-  assert.deepEqual(p3({ action: 'list' }).features, ['extras', 'install']);
+  assert.deepEqual(p3({ action: 'list' }).features, ['extras', 'install', 'exclude']);
   // a manual ▶ test of the Shortcut: says it's connected and logs nothing
   const before = p3({ action: 'list' }).entries.length;
   r = p3({ source: 'applepay', amount: '', merchant: '', card: '', category: 'Decide later' });
@@ -361,7 +380,7 @@ assert.equal(ss.getSheets().filter((t) => /^[A-Z][a-z]{2} \d{4}$/.test(t.name)).
   const inst = raw({ token: KEY, action: 'install' });
   assert.equal(inst.ok, true);
   assert.equal(inst.fresh, true, 'install just built the Ledger: the guide may send its answers');
-  assert.deepEqual([...inst.features], ['extras', 'install']);
+  assert.deepEqual([...inst.features], ['extras', 'install', 'exclude']);
   for (const tab of ['Overview', 'Ledger', 'Accounts', 'Settings', 'Merchants', 'Plan']) assert.ok(env.ss.getSheetByName(tab), `install made ${tab}`);
   assert.ok(!env.ss.getSheetByName('Sheet1'), 'the empty leftover tab is removed');
   const again = raw({ token: KEY, action: 'install' });

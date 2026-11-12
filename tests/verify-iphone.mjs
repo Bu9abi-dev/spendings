@@ -219,8 +219,8 @@ for (const ph of PHONES) {
     await p.waitForSelector('.where-row.total');
     await settleLayout(p);
     const r = await p.evaluate(async () => {
-      const M = await import('/js/model.js'); const { state } = await import('/js/store.js');
-      const m = M.homeNumbers(state.entries, state.plan, state.settings);
+      const M = await import('/js/model.js'); const { homeNow } = await import('/js/home-now.js');
+      const m = homeNow(); // Home's own call: Safe to spend has the card's upcoming bills taken off
       const { total, safe, allowBal } = m;
       const sum = m.sum;
       const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: x.shown }));  // the whole numbers shown, after largest-remainder rounding

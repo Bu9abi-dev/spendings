@@ -1,8 +1,9 @@
 // Insights tab: where the money went, allowance pace, accounts, income and the last six cycles.
 import {
-  accountMeta, spentByAccount, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey, toAED,
-  homeNumbers, isPerson, amtAED, shortDay,
+  accountMeta, spentByAccount, SPEND_CATEGORIES, allCategories, categoryMeta, seriesColor, cycleOf, shiftCycle, cycleName, cycleRange, cycleLength, cycleBounds, summarize, fmt, dayKey,
+  amtAED, shortDay, allowanceDaily,
 } from './model.js';
+import { homeNow } from './home-now.js';
 import { t } from './i18n.js';
 import { state, getExtra, saveExtra } from './store.js';
 import { esc } from './ui.js';
@@ -88,9 +89,9 @@ export function renderInsights() {
   const s = state.settings;
   const cyc = insightsCycle || currentCycle();
   const isCurrent = cyc === currentCycle();
-  // the cycle we're in uses Home's own numbers (the same summary, adjusted for spending before tracking began, and the
-  // same pace from allowancePace), so the pace card can never disagree with Home or its "runs out" alert
-  const home = isCurrent ? homeNumbers(state.entries, state.plan, s, new Date(), state.dismissed) : null;
+  // the cycle we're in uses Home's own numbers (the same summary and the same pace from allowancePace),
+  // so the pace card can never disagree with Home or its "runs out" alert
+  const home = isCurrent ? homeNow() : null;
   const sum = home ? home.sum : summarize(state.entries, cyc, s, state.plan);
 
   const main = allCategories('Spend').filter((c) => c.slot); // hidden built-ins keep their colour, so the donut matches the legend
@@ -107,16 +108,8 @@ export function renderInsights() {
   const len = cycleLength(cyc, s.cycleStart);
   const { start } = cycleBounds(cyc, s.cycleStart);
   const today = isCurrent ? Math.min(len - 1, Math.floor((Date.now() - start) / 864e5)) : len - 1;
-  const perDay = new Array(len).fill(0);
-  if (sum.spentBefore) perDay[0] += sum.spentBefore; // spent before tracking began counts from day one, as on Home
-  for (const e of sum.entries) {
-    // a refund into the allowance account gives that money back on the day it lands; lending from it uses allowance
-    const refund = e.type === 'Income' && e.category === 'Refund';
-    const lent = e.type === 'Transfer' && isPerson(e.toAccount);
-    if ((e.type !== 'Spend' && !refund && !lent) || e.account !== s.allowanceAccount) continue;
-    const i = Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / 864e5)));
-    perDay[i] += refund ? -toAED(e, s) : toAED(e, s);
-  }
+  // what the allowance card used each day: the same entries as Home's "used" (model.js allowanceDaily)
+  const perDay = allowanceDaily(state.entries, cyc, s);
   let run = 0;
   const cumulative = perDay.map((v, i) => (i > today ? null : (run += v)));
   const pace = perDay.map((_, i) => (sum.allowancePot * (i + 1)) / len);

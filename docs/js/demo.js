@@ -1,6 +1,8 @@
 // Synthetic entries for the demo mode. Clearly labelled in the UI; never sent to the sheet.
 // Follows the owner's real money flow: pay lands in ADIB, ADIB pays responsibilities,
 // the allowance moves to ADCB, a top-up goes to BOTIM, and daily spending happens on ADCB/BOTIM.
+// The last two cycles also show what isn't spending: mom's flight and groceries (excluded), an IBKR deposit
+// (Investing), a top-up that only refills the card, a refund and bank checks.
 import { cycleOf, cycleBounds, shiftCycle, dateInCycle, dayKey } from './model.js';
 import { addDays, dayDate, instalmentAmounts } from './bnpl.js';
 
@@ -104,6 +106,18 @@ export function demoEntries(settings) {
     }
     if (back === 1) out.push({ ...base, id: `d-usd-${cycle}`, date: new Date(start.getTime() + 12 * day).toISOString(), type: 'Spend', amount: 19.99, currency: 'USD', account: 'ADIB', category: 'Bills & Subscriptions', merchant: 'Apple iCloud+', source: 'Apple Pay' });
     if (back === 0) out.push({ ...base, id: `d-refund-${cycle}`, date: new Date(start.getTime() + 4 * day).toISOString(), type: 'Income', amount: 89, account: 'ADCB', category: 'Refund', merchant: 'Noon', note: 'Returned headphones', source: 'App' });
+    // money that moves but isn't the owner's spending (model.js isExcluded): balances change, Spent and the pace don't
+    if (back <= 1) {
+      const on = (d, h = 11) => new Date(start.getTime() + d * day + h * 3600e3).toISOString();
+      // mom's flight, paid with Tamara from ADIB, ticked "Exclude from my spending"
+      out.push({ ...base, id: `d-mom-${cycle}`, date: on(2), type: 'Spend', amount: 1450, account: 'ADIB', category: 'Travel', merchant: 'TAMARA*EMIRATES', note: "Mom's flight", source: 'Apple Pay', exclude: true });
+      // an IBKR deposit: Investing is never spending
+      out.push({ ...base, id: `d-ibkr-${cycle}`, date: on(3, 15), type: 'Spend', amount: 2500, account: 'ADIB', category: 'Investing', merchant: 'Interactive Brokers', note: 'Monthly deposit', source: 'App' });
+      // a top-up from ADIB that only refills the card (not marked "Add to my allowance")
+      out.push({ ...base, id: `d-topup-${cycle}`, date: on(3, 18), type: 'Transfer', amount: 300, account: 'ADIB', toAccount: 'ADCB', note: 'Top-up' });
+      // groceries for mom, which she paid back
+      out.push({ ...base, id: `d-mumgroc-${cycle}`, date: on(5, 19), type: 'Spend', amount: 210, account: 'ADCB', category: 'Groceries', merchant: 'Lulu', note: 'For mom (she paid me back)', source: 'Apple Pay', exclude: true });
+    }
   }
 
   // payments that repeat, so the Subscriptions card has something to show. Dated back from today, every

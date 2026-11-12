@@ -1,14 +1,13 @@
 // Spending trends for the Insights charts: day-by-day and week-by-week spend, top merchants,
 // and each category over the last six cycles. Pure functions (no DOM, no store), so tests can run them.
 //
-// "Spending" here means exactly what the rest of Insights counts: entries of type Spend.
-// Transfers between accounts are moving money, never spending, so they are left out.
-// Refunds stay as income (like the donut and "Last six cycles"), so they don't change these bars.
-import { cycleBounds, cycleLength, shiftCycle, toAED } from './model.js';
+// "Spending" here means exactly what the rest of Insights counts (model.js cycleSpend / isPersonalSpend):
+// Spend entries by their date's cycle, less refunds. Transfers, bank checks, income, Investing and anything
+// marked "Not my spending" are left out.
+import { cycleBounds, cycleLength, shiftCycle, toAED, cycleSpend, isPersonalSpend, isRefund, entryCycle } from './model.js';
 import { merchantKey } from './categorize.js';
 
 const DAY = 864e5;
-const isSpend = (e) => e.type === 'Spend';
 
 /**
  * Index of the cycle day an entry falls on (0 = first day). Cycle start is Dubai midnight (model.js),
@@ -20,14 +19,13 @@ function dayIndex(e, start, len) {
   return Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / DAY)));
 }
 
-/** Spend per day of the cycle, in AED. Returns an array with one number per day. */
+/** Spend per day of the cycle, in AED (less refunds, on the day they landed). One number per day; adds up to Spent. */
 export function dailySpend(entries, cycle, settings) {
   const len = cycleLength(cycle, settings.cycleStart);
   const { start } = cycleBounds(cycle, settings.cycleStart);
   const days = new Array(len).fill(0);
-  for (const e of entries) {
-    if (e.cycle !== cycle || !isSpend(e)) continue;
-    days[dayIndex(e, start, len)] += toAED(e, settings);
+  for (const [key, v] of cycleSpend(entries, cycle, settings).daily) {
+    days[dayIndex({ date: `${key}T12:00:00+04:00` }, start, len)] += v;
   }
   return days;
 }
@@ -55,10 +53,13 @@ export { merchantKey };
  * Entries without a merchant are skipped.
  */
 export function topMerchants(entries, cycle, settings, limit = 5) {
-  const groups = new Map();
+  const groups = new Map(), back = new Map();
   for (const e of entries) {
-    if (e.cycle !== cycle || !isSpend(e)) continue;
+    if (!isPersonalSpend(e) && !isRefund(e)) continue;
+    if (entryCycle(e, settings) !== cycle) continue;
     const key = merchantKey(e.merchant);
+    // a refund from a shop comes off that shop's total
+    if (isRefund(e)) { if (key) back.set(key, (back.get(key) || 0) + toAED(e, settings)); continue; }
     if (!key) continue; // no merchant name: counted in "Everything else" on the card
     const g = groups.get(key) || { total: 0, count: 0, spellings: new Map() };
     g.total += toAED(e, settings);
@@ -67,8 +68,8 @@ export function topMerchants(entries, cycle, settings, limit = 5) {
     g.spellings.set(name, (g.spellings.get(name) || 0) + 1);
     groups.set(key, g);
   }
-  return [...groups.values()]
-    .map((g) => ({ name: [...g.spellings].sort((a, b) => b[1] - a[1])[0][0], total: g.total, count: g.count }))
+  return [...groups].map(([key, g]) => ({ name: [...g.spellings].sort((a, b) => b[1] - a[1])[0][0], total: Math.max(0, g.total - (back.get(key) || 0)), count: g.count }))
+    .filter((g) => g.total > 0)
     .sort((a, b) => b.total - a.total)
     .slice(0, limit);
 }
@@ -84,15 +85,16 @@ export function topMerchants(entries, cycle, settings, limit = 5) {
 export function categoryTrends(entries, cycle, settings, count = 6) {
   const cycles = Array.from({ length: count }, (_, i) => shiftCycle(cycle, i - (count - 1)));
   const pos = new Map(cycles.map((c, i) => [c, i]));
-  const firstCycle = entries.reduce((m, e) => (e.cycle && (!m || e.cycle < m) ? e.cycle : m), '');
+  const firstCycle = entries.reduce((m, e) => { const c = e.date ? entryCycle(e, settings) : ''; return c && (!m || c < m) ? c : m; }, '');
   const rows = new Map();
-  for (const e of entries) {
-    if (!isSpend(e) || !pos.has(e.cycle)) continue;
-    // categories not in the list (old names) keep their own name; blank = needs a category
-    const id = e.category || 'Uncategorised';
-    const row = rows.get(id) || { id, values: new Array(count).fill(0) };
-    row.values[pos.get(e.cycle)] += toAED(e, settings);
-    rows.set(id, row);
+  // each cycle's category totals, exactly as the donut shows them (refunds taken off, excluded money left out);
+  // categories not in the list (old names) keep their own name; blank = needs a category
+  for (const c of cycles) {
+    for (const [id, v] of cycleSpend(entries, c, settings).byCategory) {
+      const row = rows.get(id) || { id, values: new Array(count).fill(0) };
+      row.values[pos.get(c)] += v;
+      rows.set(id, row);
+    }
   }
   return [...rows.values()].map((r) => {
     // cycle ids are "YYYY-MM", so comparing them as text compares them by date
