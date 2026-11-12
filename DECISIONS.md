@@ -2,6 +2,37 @@
 
 Choices made while running the app on my own, newest first, with the reason for each.
 
+## 12 Nov 2026
+
+- **One definition of spending** (v38, Abdullah's spec): `isPersonalSpend(e, cycle, settings)` and
+  `cycleSpend(entries, cycle, settings, { account })` in docs/js/model.js. Everything that talks about spending reads
+  them: summarize (Spent, byCategory, daily, byAccount), allowance used, `allowanceDaily` (Insights pace chart),
+  trends (bars, top places, six-cycle categories), weekly, report, filters/Activity totals, recurring (excluded
+  entries are not subscriptions). Code.gs mirrors it (`rowSpend_`, `rowRefund_`, `rowExcluded_`, `rowCycle_`).
+  - Cycles come from the entry's date everywhere (`entriesByCycle(entries, startDay)`), never the Cycle column.
+  - Refunds now **take spending off** (they were income before; this reverses the 30 Oct "Spent is gross" rule,
+    because Abdullah asked for it). A refund comes off the category of the last purchase at the same shop
+    (letters/digits match), its own account and its own day; what can't be placed comes off every key in
+    proportion (`lessRefunds`), so categories, accounts and days always add up to Spent = max(0, gross − refunds).
+    Refunds are no longer "money in".
+  - "Exclude from my spending" = a per-entry tick (`exclude`), saved in a new Ledger column "Not my spending"
+    (Yes/blank). Excluded entries still move balances; they count in no spending, income, average, pace, limit or
+    insight. Built-in **Investing** category (`notSpending: true`) is always excluded.
+  - Top-ups no longer raise the allowance unless the transfer is ticked "Add to my allowance" (`addToAllowance`,
+    Ledger column "Add to allowance"). Kept the project rule "a pre-payday top-up carries into the new cycle" for
+    ticked top-ups only. Lending to a person from the card still uses allowance; being paid back now gives it back
+    (it used to count as a top-up).
+  - Pace replaced: perDay = used ÷ days so far (calendar days, today counts, ≥ 1); runs out = now + left ÷ perDay;
+    'over' when that day is on or before the cycle's last day, else 'on'. Dropped the old guards (day-7 start,
+    3 spending days, lump payments, 3-days-early). The even-spread line stays on the Insights chart only.
+  - Safe to spend = max(0, left − bills due on the allowance card before payday) (bills.js: subscriptions whose last
+    charge was on the card + BNPL instalments with that account). Still capped at the card's balance while the
+    allowance move is outstanding or was dismissed.
+  - Removed `spentBefore` (the dismissed-move guess): it turned a bank correction into spending, which the new rule
+    forbids. With the move dismissed, Safe to spend is capped at what the card holds instead.
+  - An old script (before the redeploy) doesn't send the ticks: store.js keeps this phone's ticks for entries the
+    sheet returns without them, so nothing flips back. Code.gs adds the two headers once (`ensureLedgerCols_`).
+
 ## 31 Oct 2026
 
 - **Security headers** (v36): a Content-Security-Policy in docs/vercel.json. Scripts only from the app and

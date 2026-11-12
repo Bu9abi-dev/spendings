@@ -21,8 +21,10 @@ Kept current by whoever is working on the app (Claude, running the improvement l
 - Run every check: `bash tests/run-all.sh` (needs Playwright; in the cloud box `NODE_PATH=$(npm root -g)`).
   Must pass before any merge.
 - Money rules (from Abdullah, never break): transfers aren't spending; unused ADCB allowance stays as a
-  buffer and Safe to spend resets each cycle; a refund restores exactly; a pre-payday top-up adds to the
-  new cycle's allowance; the All tab shows total money. Before touching balance, pace or undo logic, run
+  buffer and Safe to spend resets each cycle; a refund takes spending off; a top-up raises the allowance only
+  when ticked "Add to my allowance" (a ticked pre-payday one carries into the new cycle); the All tab shows
+  total money. What counts as spending lives in ONE place: model.js `isPersonalSpend` / `cycleSpend` (and
+  Code.gs `rowSpend_`); use them, never a new `type === 'Spend'` sum. Before touching balance, pace or undo logic, run
   `tests/verify-maths.mjs` and `tests/verify-undo.mjs`.
 - The Apple Pay Shortcut (`source=applepay`) and bank-notification Shortcut (`source=bank`) POSTs must keep
   working unchanged. `tests/apps-script.test.mjs` covers both.

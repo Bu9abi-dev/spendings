@@ -3,7 +3,7 @@
 // from the side you moved towards. Below: the payday plan and where this cycle's money went.
 import {
   ACCOUNTS, cycleOf, SPEND_CATEGORIES, INCOME_CATEGORIES, pickerCategories, accountMeta, cycleName, cycleRange, daysLeft,
-  balances, homeNumbers, whereRows, entriesByCycle, listsVer, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED, amtAED, planName, shortDay, categoryMeta,
+  balances, whereRows, entriesByCycle, listsVer, hubFlow, fmt, fmtCompact, money, dayKey, dayLabel, uid, cycleBounds, toAED, amtAED, planName, shortDay, categoryMeta,
 } from './model.js';
 import { t, ltr, isRTL } from './i18n.js';
 import { state, getExtra, addEntry, savePlan, isConnected, isDemo, undo, lastAction, dismissPlan, restorePlan } from './store.js';
@@ -15,6 +15,7 @@ import { budgetRows, budgetNudge, budgetNotice } from './budgets.js';
 import { currentLimits } from './budgets-settings.js';
 import { owedLineHTML } from './people-ui.js';
 import { weeklyHomeNotices } from './weekly-ui.js';
+import { homeNow } from './home-now.js';
 
 /* The UAE dirham sign (CBUAE, 2025): a D with two horizontal strokes through it. */
 export const dirham = (cls = '') => `<svg class="dh ${cls}" viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4.5v15h3.2c4.6 0 7.8-3.1 7.8-7.5S14.8 4.5 10.2 4.5H7z"/><path d="M3.2 10.2h17.3M3.2 13.8h17.3"/></svg>`;
@@ -44,12 +45,11 @@ function sinceCycleStart(m) {
   const startIso = cycleBounds(m.cyc, s.cycleStart).start.toISOString();
   const startBals = balances(state.entries.filter((e) => e.date < startIso), s);
   const inflow = new Map();
-  for (const e of entriesByCycle(state.entries).get(m.cyc) || []) {
+  for (const e of entriesByCycle(state.entries, s.cycleStart).get(m.cyc) || []) {
     if (e.date < startIso) continue;
     const v = toAED(e, s);
     if (e.type === 'Income') inflow.set(e.account, (inflow.get(e.account) || 0) + v);
     if (e.type === 'Transfer' && e.toAccount) inflow.set(e.toAccount, (inflow.get(e.toAccount) || 0) + v);
-    if (e.type === 'Adjustment' && v > 0) inflow.set(e.account, (inflow.get(e.account) || 0) + v);
   }
   startMemo = { entries: state.entries, key, startBals, inflow };
   return startMemo;
@@ -57,7 +57,7 @@ function sinceCycleStart(m) {
 
 function model() {
   const s = state.settings;
-  const m = homeNumbers(state.entries, state.plan, s, new Date(), state.dismissed);
+  const m = homeNow();
   const matched = [...m.bals.values()].some((b) => b.matchedAt);
   const { startBals, inflow } = sinceCycleStart(m);
   return { ...m, matched, startBals, inflow };
@@ -147,7 +147,8 @@ function meta(m, f) {
   if (f === m.hub) return `${t('home.yoursAfter', { n: fmt(m.hubB.free, { whole: true }) })}${expect}`;
   if (f === m.s.allowanceAccount) {
     const extra = m.allowBal - Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
-    return `${t('home.safeB', { n: fmt(m.safe, { whole: true }) })}${extra > 0.5 ? ` · ${t('home.carried', { n: fmt(extra, { whole: true }) })}` : ''}`;
+    const bills = m.bills >= 0.5 ? ` · ${t('home.afterBills', { n: fmt(m.bills, { whole: true }) })}` : '';
+    return `${t('home.safeB', { n: fmt(m.safe, { whole: true }) })}${bills}${extra > 0.5 ? ` · ${t('home.carried', { n: fmt(extra, { whole: true }) })}` : ''}`;
   }
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
   return t('home.spentCycle', { n: fmt(acc.spent, { whole: true }) });
@@ -343,7 +344,7 @@ function allowanceCard(m, percent = false) {
   return capsule({
     label: left < 0 ? t('home.overAllow') : t('home.allowLeft'),
     value: { n: Math.abs(left), text: `${amtAED(fmt(Math.abs(left), { whole: true }))}`, unit: 'aed' },
-    meta: `${t('home.pctCycle', { pct: spentPct, used: fmt(sum.allowanceUsed, { whole: true }), of })}${m.spentBefore ? ` · ${t('home.beforeTracking', { n: fmt(m.spentBefore, { whole: true }) })}` : ''}`,
+    meta: t('home.pctCycle', { pct: spentPct, used: fmt(sum.allowanceUsed, { whole: true }), of }),
     level, tone,
   });
 }

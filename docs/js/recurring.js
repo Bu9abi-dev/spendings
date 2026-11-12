@@ -2,7 +2,7 @@
 // roughly weekly, monthly or yearly). Pure functions (no DOM, no store), so tests can run them.
 //
 // Only Spend counts. Transfers move your own money and income isn't a payment, so both are left out.
-import { toAED, dayKey, amtAED } from './model.js';
+import { toAED, dayKey, amtAED, isExcluded } from './model.js';
 import { merchantKey } from './categorize.js';
 import { t } from './i18n.js';
 
@@ -44,7 +44,7 @@ const cadenceOfGap = (g) => CADENCES.find((c) => g >= c.min && g <= c.max);
 
 /**
  * Find the payments that repeat. Returns them soonest next payment first (late ones last):
- * { key, name, cadence, cadenceLabel, amount, was, monthly, last, next, count, first, isNew, isLate, lateDays }
+ * { key, name, account (where the latest charge came from), cadence, cadenceLabel, amount, was, monthly, last, next, count, first, isNew, isLate, lateDays }
  *  - amount: the latest charge in AED; was: the charge before it when the price changed, else null
  *  - monthly: what it costs per month; last/next: "YYYY-MM-DD" (Dubai days)
  *  - isNew: the current run of charges started in the last ~35 days (run[0], not the place's first ever charge)
@@ -65,7 +65,7 @@ function detect(entries, settings, now, ignored) {
   const skip = new Set(ignored);
   const groups = new Map();
   for (const e of entries) {
-    if (e.type !== 'Spend') continue;
+    if (e.type !== 'Spend' || isExcluded(e)) continue; // money that isn't your spending isn't your subscription
     // a buy-now-pay-later instalment is already tracked by its plan (Home, Your week, the report): not a subscription
     if (e.source === 'BNPL') continue;
     const key = recurringKey(e.merchant);
@@ -73,7 +73,7 @@ function detect(entries, settings, now, ignored) {
     const amount = toAED(e, settings);
     if (!(amount > 0)) continue;
     if (!groups.has(key)) groups.set(key, []);
-    groups.get(key).push({ day: dayNum(e), amount, name: String(e.merchant).trim(), category: e.category });
+    groups.get(key).push({ day: dayNum(e), amount, name: String(e.merchant).trim(), category: e.category, account: e.account });
   }
 
   const today = dayNum({ date: now });
@@ -100,7 +100,7 @@ function detect(entries, settings, now, ignored) {
     const nextDay = cadence.id === 'weekly' ? latest.day + 7 : addMonths(latest.day, cadence.id === 'yearly' ? 12 : 1);
     const lateDays = today - nextDay;
     found.push({
-      key, name: latest.name, cadence: cadence.id, cadenceLabel: cadence.label,
+      key, name: latest.name, account: latest.account, cadence: cadence.id, cadenceLabel: cadence.label,
       amount: latest.amount, was: before.amount !== latest.amount ? before.amount : null,
       monthly: latest.amount * cadence.perMonth,
       last: keyOfDay(latest.day), next: keyOfDay(nextDay), count: run.length,

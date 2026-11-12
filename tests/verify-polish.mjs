@@ -110,7 +110,7 @@ const store = (fn, arg) => pg.evaluate(async ([src, a]) => { const s = await imp
 await pg.goto(`${BASE}/?demo=1&notour=1`);
 await pg.waitForSelector('.lens');
 
-// 8: the report's allowance left for this cycle (allowance move dismissed, 1,800 spent before tracking) is Home's
+// 8: the report's allowance left for this cycle (allowance move dismissed) is Home's
 {
   const r = await pg.evaluate(async (x) => {
     const m = await import('/js/model.js'), rp = await import('/js/report.js');
@@ -118,7 +118,8 @@ await pg.waitForSelector('.lens');
     const home = m.homeNumbers(x.ents, x.plan, x.S, now, x.dis);
     return { home: home.allowLeft, report: rp.cycleReport(x.ents, x.cyc, x.S, x.plan, null, now, [], x.dis).allowance.left, plain: m.summarize(x.ents, x.cyc, x.S, x.plan).allowanceLeft };
   }, allow8);
-  ok(r.home === 1200 && r.report === r.home && r.plain !== r.home, `8 report allowance left is Home's Safe-to-spend basis (${r.report} vs Home ${r.home}; plain summary ${r.plain})`);
+  // a bank check is never spending, so nothing is "spent before tracking": the report, Home and the plain summary agree
+  ok(r.home === 3000 && r.report === r.home && r.plain === r.home, `8 report allowance left is Home's (${r.report} vs Home ${r.home}; plain summary ${r.plain})`);
 }
 
 // 1: rename an account a plan pays from

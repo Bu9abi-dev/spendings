@@ -37,20 +37,28 @@ export const listsVer = () => listsVersion;
 const settingsSig = (s) => `${s.usdRate}|${s.cycleStart}|${s.allowance}|${s.allowanceAccount}|${s.emergencyAccount}`;
 const planSig = (plan) => (plan || []).map((p) => `${p.id}:${p.kind}:${p.from}:${p.to}:${p.amount}:${p.day}`).join(',');
 
-/** The entries grouped by cycle, in their original order (a Map of cycle -> entries). Built once per entries array.
+/** The entries grouped by cycle, in their original order (a Map of cycle -> entries). Built once per entries array
+    (and start day). The cycle always comes from the entry's own date, never from when it was added or a stale
+    Cycle column, so an entry dated 25 Oct never counts in a cycle that starts on the 27th.
+    Without a start day it falls back to each entry's saved `cycle` (old callers, tests).
     Invalidated by: the entries array being replaced (a WeakMap, so the old one is simply forgotten). */
 const cycleIndexes = new WeakMap();
-export function entriesByCycle(entries) {
-  let idx = cycleIndexes.get(entries);
+export function entriesByCycle(entries, startDay = null) {
+  let byStart = cycleIndexes.get(entries);
+  if (!byStart) cycleIndexes.set(entries, (byStart = new Map()));
+  let idx = byStart.get(startDay);
   if (!idx) {
     idx = new Map();
-    for (const e of entries) { const l = idx.get(e.cycle); if (l) l.push(e); else idx.set(e.cycle, [e]); }
-    cycleIndexes.set(entries, idx);
+    for (const e of entries) {
+      const c = startDay == null ? e.cycle : cycleOf(e.date, startDay);
+      const l = idx.get(c); if (l) l.push(e); else idx.set(c, [e]);
+    }
+    byStart.set(startDay, idx);
   }
   return idx;
 }
 const NONE = [];
-const inCycleOf = (entries, cycle) => entriesByCycle(entries).get(cycle) || NONE;
+const inCycleOf = (entries, cycle, startDay = null) => entriesByCycle(entries, startDay).get(cycle) || NONE;
 
 /** Set of every entry id. Invalidated by: the entries array being replaced. */
 const idSets = new WeakMap();
@@ -97,6 +105,8 @@ export const DEFAULT_SPEND_CATEGORIES = [
   { id: 'Bills & Subscriptions', short: 'Bills', icon: 'bolt', slot: 7 },
   { id: 'Health', short: 'Health', icon: 'heart', slot: 8 },
   { id: 'Family & Gifts', short: 'Family', icon: 'gift', slot: 0 },
+  // money you put aside to invest (IBKR, eToro…): it leaves your account, but it isn't spending (see isExcluded)
+  { id: 'Investing', short: 'Investing', icon: 'chart', slot: 0, notSpending: true },
   { id: 'Other', short: 'Other', icon: 'dots', slot: 0 },
 ];
 export const DEFAULT_INCOME_CATEGORIES = [
@@ -332,14 +342,136 @@ export function timeLabel(date) {
   return `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`;
 }
 
+/* ───────────────────────── What counts as spending ─────────────────────────
+   ONE definition, used by every number that talks about spending: Spent, the category totals and donut, the
+   daily bars and average, the allowance (left, % spent, pace, runs-out date, Safe to spend), category limits,
+   Your week, the monthly report and the sheet's Apple Pay reply (Code.gs mirrors these rules).
+
+   Spending = entries of type Spend, in the cycle their own DATE falls in, minus refunds in that cycle.
+   Never spending:
+   - Transfers (moving money between your own accounts is reallocating)
+   - "Checked with bank" adjustments (they only correct a balance)
+   - Income of any kind (a refund only takes spending back off; it is not money earned)
+   - Entries marked "Not my spending" (money that passes through you: paid for mom, money you forward, reimbursable)
+   - The Investing category (an IBKR deposit leaves your account but isn't spent)
+   Excluded entries still move balances exactly as before: only what counts as spending changes. */
+
+/** Spend categories that never count as spending, whoever logs them. */
+export const NOT_SPENDING_CATEGORIES = new Set(DEFAULT_SPEND_CATEGORIES.filter((c) => c.notSpending).map((c) => c.id));
+// the sheet stores a tick as TRUE / "Yes"; an old row (no column) or a blank cell means "no"
+const ticked = (v) => v === true || v === 1 || /^(true|yes|y|1)$/i.test(String(v ?? '').trim());
+/** Is this entry kept out of spending, income and every average? (Marked "Not my spending", or an Investing payment.) */
+export const isExcluded = (e) => !!e && (ticked(e.exclude) || (e.type === 'Spend' && NOT_SPENDING_CATEGORIES.has(e.category)));
+/** Was this transfer into the allowance account marked "Add to my allowance"? Only then does a top-up raise the budget. */
+export const addsToAllowance = (e) => !!e && e.type === 'Transfer' && ticked(e.addToAllowance);
+/** A refund: money back that takes spending off (not income). */
+export const isRefund = (e) => !!e && e.type === 'Income' && e.category === 'Refund' && !isExcluded(e);
+/** The cycle an entry belongs to: always from its date. */
+export const entryCycle = (e, settings) => cycleOf(e.date, settings?.cycleStart ?? 27);
+/** Real personal spending? With a cycle (and settings), also: does its date fall in that cycle? */
+export function isPersonalSpend(e, cycle = null, settings = null) {
+  if (!e || e.type !== 'Spend' || isExcluded(e)) return false;
+  return cycle == null || entryCycle(e, settings) === cycle;
+}
+
+// a shop name reduced to letters and digits, so "NOON.COM" and "Noon com" match (a refund finds its purchase)
+const shopKey = (m) => String(m || '').toLowerCase().replace(/[^a-z0-9؀-ۿ]+/g, ' ').trim();
+
+/** Gross amounts per key, less refunds: each refund comes off its own key first (as far as that key has spending),
+    and whatever is left (or a refund we can't place) comes off every key in proportion. So the values always
+    add up to max(0, gross − refunds), and none goes below zero. offs: [[key or null, amount]]. */
+export function lessRefunds(gross, offs) {
+  const out = new Map(gross);
+  let pool = 0;
+  for (const [k, amt] of offs) {
+    const have = k != null ? out.get(k) || 0 : 0;
+    const take = Math.min(have, amt);
+    if (take > 0) out.set(k, have - take);
+    pool += amt - take;
+  }
+  const rest = [...out.values()].reduce((a, v) => a + v, 0);
+  if (pool > 0 && rest > 0) {
+    const f = Math.max(0, 1 - pool / rest);
+    for (const [k, v] of out) out.set(k, v * f);
+  }
+  // round to fils so the parts still add up to the rounded whole (largest remainder), and drop empty keys
+  const fils = [...out].map(([k, v]) => [k, Math.max(0, v * 100)]);
+  let spare = Math.round(fils.reduce((a, [, v]) => a + v, 0)) - fils.reduce((a, [, v]) => a + Math.floor(v + 1e-6), 0);
+  const order = [...fils].sort((a, b) => (b[1] - Math.floor(b[1] + 1e-6)) - (a[1] - Math.floor(a[1] + 1e-6)));
+  const bump = new Set();
+  for (const [k] of order) { if (spare <= 0) break; bump.add(k); spare--; }
+  out.clear();
+  for (const [k, v] of fils) { const f = Math.floor(v + 1e-6) + (bump.has(k) ? 1 : 0); if (f > 0) out.set(k, f / 100); }
+  return out;
+}
+
+/** One cycle's personal spending (optionally on one account). Cached per entries array, settings and cycle.
+    Returns { gross, refunds, net, excluded, count, byCategory, byAccount, daily, entries }:
+    - gross: Spend that counts; refunds: refunds that landed; net = max(0, gross − refunds) = "Spent"
+    - excluded: Spend kept out (Not my spending, Investing), for information only
+    - byCategory / byAccount / daily ("YYYY-MM-DD"): net amounts that add up to `net`. A refund comes off the
+      category of the last purchase at the same shop (else every category in proportion), off its own
+      account, and off its own day.
+    The result is shared, so callers must not edit it. */
+const spendMemo = new WeakMap();
+export function cycleSpend(entries, cycle, settings, { account = null } = {}) {
+  let rec = spendMemo.get(entries);
+  const sig = `${settingsSig(settings)}#${listsVersion}`;
+  if (!rec || rec.sig !== sig) spendMemo.set(entries, (rec = { sig, map: new Map() }));
+  const key = `${cycle}|${account ?? ''}`;
+  let r = rec.map.get(key);
+  if (!r) rec.map.set(key, (r = computeCycleSpend(entries, cycle, settings, account)));
+  return r;
+}
+function computeCycleSpend(entries, cycle, settings, account) {
+  const list = inCycleOf(entries, cycle, settings.cycleStart);
+  let gross = 0, refunds = 0, excluded = 0, count = 0;
+  const cat = new Map(), acc = new Map(), day = new Map(), catOff = [], accOff = [], dayOff = [], refundList = [];
+  const add = (m, k, v) => m.set(k, (m.get(k) || 0) + v);
+  for (const e of list) {
+    if (account != null && e.account !== account) continue;
+    const v = toAED(e, settings);
+    if (isPersonalSpend(e)) {
+      gross += v; count++;
+      add(cat, e.category || 'Uncategorised', v);
+      add(acc, e.account, v);
+      add(day, dayKey(e.date), v);
+    } else if (e.type === 'Spend') excluded += v;
+    else if (isRefund(e) && v > 0) { refunds += v; refundList.push([e, v]); }
+  }
+  for (const [e, v] of refundList) {
+    catOff.push([refundCategory(e, entries), v]);
+    accOff.push([e.account, v]);
+    dayOff.push([dayKey(e.date), v]);
+  }
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const byCategory = lessRefunds(cat, catOff);
+  return {
+    gross: r2(gross), refunds: r2(refunds), net: r2(Math.max(0, gross - refunds)), excluded: r2(excluded), count,
+    byCategory, byAccount: lessRefunds(acc, accOff), daily: lessRefunds(day, dayOff), entries: list,
+  };
+}
+/** The spend category a refund gives back to: the last personal purchase at the same shop on or before it, else null. */
+function refundCategory(refund, entries) {
+  const k = shopKey(refund.merchant);
+  if (!k) return null;
+  let best = null;
+  for (const e of entries) {
+    if (!isPersonalSpend(e) || e.date > refund.date || shopKey(e.merchant) !== k) continue;
+    if (!best || e.date > best.date) best = e;
+  }
+  return best ? best.category || 'Uncategorised' : null;
+}
+
 /* ───────────────────────── Allowance ─────────────────────────
    The rules, as Abdullah set them:
-   - Moving money between accounts is reallocating, never spending.
-   - Unused allowance stays in the allowance account as a buffer; Safe to spend resets each cycle.
-   - A refund into the allowance account adds back to the allowance, exactly undoing the spend;
-     whatever it can't add back (the spend was in an earlier cycle) lands in the buffer.
-   - A top-up (main → allowance, beyond the planned move) adds to the allowance of the cycle it
-     lands in, and whatever of it is still unspent at payday carries into the next cycle. */
+   - The budget is the planned allowance (e.g. AED 3,000). Moving money between accounts is reallocating, never
+     spending, so a top-up from the main account only refills the card's balance. It raises the budget only when
+     you mark it "Add to my allowance"; whatever of a marked top-up is unspent at payday carries into the next cycle.
+   - Allowance used = personal spending on the allowance card this cycle, minus refunds to it (never below 0;
+     a refund for an older purchase lands in the buffer). Lending to a person from the card uses allowance, and
+     being paid back gives it back. Excluded entries ("Not my spending", Investing) never use allowance.
+   - Unused allowance stays in the allowance account as a buffer; Safe to spend resets each cycle. */
 
 const isPlanTagged = (e) => String(e.source || '').startsWith('Plan:');
 
@@ -358,28 +490,25 @@ function isPlannedMove(e, p, cycle, settings) {
 }
 
 /** One cycle's money in and out of the allowance account, transfers kept apart from spending. */
-function allowanceCycle(entries, cycle, settings, plan) {
-  const acc = settings.allowanceAccount, hub = settings.emergencyAccount;
-  const moves = allowanceMoves(plan, settings);
-  let spent = 0, refunds = 0, topUps = 0, lent = 0;
-  for (const e of inCycleOf(entries, cycle)) {
+function allowanceCycle(entries, cycle, settings) {
+  const acc = settings.allowanceAccount;
+  const sp = cycleSpend(entries, cycle, settings, { account: acc });
+  let topUps = 0, lent = 0, repaid = 0;
+  for (const e of inCycleOf(entries, cycle, settings.cycleStart)) {
+    if (e.type !== 'Transfer' || isExcluded(e) || isPlanTagged(e)) continue;
     const v = toAED(e, settings);
-    if (e.type === 'Spend' && e.account === acc) spent += v;
-    else if (e.type === 'Income' && e.account === acc && e.category === 'Refund') refunds += v;
-    // money owed: lending (or your friend's share of a split) from the allowance card uses allowance;
-    // being paid back into it is a top-up
-    else if (e.type === 'Transfer' && e.account === acc && isPerson(e.toAccount)) lent += v;
-    else if (e.type === 'Transfer' && e.toAccount === acc && isPerson(e.account)) topUps += v;
-    else if (e.type === 'Transfer' && acc !== hub) {
-      if (e.account === hub && e.toAccount === acc && !moves.some((p) => isPlannedMove(e, p, cycle, settings))) topUps += v;
-      else if (e.account === acc && e.toAccount === hub && !isPlanTagged(e)) topUps -= v; // a top-up sent back
-    }
+    // money owed: lending (or your friend's share of a split) from the allowance card uses allowance; being paid back gives it back
+    if (e.account === acc && isPerson(e.toAccount)) lent += v;
+    else if (e.toAccount === acc && isPerson(e.account)) repaid += v;
+    else if (e.toAccount === acc && addsToAllowance(e)) topUps += v;
+    else if (e.account === acc && addsToAllowance(e)) topUps -= v; // a marked top-up sent back
   }
   topUps = Math.max(0, topUps);
-  return { spent, refunds, topUps, lent, used: Math.max(0, spent + lent - refunds) };
+  const used = Math.max(0, Math.round((sp.gross - sp.refunds + lent - repaid) * 100) / 100);
+  return { spent: sp.gross, refunds: sp.refunds, topUps, lent, repaid, used };
 }
 
-/** This cycle's allowance: the allowance, plus top-ups, plus last cycle's unspent top-ups. */
+/** This cycle's allowance: the allowance, plus top-ups marked "Add to my allowance", plus last cycle's unspent marked top-ups. */
 export function allowanceOf(entries, cycle, settings, plan) {
   const now = allowanceCycle(entries, cycle, settings, plan);
   const prev = allowanceCycle(entries, shiftCycle(cycle, -1), settings, plan);
@@ -387,6 +516,27 @@ export function allowanceOf(entries, cycle, settings, plan) {
   const carryIn = Math.round(Math.min(prev.topUps, Math.max(0, settings.allowance + prev.topUps - prev.used)) * 100) / 100;
   const pot = settings.allowance + now.topUps + carryIn;
   return { ...now, carryIn, pot, left: pot - now.used };
+}
+
+/** What the allowance card used on each day of the cycle (an array, day 0 = the cycle's first day): personal
+    spending, less refunds, plus lending, less being paid back. Same entries as allowanceOf, so the pace chart
+    ends where "used" does. */
+export function allowanceDaily(entries, cycle, settings) {
+  const acc = settings.allowanceAccount;
+  const { start } = cycleBounds(cycle, settings.cycleStart);
+  const len = cycleLength(cycle, settings.cycleStart);
+  const days = new Array(len).fill(0);
+  for (const e of inCycleOf(entries, cycle, settings.cycleStart)) {
+    let sign = 0;
+    if (e.account === acc && isPersonalSpend(e)) sign = 1;
+    else if (e.account === acc && isRefund(e)) sign = -1;
+    else if (e.type === 'Transfer' && !isExcluded(e) && !isPlanTagged(e) && e.account === acc && isPerson(e.toAccount)) sign = 1;
+    else if (e.type === 'Transfer' && !isExcluded(e) && !isPlanTagged(e) && e.toAccount === acc && isPerson(e.account)) sign = -1;
+    if (!sign) continue;
+    const i = Math.min(len - 1, Math.max(0, Math.floor((new Date(e.date) - start) / 864e5)));
+    days[i] += sign * toAED(e, settings);
+  }
+  return days;
 }
 
 /** Everything the screens need for one cycle. Cached per cycle (Insights asks for six, Home for one, on every redraw).
@@ -402,39 +552,31 @@ export function summarize(entries, cycle, settings, plan = []) {
   return r;
 }
 function computeSummary(entries, cycle, settings, plan) {
-  const inCycle = inCycleOf(entries, cycle);
+  const inCycle = inCycleOf(entries, cycle, settings.cycleStart);
+  const sp = cycleSpend(entries, cycle, settings);
   const s = {
-    cycle, entries: inCycle, income: 0, spent: 0, allowanceUsed: 0, review: 0,
-    byCategory: new Map(), byIncome: new Map(), byAccount: new Map(), daily: new Map(),
+    cycle, entries: inCycle, income: 0, spent: sp.net, gross: sp.gross, refunds: sp.refunds, excluded: sp.excluded,
+    review: 0, byCategory: sp.byCategory, byIncome: new Map(), byAccount: new Map(), daily: sp.daily,
   };
   for (const a of ACCOUNTS) s.byAccount.set(a.id, { spent: 0, received: 0, count: 0 });
+  const row = (id) => s.byAccount.get(id) || s.byAccount.set(id, { spent: 0, received: 0, count: 0 }).get(id);
   for (const e of inCycle) {
-    const v = toAED(e, settings);
     if (e.status === 'Review') s.review++;
-    const acc = s.byAccount.get(e.account) || s.byAccount.set(e.account, { spent: 0, received: 0, count: 0 }).get(e.account);
-    acc.count++;
-    if (e.type === 'Spend') {
-      s.spent += v;
-      acc.spent += v;
-      if (e.account === settings.allowanceAccount) s.allowanceUsed += v;
-      const k = e.category || 'Uncategorised';
-      s.byCategory.set(k, (s.byCategory.get(k) || 0) + v);
-      const dk = dayKey(e.date);
-      s.daily.set(dk, (s.daily.get(dk) || 0) + v);
-    } else if (e.type === 'Income') {
+    row(e.account).count++;
+    if (e.type === 'Transfer') { const to = s.byAccount.get(e.toAccount); if (to) to.count++; }
+    // money in: income that is really yours (a refund takes spending off instead; excluded money passes through)
+    if (e.type === 'Income' && !isRefund(e) && !isExcluded(e)) {
+      const v = toAED(e, settings);
       s.income += v;
-      acc.received += v;
+      row(e.account).received += v;
       s.byIncome.set(e.category || 'Other', (s.byIncome.get(e.category || 'Other') || 0) + v);
-    } else if (e.type === 'Transfer') {
-      acc.spent += 0;
-      const to = s.byAccount.get(e.toAccount);
-      if (to) to.count++;
     }
   }
+  for (const [id, v] of sp.byAccount) row(id).spent = v;
   s.net = s.income - s.spent;
   const a = allowanceOf(entries, cycle, settings, plan);
   s.allowance = settings.allowance;
-  s.allowanceSpent = s.allowanceUsed;
+  s.allowanceSpent = a.spent;
   s.allowanceUsed = a.used;
   s.allowanceRefunds = a.refunds;
   s.topUps = a.topUps;
@@ -523,7 +665,7 @@ export function dateInCycle(cycle, day, startDay = 27) {
     were already done this cycle: they count as complete, nothing is left of them, and the
     dismissal expires when the cycle ends. */
 export function planStatus(plan, entries, cycle, settings, now = new Date(), dismissed = {}) {
-  const inCycle = inCycleOf(entries, cycle);
+  const inCycle = inCycleOf(entries, cycle, settings.cycleStart);
   return plan.map((p) => {
     const tagged = (e) => e.source === `Plan:${p.id}`;
     const due = p.day ? dateInCycle(cycle, p.day, settings.cycleStart) : null;
@@ -557,7 +699,7 @@ export function hubBreakdown(hub, bal, status) {
 /** This cycle's money through the main account: where it came from and where it went. */
 export function hubFlow(entries, cycle, hub, settings) {
   const sources = new Map(), outs = new Map();
-  for (const e of inCycleOf(entries, cycle)) {
+  for (const e of inCycleOf(entries, cycle, settings.cycleStart)) {
     const v = toAED(e, settings);
     if (e.type === 'Income' && e.account === hub) sources.set(e.category || 'Other', (sources.get(e.category || 'Other') || 0) + v);
     if (e.type === 'Transfer' && e.account === hub && e.toAccount) outs.set(e.toAccount, (outs.get(e.toAccount) || 0) + v);
@@ -571,85 +713,72 @@ export function hubFlow(entries, cycle, hub, settings) {
 
 /* ───────────────────────── Allowance pace ─────────────────────────
    One definition, read by Home's pace line, the Insights "Allowance pace" card and the Home "runs out" alert,
-   always from the same summary (the one homeNumbers adjusts for spending before tracking began), so they can't
-   disagree. Pace compares what's used with an even spread of the pot over the cycle, with a tolerance band.
-   The "runs out" projection only exists when the state is 'over', so the alert can never sit beside "On track". */
+   always from the same summary, so they can't disagree:
+   - daily pace = allowance used ÷ days of the cycle so far (today counts, so at least 1)
+   - projected run-out = today + what's left ÷ daily pace
+   - "on track" while that day is after the cycle's last day; "over pace" (with the run-out date) when it's before. */
 
 export const PACE_RULES = {
-  tolMin: 15, tolShare: 0.03, // within max(15, 3% of the pot) of an even spread counts as on track
-  alertFromDay: 7,            // no projection before the 7th day of the cycle
-  minDays: 3,                 // ...nor before allowance spending on at least 3 different days
-  lumpShare: 0.25,            // one payment over 25% of the pot uses the pot up, but doesn't set the daily rate
-  earlyDays: 3,               // only worth saying when it runs out at least 3 days before the cycle's last day
+  tolMin: 15, tolShare: 0.03, // the Insights chart's "even spread" band: within max(15, 3% of the pot)
 };
 export const paceTolerance = (pot) => Math.max(PACE_RULES.tolMin, (pot || 0) * PACE_RULES.tolShare);
 const dayIndex = (key) => { const [y, m, d] = key.split('-').map(Number); return Date.UTC(y, m - 1, d) / 864e5; };
 /** Whole Dubai days from day key `a` to day key `b` (b − a). */
 export const daysBetween = (a, b) => Math.round(dayIndex(b) - dayIndex(a));
 
-/** Where this cycle's allowance stands against an even spread. `sum` is a cycle summary (use homeNumbers' m.sum
-    for the current cycle). Returns { expected, spent, delta, tol, state, daysLeft, runsOut } where state is
-    'spent' (over the allowance), 'over' (over pace by more than tol), 'on' or 'under', and runsOut is
-    { outDay, early, perDay } (the day the allowance runs out at the steady daily rate, days before the cycle's
-    last day, and that rate) or null. */
+/** Where this cycle's allowance stands. `sum` is a cycle summary (summarize, or homeNumbers' m.sum).
+    Returns { expected, spent, delta, tol, days, perDay, left, state, daysLeft, runsOut } where state is
+    'spent' (over the allowance), 'over' (at this pace it runs out before the cycle ends) or 'on', and runsOut is
+    { outDay, early, perDay } (the day it runs out, days before the cycle's last day, the daily pace) or null. */
 export function allowancePace(sum, cycle, settings, now = new Date()) {
   const { start, end } = cycleBounds(cycle, settings.cycleStart);
-  const len = (end - start) / 864e5;
+  const len = Math.round((end - start) / 864e5);
   const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
-  const pot = sum.allowancePot || 0, used = sum.allowanceUsed || 0;
+  const lastDay = dayKey(new Date(end.getTime() - 1));
+  const days = Math.min(len, Math.max(1, daysBetween(dayKey(start), dayKey(now < end ? now : new Date(end.getTime() - 1))) + 1));
+  const pot = sum.allowancePot || 0, used = sum.allowanceUsed || 0, left = pot - used;
   const expected = (pot * elapsed) / len;
-  const delta = used - expected, tol = paceTolerance(pot);
-  const state = sum.allowanceLeft < 0 ? 'spent' : delta > tol ? 'over' : delta < -tol ? 'under' : 'on';
-  const pace = { expected, spent: used, delta, tol, state, daysLeft: daysLeft(cycle, settings.cycleStart, now), runsOut: null };
-  if (state !== 'over' || now < start || now >= end || Math.floor(elapsed) + 1 < PACE_RULES.alertFromDay || !(elapsed > 0)) return pace;
-  // the steady rate: what's used, less any single payment bigger than a quarter of the pot, over the days so far
-  const lump = pot * PACE_RULES.lumpShare, days = new Set();
-  let lumps = sum.spentBefore > lump ? sum.spentBefore : 0;
-  for (const e of sum.entries || []) {
-    if (e.type !== 'Spend' || e.account !== settings.allowanceAccount) continue;
-    const v = toAED(e, settings);
-    if (!(v > 0)) continue;
-    days.add(dayKey(e.date));
-    if (v > lump) lumps += v;
-  }
-  const perDay = (used - lumps) / elapsed, left = pot - used;
-  if (days.size < PACE_RULES.minDays || !(perDay > 0) || !(left > 0)) return pace;
+  const perDay = used / days;
+  const pace = { expected, spent: used, delta: used - expected, tol: paceTolerance(pot), days, perDay, left, state: 'on', daysLeft: daysLeft(cycle, settings.cycleStart, now), runsOut: null };
+  if (left < 0) { pace.state = 'spent'; return pace; }
+  // a past or future cycle has no "from today" projection
+  if (now < start || now >= end || !(perDay > 0)) return pace;
   const outDay = dayKey(new Date(now.getTime() + (left / perDay) * 864e5));
-  const early = daysBetween(outDay, dayKey(new Date(end.getTime() - 1)));
-  if (early >= PACE_RULES.earlyDays) pace.runsOut = { outDay, early, perDay };
+  if (outDay <= lastDay) {
+    pace.state = 'over';
+    pace.runsOut = { outDay, early: daysBetween(outDay, lastDay), perDay };
+  }
   return pace;
 }
 
 /* ───────────────────────── Home numbers ───────────────────────── */
 
-/** The numbers Home shows: total money, Safe to spend and pace. Pure, so the checks run it too. */
-export function homeNumbers(entries, plan, settings, now = new Date(), dismissed = {}) {
+/** The numbers Home shows: total money, Safe to spend and pace. Pure, so the checks run it too.
+    `bills` is what's still due on the allowance card before the cycle ends (bills.js cardBills), in AED. */
+export function homeNumbers(entries, plan, settings, now = new Date(), dismissed = {}, { bills = 0 } = {}) {
   const s = settings, cyc = cycleOf(now, s.cycleStart);
   const bals = balances(entries, s);
   const total = moneyTotal(bals);
   const status = planStatus(plan, entries, cyc, s, now, dismissed);
   const hub = s.emergencyAccount;
   const hubB = hubBreakdown(hub, bals.get(hub)?.balance || 0, status);
-  let sum = summarize(entries, cyc, s, plan);
-  // Safe to spend: what's left of this cycle's allowance. Until the allowance has been moved it
-  // can't be more than the allowance account holds; after that, moving money on to another
-  // account is reallocating and doesn't lower it.
+  const sum = summarize(entries, cyc, s, plan);
   const allowAcc = s.allowanceAccount;
   const allowBal = bals.get(allowAcc)?.balance || 0;
-  // A move dismissed as "already done" was never logged, so neither was what got spent from it
-  // before tracking began. The matched balance is the truth: whatever the allowance says is left
-  // beyond what the account holds was spent before tracking, and counts as spent.
-  const dismissedMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && p.dismissed);
-  const spentBefore = dismissedMove && allowAcc !== hub ? Math.max(0, Math.round((sum.allowanceLeft - Math.max(allowBal, 0)) * 100) / 100) : 0;
-  if (spentBefore) sum = { ...sum, allowanceUsed: sum.allowanceUsed + spentBefore, allowanceLeft: sum.allowanceLeft - spentBefore, spentBefore };
   const allowLeft = sum.allowanceLeft;
   const allowMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && !p.complete) || null;
-  let safe = allowMove ? Math.min(allowLeft, Math.max(allowBal, 0)) : allowLeft;
+  const dismissedMove = status.find((p) => p.kind === 'Move' && p.to === allowAcc && p.dismissed) || null;
+  // Safe to spend: what's left of this cycle's allowance, less the bills still due on the card, never below 0.
+  // Until the allowance has really been moved (or when it was moved before tracking began), it also can't be more
+  // than the card holds. After a logged move, moving money on to another account is reallocating and doesn't lower it.
+  const billsDue = Math.max(0, +bills || 0);
+  let safe = Math.max(0, allowLeft - billsDue);
+  if (allowMove || (dismissedMove && allowAcc !== hub)) safe = Math.min(safe, Math.max(allowBal, 0));
   // one account doing both jobs: you can't safely spend more than its free money
   if (allowAcc === hub) safe = Math.min(safe, Math.max(0, hubB.free));
   const pace = allowancePace(sum, cyc, s, now);
   const allowanceUnmoved = !!allowMove && (!allowMove.due || dayKey(now) >= dayKey(allowMove.due));
-  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, pace, allowanceUnmoved, spentBefore };
+  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, bills: billsDue, pace, allowanceUnmoved };
 }
 
 /** Whole numbers for `values` that add up to `target` (default: their rounded total): round every one

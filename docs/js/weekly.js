@@ -4,7 +4,7 @@
 // A week is Monday to Sunday by Dubai days (dayKey from model.js). "Last week" is the last FULL week,
 // so on a Monday it is the one that ended yesterday. Spent counts Spend entries only and is gross, exactly like
 // Insights: transfers are never spending, and a refund is income, so it is not netted off.
-import { dayKey, toAED, categoryMeta, cycleOf, summarize, fmt, daysBetween, amtAED } from './model.js';
+import { dayKey, toAED, categoryMeta, cycleOf, summarize, fmt, daysBetween, amtAED, isPersonalSpend, isRefund, lessRefunds } from './model.js';
 import { detectRecurring } from './recurring.js';
 import { dueBetween, bnplSummary, addDays, shortDay } from './bnpl.js';
 import { budgetRows } from './budgets.js';
@@ -29,25 +29,31 @@ export function lastFullWeek(now = new Date()) {
 }
 
 /** Spend per week, as a Map of Monday → { spent, count, byCategory, biggest, refunds }, for the `weeks` full weeks ending at
-    `lastMonday` (inclusive). `refunds` is the refunds that landed that week (not taken off `spent`; the screens say
-    "before refunds" when there are any). One pass over the entries; weeks with nothing in them are simply absent. */
+    `lastMonday` (inclusive). Same rules as Insights (model.js isPersonalSpend): `spent` is real personal spending
+    less the refunds that landed that week (`refunds`, shown as "after refunds"); excluded money is left out.
+    One pass over the entries; weeks with nothing in them are simply absent. */
 export function weekTotals(entries, settings, lastMonday, weeks = USUAL_WEEKS + 1) {
   const oldest = addDays(lastMonday, -7 * (weeks - 1)), end = addDays(lastMonday, 7);
   const out = new Map();
-  const weekOf = (mon) => out.get(mon) || out.set(mon, { spent: 0, count: 0, byCategory: new Map(), biggest: null, refunds: 0 }).get(mon);
+  const weekOf = (mon) => out.get(mon) || out.set(mon, { spent: 0, count: 0, byCategory: new Map(), biggest: null, refunds: 0, offs: [] }).get(mon);
   for (const e of entries) {
-    const refund = e.type === 'Income' && e.category === 'Refund';
-    if (e.type !== 'Spend' && !refund) continue;
+    const refund = isRefund(e);
+    if (!isPersonalSpend(e) && !refund) continue;
     const dk = dayKey(e.date);
     if (dk < oldest || dk >= end) continue;
     const v = toAED(e, settings);
     if (!(v > 0)) continue;
     const w = weekOf(mondayOf(dk));
-    if (refund) { w.refunds += v; continue; }
+    if (refund) { w.refunds += v; w.offs.push([null, v]); continue; }
     w.spent += v; w.count++;
     const cat = e.category || 'Uncategorised';
     w.byCategory.set(cat, (w.byCategory.get(cat) || 0) + v);
     if (!w.biggest || v > w.biggest.amount) w.biggest = { amount: v, merchant: String(e.merchant || '').trim(), category: cat, day: dk, id: e.id };
+  }
+  for (const w of out.values()) {
+    w.spent = Math.max(0, Math.round((w.spent - w.refunds) * 100) / 100);
+    if (w.offs.length) w.byCategory = lessRefunds(w.byCategory, w.offs);
+    delete w.offs;
   }
   return out;
 }
@@ -146,7 +152,7 @@ export function summaryDue(now, seen, week = lastFullWeek(now)) {
 }
 
 /** "Last week you spent AED 1,240, 12% more than usual" (plain text; escape it where it goes into HTML).
-    With refunds that week it says "AED 1,240 before refunds", since spent is gross. */
+    With refunds that week it says "AED 1,240 after refunds", since spent has them taken off. */
 export function summaryLine(spent, vs, money, refunds = 0, short = false) {
   // short: "You spent …" for the Insights card, where the heading already says "Last week"
   const base = `${t(short ? 'wk.youSpent' : 'wk.lastSpent', { amt: money(spent) })}${refunds > 0 ? ` ${t('wk.beforeRefunds')}` : ''}`;

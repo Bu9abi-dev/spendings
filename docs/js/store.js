@@ -177,7 +177,11 @@ export function sync() {
       // keep optimistic local entries the sheet hasn't seen yet
       const local = state.entries.filter((e) => pending.has(e.id) && pending.get(e.id).op !== 'delete' && !ids.has(e.id));
       // the cycle always follows the date and today's start day, even if the sheet's column is stale
-      state.entries = sortEntries([...server.map((e) => overlay(e, pending.get(e.id))), ...local]
+      // a script from before the "Not my spending" / "Add to my allowance" columns sends neither: keep this phone's
+      // ticks until it's redeployed (it then saves them with the next edit)
+      const mine = new Map(state.entries.map((e) => [e.id, e]));
+      const keepTicks = (e) => ('exclude' in e || !mine.has(e.id) ? e : { ...e, exclude: !!mine.get(e.id).exclude, addToAllowance: !!mine.get(e.id).addToAllowance });
+      state.entries = sortEntries([...server.map((e) => keepTicks(overlay(e, pending.get(e.id)))), ...local]
         .map((e) => ({ ...e, cycle: cycleOf(e.date, state.settings.cycleStart) })));
       state.sync = { status: state.outbox.length ? 'pending' : 'ok', error: '', at: Date.now() };
       persist();
@@ -263,6 +267,10 @@ function finalize(e, { keepAED = false } = {}) {
   if (!keepAED) out.amountAED = toAED({ ...out, amountAED: null }, state.settings);
   if (out.type === 'Transfer' || out.type === 'Adjustment') out.category = '';
   if (out.type !== 'Transfer') out.toAccount = '';
+  // two ticks, always true/false (the sheet stores "Yes" or a blank): "Not my spending" on anything but a bank
+  // check, "Add to my allowance" only on a transfer
+  out.exclude = out.type !== 'Adjustment' && /^(true|yes|y|1)$/i.test(String(out.exclude ?? '').trim());
+  out.addToAllowance = out.type === 'Transfer' && /^(true|yes|y|1)$/i.test(String(out.addToAllowance ?? '').trim());
   out.status = out.type === 'Adjustment' ? 'OK' : (out.type !== 'Transfer' && !out.category) || !(out.amount > 0) ? 'Review' : 'OK';
   return out;
 }
@@ -321,7 +329,7 @@ export function batch(label, fn) {
 }
 
 const describe = (e) => `${money(e.amount, e.currency)}${e.merchant ? ` · ${e.merchant}` : e.type === 'Transfer' ? ` · ${e.account} → ${e.toAccount}` : ''}`;
-const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'category', 'merchant', 'note', 'date', 'source'];
+const ENTRY_FIELDS = ['type', 'amount', 'currency', 'account', 'toAccount', 'category', 'merchant', 'note', 'date', 'source', 'exclude', 'addToAllowance'];
 
 // a price in AED set on purpose (each half of a USD split, so the halves add up to the whole)
 const explicitAED = (f) => f.amountAED != null && f.amountAED !== '' && !Number.isNaN(+f.amountAED) && (f.currency || 'AED') !== 'AED';

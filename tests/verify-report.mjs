@@ -59,9 +59,9 @@ const r = await p.evaluate(async () => {
 });
 const SPENT = 380.9;
 const sumShown = (rows) => rows.reduce((a, x) => a + x.shown, 0);
-ok(near(r.income, 6030), 'money in matches Insights: salary plus the refund, last cycle excluded');
-ok(near(r.spent, SPENT) && near(r.refunds, 30), 'Spent is gross (380.90), not netted for the 30 refund; refunds shown separately; the 3,000 transfer is not spending');
-ok(r.whole.income === 6030 && r.whole.spent === 381 && r.whole.refunds === 30 && r.whole.kept === 6030 - 381, 'tiles in whole dirhams: Money in − Spent = Kept exactly as displayed');
+ok(near(r.income, 6000), 'money in matches Insights: the salary (a refund is not income), last cycle excluded');
+ok(near(r.spent, SPENT - 30) && near(r.refunds, 30), 'Spent is 380.90 of spending less the 30 refund (350.90); refunds shown separately; the 3,000 transfer is not spending');
+ok(r.whole.income === 6000 && r.whole.spent === 351 && r.whole.refunds === 30 && r.whole.kept === 6000 - 351, 'tiles in whole dirhams: Money in − Spent = Kept exactly as displayed');
 ok(near(r.moved, 3000) && r.moves === 1, 'the allowance move is listed apart as a move between accounts');
 ok(r.merchants[0].name === 'Carrefour' && r.merchants[0].count === 3 && near(r.merchants[0].value, 260.9), '"CARREFOUR MCC 5411 ABU DHABI", "Carrefour" and "Carrefour 0042 AE" are one shop');
 ok(sumShown(r.categories) === r.whole.spent && r.categories.reduce((a, x) => a + x.pct, 0) === 100, 'category rows add up to the Spent tile and the percentages to 100');

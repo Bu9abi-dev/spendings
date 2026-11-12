@@ -1,5 +1,5 @@
 // The add / edit sheet: type, amount keypad, account, category, merchant, note, date.
-import { ACCOUNTS, PEOPLE_ACCOUNTS, isPerson, categoryMeta, pickerCategories, seriesColor, money, fmt, dubaiParts, balances, toAED } from './model.js';
+import { ACCOUNTS, PEOPLE_ACCOUNTS, isPerson, categoryMeta, pickerCategories, seriesColor, money, fmt, dubaiParts, balances, toAED, NOT_SPENDING_CATEGORIES } from './model.js';
 import { state, addEntry, updateEntry, deleteEntry, setPrefs, undo, batch } from './store.js';
 import { splitPartner, splitTransfer, partnerPatch, personOf, splitPrices, rescaledPartner } from './people.js';
 import { openSplit, askLinked } from './people-ui.js';
@@ -72,6 +72,14 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           <input type="datetime-local" name="date" aria-label="${t('entry.dateTime')}" value="${localInputValue(e.date)}">
         </label>
       </div>
+      <div class="group entry-flags">
+        <label class="row toggle-row" data-flag="exclude"><span class="row-icon" style="--tint:var(--label-3)">${icon('split', { size: 20 })}</span>
+          <span class="row-main"><span class="row-title">${t('entry.exclude')}</span><span class="row-sub" data-flag-sub="exclude"></span></span>
+          <input type="checkbox" switch class="switch" name="exclude"></label>
+        <label class="row toggle-row" data-flag="addToAllowance"><span class="row-icon" style="--tint:var(--good)">${icon('wallet', { size: 20 })}</span>
+          <span class="row-main"><span class="row-title">${t('entry.addAllow')}</span><span class="row-sub">${t('entry.addAllowSub')}</span></span>
+          <input type="checkbox" switch class="switch" name="addToAllowance"></label>
+      </div>
       <p class="split-note" hidden></p>
       ${existing ? `<button type="button" class="dup-btn" data-act="duplicate">${icon('copy', { size: 18 })}${t('entry.logAgain')}</button>` : ''}
     </div>
@@ -140,6 +148,27 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         validate();
       }
 
+      // "Not my spending" (Spend or money in) and "Add to my allowance" (a top-up into the allowance card)
+      const excludeBox = $('input[name="exclude"]'), allowBox = $('input[name="addToAllowance"]');
+      let userExclude = /^(true|yes|1)$/i.test(String(e.exclude ?? ''));
+      allowBox.checked = /^(true|yes|1)$/i.test(String(e.addToAllowance ?? ''));
+      const isPlanned = String(e.source || '').startsWith('Plan:');
+      function renderFlags() {
+        const allow = state.settings.allowanceAccount;
+        const exRow = $('[data-flag="exclude"]'), alRow = $('[data-flag="addToAllowance"]');
+        exRow.hidden = e.type === 'Transfer';
+        // a top-up into the allowance card from one of your own accounts (not the planned move, not a person paying back)
+        alRow.hidden = !(e.type === 'Transfer' && e.toAccount === allow && e.account !== allow && !isPerson(e.account) && !isPlanned);
+        const always = e.type === 'Spend' && NOT_SPENDING_CATEGORIES.has(e.category);
+        excludeBox.disabled = always;
+        exRow.classList.toggle('locked', always);
+        $('[data-flag-sub="exclude"]').textContent = always ? t('entry.excludeCat', { cat: categoryMeta(e.category)?.label || e.category }) : t(e.type === 'Income' ? 'entry.excludeSubIn' : 'entry.excludeSub');
+        excludeBox.checked = always || userExclude;
+        $('.entry-flags').hidden = exRow.hidden && alRow.hidden;
+      }
+      excludeBox.addEventListener('change', () => { userExclude = excludeBox.checked; haptic(); });
+      allowBox.addEventListener('change', () => { e.addToAllowance = allowBox.checked; haptic(); });
+
       function renderType() {
         sheet.dataset.type = e.type;
         if (e.type !== 'Spend') hinted = '';
@@ -167,6 +196,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
             + (people.length ? `<span class="chip-group-label">${role === 'account' && e.type === 'Spend' ? t('entry.friendPaid') : t('set.people')}</span>${people.map((a) => chip(a, true)).join('')}` : '');
         }
         renderSplit();
+        renderFlags();
       }
 
       // Split: a Spend paid from one of your accounts can be shared with someone. A split half says so.
@@ -204,6 +234,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           b.classList.toggle('sug', !on && hinted === b.dataset.cat);
           b.setAttribute('aria-checked', String(on));
         }
+        renderFlags();
       }
 
       let saveOk = false, bigOk = false, touchedAccount = !!existing;
@@ -323,7 +354,7 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
         if (act === 'cancel') close();
         if (act === 'duplicate') {
           close();
-          setTimeout(() => openEntry(null, { type: e.type, amount: e.amount, currency: e.currency, account: e.account, toAccount: e.toAccount, category: e.category, merchant: merchantInput.value.trim(), note: noteInput.value.trim() }), 280);
+          setTimeout(() => openEntry(null, { type: e.type, amount: e.amount, currency: e.currency, account: e.account, toAccount: e.toAccount, category: e.category, merchant: merchantInput.value.trim(), note: noteInput.value.trim(), exclude: userExclude, addToAllowance: allowBox.checked }), 280);
           return;
         }
         if (act === 'keys') { const on = !sheet.classList.contains('native'); setPrefs({ nativeKeys: on }); setNative(on); haptic(); return; }
@@ -423,6 +454,9 @@ export function openEntry(existing = null, preset = {}, { title = '' } = {}) {
           toAccount: e.type === 'Transfer' ? e.toAccount : '', category: e.type === 'Transfer' ? '' : e.category,
           merchant: merchantInput.value.trim(), note: noteInput.value.trim(),
           date: dateInput.value ? fromLocalInput(dateInput.value) : new Date().toISOString(),
+          // a category that never counts (Investing) needs no tick of its own: switching category later brings it back
+          exclude: e.type !== 'Transfer' && userExclude && !excludeBox.disabled,
+          addToAllowance: e.type === 'Transfer' && !$('[data-flag="addToAllowance"]').hidden && allowBox.checked,
         };
       }
 

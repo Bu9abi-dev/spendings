@@ -26,19 +26,21 @@ const entries = [
   E('Spend', 10, 3, { merchant: 'carrefour', category: 'Food & Drinks' }),
   E('Spend', 20, 8, { merchant: 'Talabat', category: 'Food & Drinks', currency: 'USD' }),
   E('Transfer', 3000, 0, { account: 'ADIB', toAccount: 'ADCB' }),          // moving money: never spending
-  E('Income', 30, 3, { category: 'Refund', merchant: 'Carrefour' }),       // refund stays income
+  E('Income', 30, 0, { category: 'Refund', merchant: 'Carrefour' }),       // a refund comes off spending, on the day it lands
+  E('Spend', 400, 5, { merchant: 'Tamara', exclude: true }),               // paid for mom: not my spending
+  E('Spend', 2500, 6, { merchant: 'IBKR', category: 'Investing' }),        // investing is never spending
   E('Adjustment', 500, 2, { note: 'Matched with bank' }),
   E('Spend', 999, 0, { cycle: shiftCycle(cyc, -1), date: new Date(start.getTime() - 2 * 864e5).toISOString(), merchant: 'Old' }),
 ];
 const daily = dailySpend(entries, cyc, S);
 ok(daily.length === cycleLength(cyc, S.cycleStart), 'one bar per day of the cycle');
-ok(near(daily[0], 75.5), 'day 1 adds both Carrefour spends, not the 3,000 transfer');
-ok(daily[2] === 0 && near(daily[3], 10), 'adjustments and refunds are not spending');
+ok(near(daily[0], 75.5 - 30), 'day 1 adds both Carrefour spends less the refund that day, not the 3,000 transfer');
+ok(daily[2] === 0 && near(daily[3], 10) && daily[5] === 0 && daily[6] === 0, 'adjustments, excluded entries and Investing are not spending');
 ok(near(daily[8], 20 * S.usdRate), 'a USD spend is shown in AED');
-ok(near(daily.reduce((a, v) => a + v, 0), entries.filter((e) => e.cycle === cyc && e.type === 'Spend').reduce((a, e) => a + toAED(e, S), 0)), 'the bars add up to the cycle’s spending');
+ok(near(daily.reduce((a, v) => a + v, 0), entries.filter((e) => e.cycle === cyc && e.type === 'Spend' && !e.exclude && e.category !== 'Investing').reduce((a, e) => a + toAED(e, S), 0) - 30), 'the bars add up to the cycle’s spending less refunds');
 const weeks = weeklySpend(daily);
 ok(weeks.length === Math.ceil(daily.length / 7) && weeks[0].from === 0 && weeks[0].to === 6, 'weeks are seven days from the cycle start');
-ok(near(weeks[0].total, 85.5) && near(weeks[1].total, 20 * S.usdRate), 'week totals add their days');
+ok(near(weeks[0].total, 55.5) && near(weeks[1].total, 20 * S.usdRate), 'week totals add their days');
 ok(weeks.at(-1).to === daily.length - 1, 'the last week ends on the last day');
 
 // Dubai day boundaries: 23:59 and 00:01 Dubai time land on the right bars (Dubai is UTC+4, no daylight saving)
@@ -53,8 +55,9 @@ ok(ed[0] === 11 && ed[1] === 100 && ed[30] === 1000, 'late-night and just-after-
 
 // ── top places
 const top = topMerchants(entries, cyc, S, 5);
-ok(top[0].name === 'Carrefour' && top[0].count === 3 && near(top[0].total, 85.5), 'Carrefour spellings group together under the usual spelling');
-ok(top.length === 2 && !top.some((m) => m.name === 'Old'), 'only this cycle’s spending, transfers and refunds left out');
+const carr = top.find((m) => m.name === 'Carrefour');
+ok(top[0].name === 'Talabat' && carr.count === 3 && near(carr.total, 55.5), 'Carrefour spellings group together under the usual spelling, less its refund');
+ok(top.length === 2 && !top.some((m) => ['Old', 'Tamara', 'IBKR'].includes(m.name)), 'only this cycle’s own spending: transfers, older entries, excluded entries and Investing left out');
 ok(merchantKey('  Spinneys   Khalidiya ') === 'spinneys khalidiya', 'merchant names ignore case and extra spaces');
 ok(topMerchants(entries, cyc, S, 1).length === 1, 'the list stops at the limit');
 

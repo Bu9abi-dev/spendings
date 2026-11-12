@@ -48,6 +48,7 @@ const HINTS = [
   ['Health', /\b(pharmacy|aster|life pharmacy|boots|clinic|hospital|medical|dental|cleveland|mediclinic|nmc|burjeel)\b/],
   ['Travel', /\b(emirates|etihad|flydubai|air arabia|wizz|booking|airbnb|agoda|expedia|hotel|marriott|hilton)\b/],
   ['Entertainment', /\b(vox|cinema|cinemas|reel|novo|steam|playstation|xbox|nintendo|roblox|ferrari world|warner|seaworld|bowling)\b/],
+  ['Investing', /\b(ibkr|interactive brokers|etoro|sarwa|wio invest|baraka)\b/],
   ['Shopping', /\b(amazon|noon|namshi|shein|ikea|zara|h and m|hm|centrepoint|max|sharaf|virgin|jumbo|ounass|nike|adidas|decathlon)\b/],
 ];
 // Looked up on each call, because your own categories can change at any time (Settings → Categories).

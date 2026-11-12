@@ -1636,3 +1636,11 @@ html.sheet-open body::after { opacity: 0; }
 [dir="rtl"] .date-field > .i { display: none; }
 /* small text links still get a 44px tap area */
 [dir="rtl"] .act-bar .text-btn, .act-bar .text-btn, .gl-manage { min-height: 44px; display: inline-flex; align-items: center; }
+
+/* entry sheet: "Not my spending" and "Add to my allowance" */
+.entry-flags { margin: 10px var(--gutter) 0; background: var(--field); border-radius: 20px; }
+.entry-flags .row[hidden] { display: none; }
+.entry-flags .row.locked { opacity: 0.6; cursor: default; }
+/* an entry that doesn't count as spending: its amount and tag are shown muted in lists */
+.row-amt.not-mine, .not-mine-tag { color: var(--label-2); }
+.not-mine-tag { font-size: 0.765rem; }

@@ -131,7 +131,8 @@ const dataWords = await p.evaluate(async () => {
   bits.push(JSON.stringify(state.extras || {}));
   return bits.filter(Boolean).join(' ');
 });
-const allow = new Set(`${BRANDS} ${dataWords}`.match(/[A-Za-z][A-Za-z'’.]*/g).map((w) => w.toLowerCase().replace(/[.'’]+$/, '')));
+// a shop's own name may be shown tidied ("Amazon.ae" → "Amazon"), so each dotted part of a data word is allowed too
+const allow = new Set(`${BRANDS} ${dataWords}`.match(/[A-Za-z][A-Za-z'’.]*/g).flatMap((w) => [w, ...w.split('.')]).map((w) => w.toLowerCase().replace(/[.'’]+$/, '')).filter(Boolean));
 /** Latin words in visible text and aria-labels that are not allowed. */
 const leftovers = (root = '#view') => p.evaluate(({ root }) => {
   const out = [];

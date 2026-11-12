@@ -1,6 +1,6 @@
 // Activity tab: every entry, grouped by day, with search, filter chips, a Filter sheet
 // (account, category, period, amount), the filtered total, and Select mode for bulk edits.
-import { dayKey, dayLabel, fmt, toAED, ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, allCategories, categoryMeta, seriesColor, money, amtAED } from './model.js';
+import { dayKey, dayLabel, fmt, toAED, ACCOUNTS, SPEND_CATEGORIES, INCOME_CATEGORIES, allCategories, categoryMeta, seriesColor, money, amtAED, isPersonalSpend } from './model.js';
 import { t } from './i18n.js';
 import { state, batch, updateEntry, deleteEntry, topUndoId } from './store.js';
 import { splitPartner } from './people.js';
@@ -93,7 +93,7 @@ let drawnRows = 0, drawnFor = '';
 export function resetActivityRows() { drawnRows = 0; drawnFor = ''; }
 
 const dayHTML = ([k, items], sel) => {
-  const spent = items.filter((e) => e.type === 'Spend').reduce((a, e) => a + toAED(e, state.settings), 0);
+  const spent = items.filter((e) => isPersonalSpend(e)).reduce((a, e) => a + toAED(e, state.settings), 0);
   return `<div class="group-head day"><h3 class="group-title">${dayLabel(k)}</h3>${spent ? `<span class="day-total num">${amtAED(fmt(spent, { fixed: true }))}</span>` : ''}</div>
       <section class="group">${items.map((e) => entryRow(e, sel ? { selected: sel.has(e.id) } : undefined)).join('')}</section>`;
 };

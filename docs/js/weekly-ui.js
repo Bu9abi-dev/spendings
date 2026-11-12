@@ -5,7 +5,8 @@
 // with { undoable: false }: opening a summary or tapping the pace alert isn't something to undo, and an Undo step for it
 // would sit on top of the real last change. It syncs like any extra. The week line shows Mondays and Tuesdays only, so it
 // also clears itself; the pace alert stays quiet for that cycle until the day it runs out moves 3 or more days earlier.
-import { categoryMeta, seriesColor, homeNumbers, fmt, amtAED } from './model.js';
+import { categoryMeta, seriesColor, fmt, amtAED } from './model.js';
+import { homeNow } from './home-now.js';
 import { state, getExtra, saveExtra } from './store.js';
 import { openSheet, haptic, esc } from './ui.js';
 import { icon } from './icons.js';
@@ -22,7 +23,7 @@ const seen = () => String(stored().seen || '');
 const saveWeekly = (patch, label) => saveExtra(WEEKLY_KEY, { ...stored(), v: 1, ...patch }, label, { undoable: false });
 
 /** Home's own numbers right now (the same call renderHome makes), so the alert and the sheet read the same summary as Home. */
-const homeNow = (now = new Date()) => homeNumbers(state.entries, state.plan, state.settings, now, state.dismissed);
+// homeNow (home-now.js): Home's own numbers right now, so the alert and the sheet read the same summary as Home
 
 /** The summary as of now, from what's on the phone. */
 export function currentSummary(now = new Date()) {

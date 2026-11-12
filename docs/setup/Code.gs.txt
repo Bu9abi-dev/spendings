@@ -30,7 +30,11 @@ var ACCOUNTS_TAB = 'Accounts';
 var EXTRAS = 'Extras';
 
 var COLS = ['ID', 'Date', 'Cycle', 'Type', 'Amount', 'Currency', 'Amount (AED)', 'Account',
-  'To account', 'Category', 'Merchant', 'Note', 'Source', 'Status', 'Created', 'Updated'];
+  'To account', 'Category', 'Merchant', 'Note', 'Source', 'Status', 'Created', 'Updated',
+  // added later, at the end so older rows and formulas keep their places. "Yes" or blank (blank = no):
+  // Not my spending = money that passes through you (still moves balances, never counts as spending);
+  // Add to allowance = a top-up into the allowance account that raises this cycle's allowance
+  'Not my spending', 'Add to allowance'];
 var C = {}; COLS.forEach(function (n, i) { C[n] = i; });
 
 // Adjustment = "match my bank": a signed correction that makes an account's balance equal the bank's.
@@ -45,7 +49,9 @@ var DEFAULT_ACCOUNTS = [
 ];
 var COLOUR_IDS = ['red', 'orange', 'gold', 'green', 'teal', 'sky', 'blue', 'indigo', 'purple', 'pink', 'graphite'];
 var SPEND_CATEGORIES = ['Food & Drinks', 'Groceries', 'Transport & Fuel', 'Shopping',
-  'Bills & Subscriptions', 'Entertainment', 'Health', 'Family & Gifts', 'Travel', 'Other'];
+  'Bills & Subscriptions', 'Entertainment', 'Health', 'Family & Gifts', 'Travel', 'Investing', 'Other'];
+// spend categories that never count as spending (an IBKR deposit leaves your account but isn't spent)
+var NOT_SPENDING = ['Investing'];
 var INCOME_CATEGORIES = ['Salary', 'Nafis', 'Allowance', 'Gift', 'Refund', 'Other'];
 
 var PLAN_COLS = ['ID', 'Name', 'Kind', 'Amount', 'Day', 'From', 'To', 'Category'];
@@ -65,7 +71,7 @@ var DEFAULT_SETTINGS = [
 var DEFAULT_CARD_MAP = [];
 
 // what this version of the script can do, so the app can tell an old script from a new one
-var FEATURES = ['extras', 'install'];
+var FEATURES = ['extras', 'install', 'exclude'];
 
 var INK = '#1d1d1f', MUTED = '#6e6e73', LINE = '#e5e5ea', TINT = '#0a7cff', SOFT = '#f2f2f7';
 
@@ -101,6 +107,7 @@ function setupSheet_() {
 
   var ledger = ensureSheet_(LEDGER);
   if (ledger.getLastRow() === 0) ledger.appendRow(COLS);
+  ensureLedgerCols_(ledger);
   styleHeader_(ledger, COLS.length);
   ledger.setFrozenRows(1);
   ledger.getRange('B:B').setNumberFormat('yyyy-mm-dd hh:mm');
@@ -271,6 +278,8 @@ function doPost(e) {
   try {
     // a sheet made by the setup guide has no tabs until `install` runs: build them first for anything else
     if (action !== 'ping' && action !== 'install' && !SpreadsheetApp.getActive().getSheetByName(LEDGER)) setupSheet_();
+    // an older Ledger gets the newer columns' headers (adding columns only: no row is touched)
+    if (action !== 'ping' && action !== 'install') ensureLedgerCols_();
     switch (action) {
       case 'ping': return json_({ ok: true, message: 'Connected to ' + SpreadsheetApp.getActive().getName(), features: FEATURES });
       case 'install': return json_(install_());
@@ -442,9 +451,9 @@ function logCardSpend_(s, p) {
 }
 
 /** "Food: AED 412 of 500 this cycle (82%)" for a category that has a limit in the `budgets` extra
-    ({ v: 1, limits: { <id>: AED } }), else ''. Same gross spend as the app's Insights (docs/js/budgets.js):
-    Spend entries only, so transfers aren't counted and refunds aren't netted off. The name is the renamed
-    label from the `categories` extra when there is one. */
+    ({ v: 1, limits: { <id>: AED } }), else ''. Same spending as the app's Insights (docs/js/model.js cycleSpend):
+    personal Spend only (no transfers, Investing or "Not my spending"), less refunds from the same shop.
+    The name is the renamed label from the `categories` extra when there is one. */
 function budgetLine_(category, cycle) {
   var ex = readExtras_();
   var limits = ex.budgets && typeof ex.budgets === 'object' && ex.budgets.limits && typeof ex.budgets.limits === 'object' ? ex.budgets.limits : null;
@@ -453,10 +462,18 @@ function budgetLine_(category, cycle) {
   if (!isFinite(limit) || limit <= 0) return '';
   var sh = SpreadsheetApp.getActive().getSheetByName(LEDGER);
   var n = sh.getLastRow() - 1;
-  var spent = 0;
-  if (n > 0) sh.getRange(2, 1, n, COLS.length).getValues().forEach(function (r) {
-    if (r[C['Type']] === 'Spend' && String(r[C['Cycle']]) === cycle && r[C['Category']] === category) spent += Number(r[C['Amount (AED)']]) || 0;
+  var spent = 0, startDay = getSettings_().cycleStart;
+  var rows = n > 0 ? sh.getRange(2, 1, n, COLS.length).getValues() : [];
+  // shops this category was bought at (its refunds come off it), as the app does
+  var shops = {};
+  rows.forEach(function (r) { if (rowSpend_(r) && r[C['Category']] === category && merchantKey_(r[C['Merchant']])) shops[merchantKey_(r[C['Merchant']])] = true; });
+  rows.forEach(function (r) {
+    if (rowCycle_(r, startDay) !== cycle) return;
+    var v = Number(r[C['Amount (AED)']]) || 0;
+    if (rowSpend_(r) && r[C['Category']] === category) spent += v;
+    else if (rowRefund_(r) && shops[merchantKey_(r[C['Merchant']])]) spent -= v;
   });
+  spent = Math.max(0, Math.round(spent * 100) / 100);
   var names = ex.categories && typeof ex.categories === 'object' && ex.categories.names && typeof ex.categories.names === 'object' ? ex.categories.names : {};
   var label = typeof names[category] === 'string' && names[category].trim() ? names[category].trim() : category;
   return label + ': ' + fmtMoney_(spent, 'AED') + ' of ' + Math.round(limit * 100) / 100 + ' this cycle (' + Math.floor(spent / limit * 100) + '%)';
@@ -657,12 +674,16 @@ function normalise_(raw, s) {
     note: clean_(raw.note),
     source: clean_(raw.source) || 'App',
     status: status,
+    // a bank check only corrects a balance, so it has no ticks; "Add to allowance" only means something on a transfer
+    exclude: type !== 'Adjustment' && ticked_(raw.exclude),
+    addToAllowance: type === 'Transfer' && ticked_(raw.addToAllowance),
   };
 }
 
 function toRow_(e, created, updated) {
   return [e.id, new Date(e.date), e.cycle, e.type, e.amount, e.currency, e.amountAED, e.account,
-    e.toAccount, e.category, e.merchant, e.note, e.source, e.status, created, updated];
+    e.toAccount, e.category, e.merchant, e.note, e.source, e.status, created, updated,
+    e.exclude ? 'Yes' : '', e.addToAllowance ? 'Yes' : ''];
 }
 
 function fromRow_(r) {
@@ -682,7 +703,38 @@ function fromRow_(r) {
     note: String(r[C['Note']] || ''),
     source: String(r[C['Source']] || ''),
     status: String(r[C['Status']] || 'OK'),
+    // older rows have nothing in these columns: blank means no
+    exclude: ticked_(r[C['Not my spending']]),
+    addToAllowance: ticked_(r[C['Add to allowance']]),
   };
+}
+
+/** A tick in the sheet: TRUE, "Yes", "y" or 1. A blank or missing cell is no. */
+function ticked_(v) { return v === true || v === 1 || /^(true|yes|y|1)$/i.test(String(v == null ? '' : v).trim()); }
+
+/** The Ledger's newer column headers, added once to a sheet made before them. Only adds; never moves or clears. */
+function ensureLedgerCols_(sh) {
+  var props = PropertiesService.getScriptProperties();
+  if (!sh && props.getProperty('LEDGER_COLS') === String(COLS.length)) return;
+  sh = sh || SpreadsheetApp.getActive().getSheetByName(LEDGER);
+  if (!sh) return;
+  if (sh.getMaxColumns() < COLS.length) sh.insertColumnsAfter(sh.getMaxColumns(), COLS.length - sh.getMaxColumns());
+  var head = sh.getRange(1, 1, 1, COLS.length).getValues()[0];
+  for (var i = 0; i < COLS.length; i++) if (String(head[i] || '') === '') sh.getRange(1, i + 1).setValue(COLS[i]);
+  styleHeader_(sh, COLS.length);
+  props.setProperty('LEDGER_COLS', String(COLS.length));
+}
+
+/* ───────────────────────── What counts as spending ─────────────────────────
+   Same rules as the app (docs/js/model.js isPersonalSpend / cycleSpend): Spend entries only, in the cycle their
+   date falls in, minus refunds. Transfers, bank checks, income, Investing and "Not my spending" never count. */
+function rowExcluded_(r) { return ticked_(r[C['Not my spending']]) || (r[C['Type']] === 'Spend' && NOT_SPENDING.indexOf(String(r[C['Category']])) >= 0); }
+function rowSpend_(r) { return r[C['Type']] === 'Spend' && !rowExcluded_(r); }
+function rowRefund_(r) { return r[C['Type']] === 'Income' && r[C['Category']] === 'Refund' && !rowExcluded_(r); }
+/** The cycle a Ledger row belongs to, from its date (the Cycle column can be stale). */
+function rowCycle_(r, startDay) {
+  var d = r[C['Date']] instanceof Date ? r[C['Date']] : new Date(r[C['Date']]);
+  return isNaN(d.getTime()) ? String(r[C['Cycle']]) : cycleOf_(d, startDay);
 }
 
 function idIndex_(sh) {
@@ -1041,14 +1093,17 @@ function cycleSummary_(cycle) {
   var n = sh.getLastRow() - 1;
   var out = { spent: 0, income: 0, byAccount: {}, allowanceUsed: 0 };
   var rows = n > 0 ? sh.getRange(2, 1, n, COLS.length).getValues() : [];
+  var refunds = 0;
   rows.forEach(function (r) {
-    if (String(r[C['Cycle']]) !== cycle) return;
+    if (rowCycle_(r, s.cycleStart) !== cycle) return;
     var aed = Number(r[C['Amount (AED)']]) || 0;
-    if (r[C['Type']] === 'Spend') {
+    if (rowSpend_(r)) {
       out.spent += aed;
       out.byAccount[r[C['Account']]] = (out.byAccount[r[C['Account']]] || 0) + aed;
-    } else if (r[C['Type']] === 'Income') out.income += aed;
+    } else if (rowRefund_(r)) refunds += aed;
+    else if (r[C['Type']] === 'Income' && !rowExcluded_(r)) out.income += aed;
   });
+  out.spent = Math.max(0, out.spent - refunds); // refunds take spending off; they aren't income
   var a = allowanceOf_(rows, cycle, s, readPlan_());
   out.allowanceUsed = a.used;
   out.allowanceLeft = a.left;
@@ -1056,48 +1111,38 @@ function cycleSummary_(cycle) {
 }
 
 /* The allowance, same rules as the app (docs/js/model.js allowanceOf):
-   transfers are reallocating, never spending; a refund into the allowance account gives the money
-   back; a top-up (main → allowance beyond the planned move) adds to the cycle it lands in, and
-   whatever of it is unspent at payday carries into the next cycle. */
+   the budget is the allowance; a top-up raises it only when marked "Add to allowance" (whatever of a marked
+   top-up is unspent at payday carries into the next cycle). Used = personal spending on the allowance account
+   less refunds to it, plus lending to a person from it less being paid back. Transfers are never spending. */
 function allowanceOf_(rows, cycle, s, plan) {
-  var moves = (plan || []).filter(function (p) { return p.kind === 'Move' && p.to === s.allowanceAccount; });
-  if (!moves.length) moves = [{ id: 'allowance', amount: s.allowance, day: null }];
   var people = peopleSet_();
-  var now = allowanceCycle_(rows, cycle, s, moves, people);
-  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, moves, people);
+  var now = allowanceCycle_(rows, cycle, s, null, people);
+  var prev = allowanceCycle_(rows, shiftCycle_(cycle, -1), s, null, people);
   var carryIn = Math.round(Math.min(prev.topUps, Math.max(0, s.allowance + prev.topUps - prev.used)) * 100) / 100;
   var pot = s.allowance + now.topUps + carryIn;
   return { used: now.used, topUps: now.topUps, carryIn: carryIn, pot: pot, left: pot - now.used };
 }
 
 function allowanceCycle_(rows, cycle, s, moves, people) {
-  var acc = s.allowanceAccount, hub = s.emergencyAccount;
-  var spent = 0, refunds = 0, topUps = 0, lent = 0;
+  var acc = s.allowanceAccount;
+  var spent = 0, refunds = 0, topUps = 0, lent = 0, repaid = 0;
   people = people || {};
   rows.forEach(function (r) {
-    if (String(r[C['Cycle']]) !== cycle) return;
+    if (rowCycle_(r, s.cycleStart) !== cycle) return;
     var aed = Number(r[C['Amount (AED)']]) || 0, type = r[C['Type']], from = r[C['Account']], to = r[C['To account']];
     var source = String(r[C['Source']] || '');
-    if (type === 'Spend' && from === acc) spent += aed;
-    else if (type === 'Income' && from === acc && r[C['Category']] === 'Refund') refunds += aed;
-    // lending to a person (or their share of a split) from the allowance card uses allowance; being paid back is a top-up
-    else if (type === 'Transfer' && from === acc && people[to]) lent += aed;
-    else if (type === 'Transfer' && to === acc && people[from]) topUps += aed;
-    else if (type === 'Transfer' && acc !== hub) {
-      if (from === hub && to === acc) {
-        var planned = moves.some(function (p) {
-          if (source === 'Plan:' + p.id) return true;
-          if (source.indexOf('Plan:') === 0 || !(p.amount > 0) || aed < p.amount * 0.95) return false;
-          if (!p.day) return true;
-          var d = r[C['Date']] instanceof Date ? r[C['Date']] : new Date(r[C['Date']]);
-          return Utilities.formatDate(d, TZ, 'yyyy-MM-dd') >= dueDayKey_(cycle, p.day, s.cycleStart);
-        });
-        if (!planned) topUps += aed;
-      } else if (from === acc && to === hub && source.indexOf('Plan:') !== 0) topUps -= aed;
+    if (from === acc && rowSpend_(r)) spent += aed;
+    else if (from === acc && rowRefund_(r)) refunds += aed;
+    else if (type === 'Transfer' && !rowExcluded_(r) && source.indexOf('Plan:') !== 0) {
+      // lending to a person (or their share of a split) from the allowance card uses allowance; being paid back gives it back
+      if (from === acc && people[to]) lent += aed;
+      else if (to === acc && people[from]) repaid += aed;
+      else if (to === acc && ticked_(r[C['Add to allowance']])) topUps += aed;
+      else if (from === acc && ticked_(r[C['Add to allowance']])) topUps -= aed;
     }
   });
   topUps = Math.max(0, topUps);
-  return { spent: spent, refunds: refunds, topUps: topUps, lent: lent, used: Math.max(0, spent + lent - refunds) };
+  return { spent: spent, refunds: refunds, topUps: topUps, lent: lent, used: Math.max(0, Math.round((spent - refunds + lent - repaid) * 100) / 100) };
 }
 
 /** People (money owed): account names listed in the app's `people` extra, as { name: true }.
@@ -1151,17 +1196,24 @@ function ensureCycleTab_(cycle, force) {
   var col = function (n) { return L + colLetter_(C[n]) + ':' + colLetter_(C[n]); };
   var cyc = '"' + cycle + '"';
   var aed = col('Amount (AED)'), typ = col('Type'), cy = col('Cycle'), acc = col('Account'), cat = col('Category'), sts = col('Status');
+  var to = col('To account'), exc = col('Not my spending'), add = col('Add to allowance');
+  // what counts as spending (same rules as the app): Spend, not ticked "Not my spending", not Investing; refunds come off
+  var mine = ',' + exc + ',"<>Yes"' + NOT_SPENDING.map(function (c) { return ',' + cat + ',"<>' + c + '"'; }).join('');
+  var spendIf = function (more) { return 'SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend"' + mine + (more || '') + ')'; };
+  var refundIf = function (more) { return 'SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + cat + ',"Refund",' + exc + ',"<>Yes"' + (more || '') + ')'; };
+  var incomeAll = 'SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + exc + ',"<>Yes")';
 
   sh.getRange('A1').setValue(name).setFontSize(20).setFontWeight('bold').setFontColor(INK);
   sh.getRange('A2').setValue(cycleRangeLabel_(cycle, s.cycleStart)).setFontColor(MUTED);
 
   var summary = [
-    ['Money in', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income")'],
-    ['Money out', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend")'],
+    ['Money in', '=' + incomeAll + '-' + refundIf()],
+    ['Money out', '=MAX(0,' + spendIf() + '-' + refundIf() + ')'],
     ['Net', '=B4-B5'],
     ['Allowance', "=Settings!B2"],
-    // a refund into the allowance account gives that money back
-    ['Allowance left', '=Settings!B2-SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',Settings!B3)+SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',Settings!B3,' + cat + ',"Refund")'],
+    // a refund into the allowance account gives that money back; a top-up ticked "Add to allowance" raises it
+    ['Allowance left', '=Settings!B2-' + spendIf(',' + acc + ',Settings!B3') + '+' + refundIf(',' + acc + ',Settings!B3')
+      + '+SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Transfer",' + to + ',Settings!B3,' + add + ',"Yes")'],
     ['Needs review', '=COUNTIFS(' + cy + ',' + cyc + ',' + sts + ',"Review")'],
   ];
   sh.getRange(4, 1, summary.length, 2).setValues(summary);
@@ -1171,12 +1223,13 @@ function ensureCycleTab_(cycle, force) {
   sh.getRange('B8').setFontColor(TINT);
 
   sh.getRange('D3:F3').setValues([['Spending by category', 'AED', 'Share']]);
-  var cats = spendCategories_(); // built-ins plus your own from the app
+  // built-ins plus your own from the app; Investing isn't spending, so it has no row here
+  var cats = spendCategories_().filter(function (c) { return NOT_SPENDING.indexOf(c) < 0; });
   var catRows = cats.map(function (c, i) {
     var r = 4 + i;
-    return [c, '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + cat + ',"' + String(c).replace(/"/g, '""') + '")', '=IF($B$5=0,0,E' + r + '/$B$5)'];
+    return [c, '=' + spendIf(',' + cat + ',"' + String(c).replace(/"/g, '""') + '"'), '=IF(SUM($E$4:$E$' + (4 + cats.length) + ')=0,0,E' + r + '/SUM($E$4:$E$' + (4 + cats.length) + '))'];
   });
-  catRows.push(['Uncategorised', '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + cat + ',"")', '=IF($B$5=0,0,E' + (4 + cats.length) + '/$B$5)']);
+  catRows.push(['Uncategorised', '=' + spendIf(',' + cat + ',""'), '=IF(SUM($E$4:$E$' + (4 + cats.length) + ')=0,0,E' + (4 + cats.length) + '/SUM($E$4:$E$' + (4 + cats.length) + '))']);
   sh.getRange(4, 4, catRows.length, 3).setValues(catRows);
   sh.getRange(4, 5, catRows.length, 1).setNumberFormat('#,##0.00');
   sh.getRange(4, 6, catRows.length, 1).setNumberFormat('0%');
@@ -1185,8 +1238,8 @@ function ensureCycleTab_(cycle, force) {
   sh.getRange(accTop, 4, 1, 3).setValues([['By account', 'Spent', 'Received']]);
   var accRows = activeNames_().map(function (a) {
     return [a,
-      '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Spend",' + acc + ',"' + a + '")',
-      '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',"' + a + '")'];
+      '=' + spendIf(',' + acc + ',"' + a + '"'),
+      '=SUMIFS(' + aed + ',' + cy + ',' + cyc + ',' + typ + ',"Income",' + acc + ',"' + a + '",' + exc + ',"<>Yes",' + cat + ',"<>Refund")'];
   });
   sh.getRange(accTop + 1, 4, accRows.length, 3).setValues(accRows);
   sh.getRange(accTop + 1, 5, accRows.length, 2).setNumberFormat('#,##0.00');
@@ -1256,12 +1309,20 @@ function ensureOverview_(force) {
   var L = "'" + LEDGER + "'!";
   sh.getRange('A4:F4').setValues([['Cycle', 'Money in', 'Money out', 'Net', 'Allowance left', 'Needs review']]);
   sh.getRange('A5').setFormula('=IFERROR(SORT(UNIQUE(FILTER(' + L + 'C2:C,' + L + 'C2:C<>"")),1,FALSE),)');
-  var cy = L + 'C:C', typ = L + 'D:D', aed = L + 'G:G', acc = L + 'H:H', sts = L + 'N:N';
-  sh.getRange('B5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income"))))');
-  sh.getRange('C5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"))))');
-  sh.getRange('D5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income")-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"))))');
-  var cat = L + 'J:J';
-  sh.getRange('E5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,Settings!B2-SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend",' + acc + ',Settings!B3)+SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income",' + acc + ',Settings!B3,' + cat + ',"Refund"))))');
+  var cy = L + 'C:C', typ = L + 'D:D', aed = L + 'G:G', acc = L + 'H:H', sts = L + 'N:N', cat = L + 'J:J', to = L + 'I:I';
+  var exc = L + colLetter_(C['Not my spending']) + ':' + colLetter_(C['Not my spending']);
+  var add = L + colLetter_(C['Add to allowance']) + ':' + colLetter_(C['Add to allowance']);
+  // same rules as the cycle tabs: personal spending (no "Not my spending", no Investing) less refunds; refunds aren't income
+  var mine = ',' + exc + ',"<>Yes"' + NOT_SPENDING.map(function (x) { return ',' + cat + ',"<>' + x + '"'; }).join('');
+  var spendIf = function (more) { return 'SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Spend"' + mine + (more || '') + ')'; };
+  var refundIf = function (more) { return 'SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income",' + cat + ',"Refund",' + exc + ',"<>Yes"' + (more || '') + ')'; };
+  var moneyIn = 'SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Income",' + exc + ',"<>Yes",' + cat + ',"<>Refund")';
+  var moneyOut = 'MAX(0,' + spendIf() + '-' + refundIf() + ')';
+  sh.getRange('B5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,' + moneyIn + ')))');
+  sh.getRange('C5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,' + moneyOut + ')))');
+  sh.getRange('D5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,' + moneyIn + '-' + moneyOut + ')))');
+  sh.getRange('E5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,Settings!B2-' + spendIf(',' + acc + ',Settings!B3') + '+' + refundIf(',' + acc + ',Settings!B3')
+    + '+SUMIFS(' + aed + ',' + cy + ',c,' + typ + ',"Transfer",' + to + ',Settings!B3,' + add + ',"Yes"))))');
   sh.getRange('F5').setFormula('=MAP(A5:A200,LAMBDA(c,IF(c="",,COUNTIFS(' + cy + ',c,' + sts + ',"Review"))))');
   sh.getRange('A4:F4').setFontWeight('bold').setBackground(SOFT);
   sh.getRange('B5:E200').setNumberFormat('"AED "#,##0.00');
