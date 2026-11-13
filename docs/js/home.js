@@ -118,15 +118,12 @@ function label(m, f) {
   return `${esc(a.name)} <span class="lens-role">· ${f === m.hub ? t('home.payLands') : f === m.s.allowanceAccount ? t('home.allowance') : esc(a.role.toLowerCase())}</span>`;
 }
 
-/* Pace: how this cycle's allowance spending compares with an even spread over the cycle.
-   The state (and its tolerance) comes from allowancePace in model.js, shared with Insights and the "runs out" alert. */
+/* Pace: what the money really on the allowance card allows a day until payday, against the fixed daily target
+   (allowance ÷ 30). From model.js allowancePace (m.card): green on track, amber tight, red below half the target. */
 function paceLine(m) {
-  const { delta, daysLeft: dl, state: st } = m.pace;
-  const perDay = dl > 0 && m.safe > 0 ? ` · ${t('home.perDay', { amt: fmt(m.safe / dl, { whole: true }), n: dl })}` : '';
-  if (st === 'spent') return `<span class="pace-bad">${t('home.overAllowance', { n: fmt(-m.allowLeft, { whole: true }) })}</span>`;
-  if (st === 'over') return `<span class="pace-bad">${t('home.overPace', { n: fmt(delta, { whole: true }) })}</span>${perDay}`;
-  if (st === 'under') return `<span class="pace-good">${t('home.underPace', { n: fmt(-delta, { whole: true }) })}</span>${perDay}`;
-  return `<span class="pace-good">${t('home.onTrack')}</span>${perDay}`;
+  const c = m.card, amt = fmt(c.canSpendPerDay, { whole: true }), tg = fmt(c.dailyTarget, { whole: true });
+  if (c.state === 'on') return `<span class="pace-good">${t('home.paceOnCard', { amt, t: tg })}</span>`;
+  return `<span class="${c.state === 'low' ? 'pace-low' : 'pace-bad'}">${t('home.paceTightCard', { amt, t: tg })}</span>`;
 }
 
 /* A small ✕ beside every payday prompt: "already done this cycle", so it stops asking until the next one. */
@@ -142,13 +139,12 @@ function meta(m, f) {
   if (!m.matched) return t('home.matchOnce');
   if (f === 'all') {
     const unmoved = m.allowanceUnmoved ? ` · <span class="prompt"><button type="button" class="soon soon-btn" data-plan-act="move" data-plan-id="${esc(m.allowMove.id)}">${t('home.notMoved')}</button>${dismissBtn(m.allowMove)}</span>` : '';
-    return `${t('home.safeB', { n: fmt(m.safe, { whole: true }) })} · ${paceLine(m)}${unmoved}${expect}`;
+    return `${t('home.safeToday', { n: fmt(m.safeToday, { whole: true }) })} · ${paceLine(m)}${unmoved}${expect}`;
   }
   if (f === m.hub) return `${t('home.yoursAfter', { n: fmt(m.hubB.free, { whole: true }) })}${expect}`;
   if (f === m.s.allowanceAccount) {
-    const extra = m.allowBal - Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
-    const bills = m.bills >= 0.5 ? ` · ${t('home.afterBills', { n: fmt(m.bills, { whole: true }) })}` : '';
-    return `${t('home.safeB', { n: fmt(m.safe, { whole: true }) })}${bills}${extra > 0.5 ? ` · ${t('home.carried', { n: fmt(extra, { whole: true }) })}` : ''}`;
+    const bills = m.bills >= 0.5 ? ` · ${t('home.billsDueCard', { n: fmt(m.bills, { whole: true }) })}` : '';
+    return `${t('home.safeToday', { n: fmt(m.safeToday, { whole: true }) })} · ${paceLine(m)}${bills}`;
   }
   const acc = m.sum.byAccount.get(f) || { spent: 0, received: 0 };
   return t('home.spentCycle', { n: fmt(acc.spent, { whole: true }) });
@@ -235,7 +231,7 @@ function detailAll(m) {
   const review = state.entries.filter((e) => e.status === 'Review');
   return `
     ${paydayCard(m)}
-    ${allowanceCard(m, true)}
+    ${allowanceCard(m)}
     ${whereCard(m)}
     ${review.length ? `<button class="review-row" type="button" data-act="review">
         <span class="row-icon" style="--tint:var(--warn)">${icon('tray', { size: 20 })}</span>
@@ -324,28 +320,17 @@ function leftCard(m, f) {
 }
 
 
-/* Allowance liquid. On All it speaks in percent (left / spent), on the allowance account in AED.
-   "Of" is this cycle's whole allowance: the allowance plus any top-ups carried in or added. */
-function allowanceCard(m, percent = false) {
-  const sum = m.sum, pot = sum.allowancePot, left = m.allowLeft;
-  const level = pot > 0 ? Math.max(0, Math.min(1, left / pot)) : 0;
-  const tone = left < 0 ? 'over' : level < 0.2 ? 'low' : '';
-  const spentPct = pot > 0 ? Math.round((sum.allowanceUsed / pot) * 100) : 0;
-  const extra = sum.carryIn + sum.topUps;
-  const of = extra > 0.5 ? t('home.ofTopUp', { pot: fmt(pot, { whole: true }), a: fmt(sum.allowance, { whole: true }), x: fmt(extra, { whole: true }) }) : fmt(pot, { whole: true });
-  if (percent) {
-    return capsule({
-      label: left < 0 ? t('home.usedUp') : t('home.allowLeft'),
-      value: { n: Math.round(level * 100), text: `${Math.round(level * 100)}%`, unit: 'pct' },
-      meta: t('home.pctOn', { pct: spentPct, used: fmt(sum.allowanceUsed, { whole: true }), of, acc: esc(m.allowAcc) }),
-      level, tone,
-    });
-  }
+/* Allowance liquid: the real money on the allowance card (m.card, model.js allowancePace). The big number is the card's
+   balance, the percent and the fill are that balance ÷ the monthly allowance (above 100% after a top-up; the fill
+   stops at full), and the line under it is what it allows a day until payday against the fixed daily target. */
+function allowanceCard(m) {
+  const c = m.card, pct = Math.round(c.percent * 100);
+  const empty = c.cardBalance <= 0;
   return capsule({
-    label: left < 0 ? t('home.overAllow') : t('home.allowLeft'),
-    value: { n: Math.abs(left), text: `${amtAED(fmt(Math.abs(left), { whole: true }))}`, unit: 'aed' },
-    meta: t('home.pctCycle', { pct: spentPct, used: fmt(sum.allowanceUsed, { whole: true }), of }),
-    level, tone,
+    label: empty ? t('home.cardEmpty') : t('home.allowLeftPct', { pct }),
+    value: { n: Math.abs(c.cardBalance), text: `${c.cardBalance < 0 ? '−' : ''}${amtAED(fmt(Math.abs(c.cardBalance), { whole: true }))}`, unit: 'aed' },
+    meta: t('home.cardSub', { amt: amtAED(fmt(c.canSpendPerDay, { whole: true })), n: c.daysLeft, t: fmt(c.dailyTarget, { whole: true }) }),
+    level: c.percent, tone: empty ? 'over' : c.state === 'on' ? '' : 'low',
   });
 }
 

@@ -2,6 +2,18 @@
 
 Choices made while running the app on my own, newest first, with the reason for each.
 
+## 13 Nov 2026
+
+- **Home's allowance numbers come from the card's real balance (v39, Abdullah's spec).** canSpendPerDay = ADCB balance ÷
+  days strictly between today and payday (≥ 1); target = planned allowance ÷ 30. Safe to spend on Home is that number for
+  today. This replaces the project rule "Safe to spend resets each cycle" for Home: the leftover buffer on ADCB now counts,
+  because he asked for the real money on the card. Insights keeps the cycle view (`cyclePace`).
+- **Bills due on the card are no longer taken off Home's Safe to spend** (his spec says only the card balance drives it);
+  the ADCB tab shows them as a separate line instead.
+- **On payday before the allowance move is logged**, the card shows only what it holds (often little, so "Tight"), next to
+  the existing "Allowance not moved yet" button. Logging the move fixes it. Chosen over guessing the move in.
+- **Per-day amounts are shown in whole dirhams** (128.6 → 129), like every other Home number.
+
 ## 12 Nov 2026
 
 - **One definition of spending** (v38, Abdullah's spec): `isPersonalSpend(e, cycle, settings)` and

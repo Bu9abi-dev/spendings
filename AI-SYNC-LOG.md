@@ -4,7 +4,7 @@
 Spendings without asking the owner anything. Read it top to bottom, then [NOTES.md](NOTES.md) (how to work),
 [BACKLOG.md](BACKLOG.md) (what's next) and [DECISIONS.md](DECISIONS.md) (why things are the way they are).
 
-Last updated: **12 Nov 2026**, at **v38**. Whoever works on the app updates the "Current state" and "Session log"
+Last updated: **13 Nov 2026**, at **v39**. Whoever works on the app updates the "Current state" and "Session log"
 sections at the end of every session (newest first).
 
 ---
@@ -47,7 +47,12 @@ sections at the end of every session (newest first).
   Never write a new ad-hoc spend sum: call these.
 - Refunds **take spending off** (not income), off the category of the shop they came from.
 - A top-up raises the allowance only when ticked **Add to my allowance** (`addToAllowance`); a ticked pre-payday
-  top-up carries into the new cycle. Pace = used ÷ days so far; Safe to spend = left − card bills due, never < 0.
+  top-up carries into the new cycle. Insights' cycle pace (`cyclePace`) = used ÷ days so far.
+- **Home's allowance card, pace line and Safe to spend** (v39, `allowancePace` in model.js, `m.card`): the REAL balance
+  on the allowance card ÷ daysLeft (whole days strictly between today and next payday, ≥ 1); daily target = planned
+  allowance move ÷ 30 (100), fixed. Safe to spend = that per-day amount for today. On track ≥ target (green), tight
+  below (amber), red below half. "Runs out around" = card balance ÷ its last 7 days of personal spend (`recentCardSpend`).
+  Only the card's balance moves these. Tests: `tests/verify-card-pace.mjs`.
 - Unused ADCB allowance stays as a buffer; **Safe to spend resets each cycle**. A pre-payday top-up adds to the new
   cycle's allowance. Lending from the allowance card to a person counts as allowance used.
 - The **All** tab shows total money. People (money owed) and BNPL debt are shown separately, never mixed into it.
@@ -68,9 +73,9 @@ Code map, extras keys and conventions: see NOTES.md. **`docs/setup/Code.gs.txt` 
 `apps-script/Code.gs`** (the setup guide uploads it; a test checks). Extras keys in use: `budgets`, `recurring`, `categories`,
 `bnpl`, `goals`, `investments`, `people`.
 
-## 5. Current state (v38, 12 Nov 2026)
+## 5. Current state (v39, 13 Nov 2026)
 
-**Live on main** (newest first): v38 only real spending counts (one spend definition, Exclude from my spending, Investing, top-ups don't raise the allowance unless ticked) · v37 account chips on one line · v36 security check-up (CSP and headers in docs/vercel.json, verify-csp) · v35 plain starting accounts for new users · v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
+**Live on main** (newest first): v39 allowance card shows the real ADCB money (per day until payday, target 100/day) · v38 only real spending counts (one spend definition, Exclude from my spending, Investing, top-ups don't raise the allowance unless ticked) · v37 account chips on one line · v36 security check-up (CSP and headers in docs/vercel.json, verify-csp) · v35 plain starting accounts for new users · v34 Sign in with Google for anyone (`drive.file` only; script pasted by hand) · v33 Sign in with Google switched on (client ID in config.js) · v32 polish (audit fixes) · v31 small wins · v30 Arabic / English + RTL · v29 accessibility · v28 budget line in the Apple Pay reply · v27 performance pass (memoised sums, lazy Activity rows) · v26 weekly summary + allowance pace alert · v25 first-time setup guide + Sign in with Google (off until a client ID is set) · v24 money owed + split bills · v23 savings goals + net worth · v22 buy now, pay later (Tabby/Tamara, auto-linked
 payments) · v21 safer syncing (outbox race fix) · v20 subscriptions + one Home notice at a time · v19 category
 budgets · v18 custom categories · v17 monthly report (PDF/CSV) · v16 smarter auto-categories · v15 Activity filters
 and bulk edit · v14 spending charts. Full list: CHANGELOG.md.
@@ -111,6 +116,14 @@ strings/ar.js; use t()** (`docs/js/i18n.js`; amounts via `money`/`amtAED`, dates
 left/right; `tests/verify-arabic.mjs` fails on a missing, unused or untranslated key).
 
 ## 7. Session log (newest first)
+
+### 13 Nov 2026 · v39 allowance card from the real ADCB balance
+- Abdullah: Home said "Allowance left 7% · 2,777 of 3,000 spent" and "1,063 over pace" while ADCB held 1,672. Home's
+  allowance card, pace line, Safe to spend, Where card ADCB row and the "runs out" notice now read `m.card`
+  (model.js `allowancePace`: card balance ÷ days strictly between today and payday; target allowance ÷ 30). The old
+  cycle-total pace was renamed `cyclePace` and still feeds Insights' pace panel; `m.safe` (allowance left − bills) is
+  kept for the old checks and the sheet's Apple Pay reply, but no screen shows it now. Demo's ADCB bank check now
+  lands the card on ~110 × days to payday. New tests/verify-card-pace.mjs. No Code.gs change.
 
 ### 12 Nov 2026 · v38 only real spending counts
 - Abdullah: pace, daily average, Safe to spend, allowance left and "% spent" counted top-ups, bank checks,

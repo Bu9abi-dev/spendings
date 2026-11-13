@@ -221,7 +221,7 @@ for (const ph of PHONES) {
     const r = await p.evaluate(async () => {
       const M = await import('/js/model.js'); const { homeNow } = await import('/js/home-now.js');
       const m = homeNow(); // Home's own call: Safe to spend has the card's upcoming bills taken off
-      const { total, safe, allowBal } = m;
+      const { total, safeToday: safe, allowBal } = m; // since v39 Home's Safe to spend is for today (m.card)
       const sum = m.sum;
       const expectRows = M.whereRows(m).map((x) => ({ label: x.label, v: x.shown }));  // the whole numbers shown, after largest-remainder rounding
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(r)))); for (const t0 = Date.now(); document.getAnimations().length && Date.now() - t0 < 3000;) await new Promise((r) => requestAnimationFrame(r));
@@ -238,7 +238,7 @@ for (const ph of PHONES) {
     const rs = r.rows.reduce((a, x) => a + x.v, 0);
     ok(Math.abs(rs - r.shownTotal) <= 1, `Where rows on screen add to the shown total (${rs} vs ${r.shownTotal})`);
     ok(JSON.stringify(r.rows) === JSON.stringify(r.expectRows), 'Where rows on screen = model whereRows()');
-    ok(Math.abs(r.hero - r.total) < 0.01 && r.meta.includes(`${Math.round(r.safe).toLocaleString('en-US')} safe to spend`), 'All tab: hero is total money, Safe to spend on the line below');
+    ok(Math.abs(r.hero - r.total) < 0.01 && r.meta.includes(`${Math.round(r.safe).toLocaleString('en-US')} safe to spend today`), 'All tab: hero is total money, Safe to spend on the line below');
   }
 
   // ghost "Allowance not moved yet"

@@ -53,7 +53,24 @@ timeline
         v37 : Account buttons stay on one line
     section 12 November 2026
         v38 : Only real spending counts : Exclude from my spending : Investing : Sheet update needed
+    section 13 November 2026
+        v39 : Allowance card shows the real money on ADCB : Per day until payday : Daily target 100
 ```
+
+---
+
+## v39: The allowance card shows the real money on your card
+**13 November 2026** · no sheet update needed
+
+- **Allowance left is now the money really on ADCB**, the same number as its button under the balance (after any "Checked with bank"). The percent and the liquid fill are that money ÷ your 3,000 allowance, so a top-up can take it past 100%. Under it: "AED X/day for N days · target 100/day".
+- **Days left** count only the whole days between today and payday: not today, not payday. 13 Nov → 27 Nov is 13 days. The day before payday counts as 1. On payday itself the count starts again for the next cycle.
+- **Safe to spend is now for today**: card money ÷ days left. It is no longer a total for the whole cycle.
+- **New pace line** on Home: "On track · X/day available (target 100)" in green, or "Tight · X/day until payday (target 100)" in amber, red when it's under half the target (50). The old "X over pace · Y a day for Z days" is gone.
+- **"Runs out around…"** now comes from the card's real money and its last 7 days of your own spending on it (excluded entries, Investing, transfers and bank checks never count). It only shows when that pace empties the card at least a day before payday.
+- **Only the allowance card moves these numbers.** Spending on ADIB, transfers, investing, "Exclude from my spending" and bank checks change nothing here, except by changing what ADCB holds. A top-up just raises the card's money, so the per-day amount goes up.
+- **Where your money is** shows ADCB as one row with what it really holds and "about X a day for N days until payday".
+- **Unchanged:** Insights' spending totals and its allowance pace chart (your own spending only, against the 3,000), and the Apple Pay notification.
+- Demo mode: the card now holds a realistic mid-cycle amount (as of its last bank check), so the new card shows a believable picture.
 
 ---
 

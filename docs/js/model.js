@@ -730,7 +730,7 @@ export const daysBetween = (a, b) => Math.round(dayIndex(b) - dayIndex(a));
     Returns { expected, spent, delta, tol, days, perDay, left, state, daysLeft, runsOut } where state is
     'spent' (over the allowance), 'over' (at this pace it runs out before the cycle ends) or 'on', and runsOut is
     { outDay, early, perDay } (the day it runs out, days before the cycle's last day, the daily pace) or null. */
-export function allowancePace(sum, cycle, settings, now = new Date()) {
+export function cyclePace(sum, cycle, settings, now = new Date()) {
   const { start, end } = cycleBounds(cycle, settings.cycleStart);
   const len = Math.round((end - start) / 864e5);
   const elapsed = Math.min(len, Math.max(0, (now - start) / 864e5));
@@ -749,6 +749,91 @@ export function allowancePace(sum, cycle, settings, now = new Date()) {
     pace.runsOut = { outDay, early: daysBetween(outDay, lastDay), perDay };
   }
   return pace;
+}
+
+/* ───────────────────────── Allowance card pace (Home) ─────────────────────────
+   Home's allowance card, pace line and Safe to spend (v39, Abdullah's spec of 13 Nov 2026) read the REAL money on
+   the allowance card, not a running total of spends:
+   - cardBalance      = the allowance card's balance now (the same number as its chip, after "Checked with bank")
+   - monthlyAllowance = the planned allowance move (3,000); dailyTarget = monthlyAllowance ÷ 30, fixed
+   - daysLeft         = whole days strictly between today and next payday (today and payday not counted), at least 1
+   - canSpendPerDay   = cardBalance ÷ daysLeft (never below 0); Safe to spend today = canSpendPerDay
+   Only the card's balance moves these: spending elsewhere, transfers, investing, "Not my spending" and bank checks
+   change them only through that balance. A top-up simply raises the balance. */
+
+const pad2 = (n) => String(n).padStart(2, '0');
+const isKey = (d) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+const asDayKey = (d) => (isKey(d) ? d : dayKey(d));
+/** A day key `n` days after `key`. */
+function keyPlusDays(key, n) {
+  const [y, m, d] = key.split('-').map(Number);
+  const u = new Date(Date.UTC(y, m - 1, d + n));
+  return `${u.getUTCFullYear()}-${pad2(u.getUTCMonth() + 1)}-${pad2(u.getUTCDate())}`;
+}
+
+/** The day the allowance move lands: the planned move's day, else the cycle's start day (1 for calendar months). */
+export function allowancePayDay(plan, settings) {
+  const mv = allowanceMoves(plan, settings).find((p) => +p.day > 0);
+  return mv ? +mv.day : Math.max(1, +settings.cycleStart || 1);
+}
+
+/** The next payday strictly after today ("YYYY-MM-DD", Dubai). On payday itself it's next month's: the count resets.
+    A pay day past the month's end (31 in November) lands on its last day. */
+export function nextPaydayOf(today, payDay) {
+  const { y, m, d } = dubaiParts(isKey(today) ? `${today}T12:00:00+04:00` : today);
+  const dayIn = (yy, mm) => Math.min(payDay, new Date(Date.UTC(yy, mm, 0)).getUTCDate());
+  let yy = y, mm = m;
+  if (d >= dayIn(yy, mm)) { mm += 1; if (mm > 12) { mm = 1; yy += 1; } }
+  return `${yy}-${pad2(mm)}-${pad2(dayIn(yy, mm))}`;
+}
+
+/** What the allowance card really spent per day over the last 7 days (today and the 6 before): personal spending on
+    the card only (model.js isPersonalSpend, so excluded entries, Investing, transfers and bank checks never count),
+    less refunds to it, never below 0. Used only for the "runs out around" warning. */
+export function recentCardSpend(entries, settings, now = new Date(), days = 7) {
+  const acc = settings.allowanceAccount, to = dayKey(now), from = keyPlusDays(to, -(days - 1));
+  let total = 0;
+  for (const e of entries || []) {
+    if (e.account !== acc) continue;
+    const sign = isPersonalSpend(e) ? 1 : isRefund(e) ? -1 : 0;
+    if (!sign) continue;
+    const k = dayKey(e.date);
+    if (k >= from && k <= to) total += sign * toAED(e, settings);
+  }
+  return Math.max(0, total) / days;
+}
+
+/** The pure maths behind Home's allowance card and pace line. Dates are Dates or "YYYY-MM-DD" (Dubai).
+    `recentPerDay` (optional) is recentCardSpend's 7-day average, for the run-out warning.
+    Returns { cardBalance, monthlyAllowance, dailyTarget, daysLeft, nextPayday, canSpendPerDay, percent, state,
+    runsOut } where percent = cardBalance ÷ monthlyAllowance (0 or more, above 1 after a top-up), state is
+    'on' (canSpendPerDay ≥ dailyTarget), 'tight' (below it) or 'low' (below half of it), and runsOut is
+    { outDay, early, perDay } when the last 7 days' pace would empty the card before payday, else null. */
+export function allowancePace({ cardBalance, monthlyAllowance, today, nextPayday, recentPerDay = 0 }) {
+  const bal = Math.round((+cardBalance || 0) * 100) / 100;
+  const allowance = Math.max(0, +monthlyAllowance || 0);
+  const dailyTarget = allowance / 30;
+  const t = asDayKey(today), pay = asDayKey(nextPayday);
+  const daysLeft = Math.max(1, daysBetween(t, pay) - 1);
+  const canSpendPerDay = Math.max(0, bal) / daysLeft;
+  const percent = allowance > 0 ? Math.max(0, bal) / allowance : 0;
+  // compare in fils, so 100.00 a day against a 100 target is on track, not "tight" by a rounding hair
+  const c = Math.round(canSpendPerDay * 100), tg = Math.round(dailyTarget * 100);
+  const state = c >= tg ? 'on' : c < tg / 2 ? 'low' : 'tight';
+  let runsOut = null;
+  const perDay = +recentPerDay || 0;
+  if (bal > 0 && perDay > 0 && bal / perDay < daysLeft) {
+    const outDay = keyPlusDays(t, Math.max(1, Math.floor(bal / perDay)));
+    const early = daysBetween(outDay, keyPlusDays(pay, -1));
+    if (early >= 1) runsOut = { outDay, early, perDay };
+  }
+  return { cardBalance: bal, monthlyAllowance: allowance, dailyTarget, daysLeft, nextPayday: pay, canSpendPerDay, percent, state, runsOut };
+}
+
+/** The planned allowance move(s), added up (3,000), or the allowance setting without a plan. */
+export function monthlyAllowanceOf(plan, settings) {
+  const moves = (plan || []).filter((p) => p.kind === 'Move' && p.to === settings.allowanceAccount);
+  return moves.length ? moves.reduce((a, p) => a + (+p.amount || 0), 0) : +settings.allowance || 0;
 }
 
 /* ───────────────────────── Home numbers ───────────────────────── */
@@ -776,9 +861,16 @@ export function homeNumbers(entries, plan, settings, now = new Date(), dismissed
   if (allowMove || (dismissedMove && allowAcc !== hub)) safe = Math.min(safe, Math.max(allowBal, 0));
   // one account doing both jobs: you can't safely spend more than its free money
   if (allowAcc === hub) safe = Math.min(safe, Math.max(0, hubB.free));
-  const pace = allowancePace(sum, cyc, s, now);
+  // the cycle-total view (allowance used against the 3,000): Insights' pace panel and the sheet's reply still use it
+  const pace = cyclePace(sum, cyc, s, now);
+  // Home's allowance card, pace line and Safe to spend: the real money on the card ÷ the days to payday
+  const card = allowancePace({
+    cardBalance: allowBal, monthlyAllowance: monthlyAllowanceOf(plan, s), today: now,
+    nextPayday: nextPaydayOf(now, allowancePayDay(plan, s)), recentPerDay: recentCardSpend(entries, s, now),
+  });
+  const safeToday = card.canSpendPerDay;
   const allowanceUnmoved = !!allowMove && (!allowMove.due || dayKey(now) >= dayKey(allowMove.due));
-  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, bills: billsDue, pace, allowanceUnmoved };
+  return { s, cyc, bals, total, status, hub, hubB, sum, allowAcc, allowBal, allowLeft, allowMove, safe, bills: billsDue, pace, card, safeToday, allowanceUnmoved };
 }
 
 /** Whole numbers for `values` that add up to `target` (default: their rounded total): round every one
@@ -809,14 +901,9 @@ export function whereRows(m) {
   const add = (label, v, c, sub = '') => all.push({ label, v, c, sub });
   const allowColor = accountMeta(m.allowAcc).color, hubColor = accountMeta(m.hub).color;
   const same = m.allowAcc === m.hub;
-  // rows say where money physically is, so only the part of Safe to spend still in the allowance
-  // account sits here; any part moved on shows under the account it went to
-  const safeHere = same ? m.safe : Math.min(Math.max(0, m.safe), Math.max(0, m.allowBal));
-  const movedOn = Math.max(0, m.safe) - safeHere;
-  add(t('where.safe'), safeHere, allowColor, movedOn >= 0.5 ? t('where.safeSub', { acc: m.allowAcc, n: fmt(movedOn, { whole: true }) }) : t('where.allowLeft', { acc: m.allowAcc }));
-  if (!same) add(t('where.carried', { acc: m.allowAcc }), m.allowBal - safeHere, allowColor, t('where.unspent'));
-  // one account doing both jobs: Safe to spend is already part of its free money, so count it once
-  add(t('where.emerg'), m.hubB.free - (same ? safeHere : 0), hubColor, t('where.emergSub', { acc: m.hub }));
+  // the allowance card is one row: the real money on it, and what that allows a day until payday (m.card)
+  if (!same) add(t('where.card', { acc: m.allowAcc }), m.allowBal, allowColor, t('where.cardSub', { amt: fmt(m.card.canSpendPerDay, { whole: true }), n: m.card.daysLeft }));
+  add(t('where.emerg'), m.hubB.free, hubColor, t('where.emergSub', { acc: m.hub }));
   add(t('where.resp'), m.hubB.reserved, 'var(--warn)', t('where.heldIn', { acc: m.hub }));
   add(t('where.toMove'), m.hubB.toMove, 'var(--label-3)', t('where.waitingIn', { acc: m.hub }));
   for (const a of ACCOUNTS) if (a.id !== m.hub && a.id !== m.allowAcc) add(a.name, m.bals.get(a.id)?.balance || 0, a.color, a.role);

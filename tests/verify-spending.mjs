@@ -4,7 +4,7 @@
 // Usage: node tests/verify-spending.mjs   (exits 1 on any failure)
 import {
   setAccountList, SAMPLE_ACCOUNTS, SAMPLE_PLAN, SAMPLE_SETTINGS, cycleOf, cycleBounds, toAED, balances,
-  isPersonalSpend, isExcluded, isRefund, cycleSpend, summarize, homeNumbers, allowancePace,
+  isPersonalSpend, isExcluded, isRefund, cycleSpend, summarize, homeNumbers, cyclePace,
 } from '../docs/js/model.js';
 import { cardBills } from '../docs/js/bills.js';
 import { dailySpend, categoryTrends } from '../docs/js/trends.js';
@@ -91,7 +91,7 @@ console.log('\n── "Exclude from my spending": pass-through money');
   ok(!budgetRows(sp.byCategory, { Travel: 500 })[0].spent, 'category limits ignore them');
   ok(totals(list.filter((e) => e.cycle === CYC), S).spent === 500, 'the Activity totals ignore them');
   ok(categoryTrends(list, CYC, S, 6).every((r) => r.id !== 'Travel'), 'and so do the Insights trends');
-  const pE = allowancePace(m.sum, CYC, S, NOW);
+  const pE = cyclePace(m.sum, CYC, S, NOW);
   ok(pE.perDay === m0.pace.perDay && pE.state === 'on', 'and the pace');
 }
 

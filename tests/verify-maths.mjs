@@ -176,7 +176,7 @@ setAccountList(SAMPLE_ACCOUNTS);
   const after = homeModel(moved, SAMPLE_PLAN, S, D('2026-09-27T10:00:00+04:00'));
   const rows = whereRows(after);
   console.log('      after move rows:', rows.map((r) => `${r.label}=${r.v}`).join(' | '));
-  ok(after.safe === 3000 && rows.find((r) => r.label === 'ADCB carried over')?.v === 600 && !after.allowanceUnmoved, 'after the move: Safe resets to 3000; the 600 carry-over shows ONLY as "ADCB carried over" (Where card + ADCB lens meta), not in Safe');
+  ok(after.safe === 3000 && near(rows.find((r) => r.label === 'ADCB allowance card')?.v, after.allowBal) && !after.allowanceUnmoved, 'after the move: Safe resets to 3000; the 600 carry-over shows ONLY as "ADCB carried over" (Where card + ADCB lens meta), not in Safe');
   // spending the carry-over still eats the new allowance
   const spendCarry = [...moved, E('Spend', 600, 'ADCB', '2026-09-28T10:00:00+04:00')];
   const sc = homeModel(spendCarry, SAMPLE_PLAN, S, D('2026-09-28T12:00:00+04:00'));
@@ -188,12 +188,12 @@ setAccountList(SAMPLE_ACCOUNTS);
   const tr = whereRows(t);
   console.log('      extra 500 top-up rows:', tr.map((r) => `${r.label}=${r.v}`).join(' | '), `| plan allowance done=${t.status.find((p) => p.id === 'allowance').done}`);
   ok(t.safe === 3000 && t.sum.allowancePot === 3000 && t.status.find((p) => p.id === 'allowance').done === 3000, 'mid-cycle top-up ADIB→ADCB 500 (not marked): only refills the card, Safe stays 3000, the planned move stays 3000');
-  ok(tr.find((r) => r.label === 'ADCB carried over')?.v === 1100 && near(rowSum(tr), t.total), 'the unmarked top-up sits in the card as buffer (600 + 500), rows add up to the total');
+  ok(near(tr.find((r) => r.label === 'ADCB allowance card')?.v, t.allowBal) && near(rowSum(tr), t.total), 'the unmarked top-up sits in the card as buffer (600 + 500), rows add up to the total');
   const toppedM = [...moved, E('Transfer', 500, 'ADIB', '2026-10-05T10:00:00+04:00', { toAccount: 'ADCB', note: 'extra', addToAllowance: true })];
   const tm = homeModel(toppedM, SAMPLE_PLAN, S, D('2026-10-05T12:00:00+04:00'));
   const tmr = whereRows(tm);
   ok(tm.safe === 3500 && tm.sum.topUps === 500, 'the same top-up marked "Add to my allowance": Safe 3500');
-  ok(tmr.find((r) => r.label === 'ADCB carried over')?.v === 600 && near(rowSum(tmr), tm.total), 'a marked top-up is not mislabelled as carried over (still 600), rows add up');
+  ok(near(tmr.find((r) => r.label === 'ADCB allowance card')?.v, tm.allowBal) && near(rowSum(tmr), tm.total), 'a marked top-up is not mislabelled as carried over (still 600), rows add up');
   // top-up BEFORE payday move shrinks the move
   const early = [...base, E('Transfer', 500, 'ADIB', '2026-09-28T10:00:00+04:00', { toAccount: 'ADCB', note: 'extra' })];
   const em = homeModel(early, SAMPLE_PLAN, S, D('2026-09-28T12:00:00+04:00'));
@@ -227,7 +227,7 @@ setAccountList(SAMPLE_ACCOUNTS);
   const r1 = whereRows(p1);
   console.log('      payday rows:', r1.map((r) => `${r.label}=${r.v}`).join(' | '));
   ok(p1.safe === 3500 && p1.sum.carryIn === 500, `payday: Safe = 3000 allowance + 500 top-up = ${p1.safe}`);
-  ok(r1.find((r) => r.label === 'ADCB carried over')?.v === 100 && near(rowSum(r1), p1.total), 'only the 100 of unspent allowance stays as the buffer; rows add up');
+  ok(near(r1.find((r) => r.label === 'ADCB allowance card')?.v, p1.allowBal) && near(rowSum(r1), p1.total), 'only the 100 of unspent allowance stays as the buffer; rows add up');
   const half = homeModel([...base.slice(0, -1), E('Transfer', 500, 'ADIB', '2026-09-26T18:00:00+04:00', { toAccount: 'ADCB', addToAllowance: true }), E('Spend', 300, 'ADCB', '2026-09-26T19:00:00+04:00'), pay[pay.length - 1]], SAMPLE_PLAN, S, D('2026-09-27T10:00:00+04:00'));
   ok(half.safe === 3300, `spent 300 more after the top-up (100 allowance + 200 of it): payday Safe = 3000 + 300 = ${half.safe}`);
   const later = homeModel(pay, SAMPLE_PLAN, S, D('2026-10-27T10:00:00+04:00'));
@@ -256,7 +256,7 @@ setAccountList(SAMPLE_ACCOUNTS);
   ok(m1.safe === 3000 && m1.pace.spent === 0, 'moving ADCB→BOTIM is reallocating: Safe stays 3000, nothing counted as spent');
   ok(!m1.allowanceUnmoved, 'no "Allowance not moved yet" after moving money on from ADCB');
   const r1 = whereRows(m1);
-  ok(near(rowSum(r1), m1.total) && r1.find((r) => r.label === 'Safe to spend')?.v === 2000, 'Where card: 2000 of Safe to spend sits in ADCB, the rest under BOTIM; rows add up');
+  ok(near(rowSum(r1), m1.total) && near(r1.find((r) => r.label === 'ADCB allowance card')?.v, m1.allowBal), 'Where card: ADCB shows what it holds, BOTIM its own; rows add up');
   // loophole with carry-over
   const lc = [E('Adjustment', 1500, 'ADCB', '2026-09-20T10:00:00+04:00'), ...base.filter((e) => e.account !== 'ADCB' || e.type !== 'Adjustment'), E('Transfer', 1000, 'ADCB', '2026-10-01T12:00:00+04:00', { toAccount: 'BOTIM' }), E('Spend', 1000, 'BOTIM', '2026-10-02T12:00:00+04:00')];
   const m2 = homeModel(lc, SAMPLE_PLAN, S, now);
@@ -279,7 +279,7 @@ setAccountList(SAMPLE_ACCOUNTS);
   const m5 = homeModel(ov, SAMPLE_PLAN, S, now);
   const r5 = whereRows(m5);
   console.log(`      overspent 3300 with 800 carry: safe=${m5.safe}, rows=${r5.map((r) => `${r.label}=${r.v}`).join(' | ')}`);
-  ok(m5.safe === 0 && m5.allowLeft === -300 && m5.pace.state === 'spent' && r5.find((r) => r.label === 'ADCB carried over')?.v === 500 && near(rowSum(r5), m5.total), 'overspent: Safe 0 (never negative), 300 over the allowance, the Where card shows what ADCB really holds');
+  ok(m5.safe === 0 && m5.allowLeft === -300 && m5.pace.state === 'spent' && near(r5.find((r) => r.label === 'ADCB allowance card')?.v, m5.allowBal) && near(rowSum(r5), m5.total), 'overspent: Safe 0 (never negative), 300 over the allowance, the Where card shows what ADCB really holds');
 }
 
 console.log('\n── 6. Changing the cycle start day ──');

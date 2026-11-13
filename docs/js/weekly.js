@@ -127,10 +127,9 @@ export function weeklySummary(ctx) {
   };
 }
 
-/** The allowance pace alert, or null. It only puts model.js allowancePace's `runsOut` into words; runsOut exists only
-    when Home and Insights say "over pace", from the 7th day, after spending on 3 different days, at the steady rate
-    (without any one payment over a quarter of the pot), and when that is 3 or more days before the cycle's last day.
-    `pace` is homeNumbers' m.pace. Returns { outDay, early, perDay, text }. */
+/** The allowance "runs out around" alert, or null. It only puts a pace object's `runsOut` into words. Home and
+    Your week pass homeNumbers' m.card (model.js allowancePace): the allowance card's real balance ÷ its last 7 days of
+    personal spending, shown when that empties the card at least a day before payday. Returns { outDay, early, perDay, text }. */
 export function paceAlert(pace, now = new Date()) {
   const r = pace?.runsOut;
   if (!r) return null;

@@ -1241,6 +1241,7 @@ html.sheet-open { overflow: hidden; }
 /* pace + inline actions in the hero line */
 .pace-good { color: var(--good); font-weight: 600; }
 .pace-bad { color: var(--warn); font-weight: 600; }
+.pace-low { color: var(--neg); font-weight: 600; }
 .soon-btn { font: inherit; color: var(--good); font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; padding: 2px 0; }
 .soon-btn:active { opacity: 0.6; }
 /* ✕ to dismiss a payday prompt for this cycle: a 44px hit box around a 24px glyph, kept apart

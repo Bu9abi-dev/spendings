@@ -3,7 +3,7 @@
 // the allowance moves to ADCB, a top-up goes to BOTIM, and daily spending happens on ADCB/BOTIM.
 // The last two cycles also show what isn't spending: mom's flight and groceries (excluded), an IBKR deposit
 // (Investing), a top-up that only refills the card, a refund and bank checks.
-import { cycleOf, cycleBounds, shiftCycle, dateInCycle, dayKey } from './model.js';
+import { cycleOf, cycleBounds, shiftCycle, dateInCycle, dayKey, daysBetween, nextPaydayOf } from './model.js';
 import { addDays, dayDate, instalmentAmounts } from './bnpl.js';
 
 // [merchant, category, account, low, high]
@@ -152,6 +152,16 @@ export function demoEntries(settings) {
       out.push({ ...base, id: `d-bnpl-${id}-${i}`, date, type: 'Spend', amount: amounts[i], account, category: 'Shopping', merchant: `${provider.toUpperCase()}*${merchant.toUpperCase()}`, source: 'Apple Pay' });
     });
   }
+
+  // the allowance card at its last bank check (a day ago) holds about what a real one does mid-cycle: a little over
+  // the 100-a-day target for the days left to payday, like the owner's ADCB (1,672 with 13 days to go). The demo's
+  // old cycles would otherwise pile up a big buffer, and Home's allowance card reads the card's real balance (v39).
+  const check = out.find((e) => e.id === 'd-match-ADCB');
+  const checkKey = dayKey(check.date);
+  const toPay = Math.max(1, daysBetween(checkKey, nextPaydayOf(check.date, settings.cycleStart || 27)));
+  const before = out.filter((e) => e !== check && e.date <= check.date && (e.account === 'ADCB' || e.toAccount === 'ADCB'))
+    .reduce((a, e) => a + (e.type === 'Spend' || (e.type === 'Transfer' && e.account === 'ADCB') ? -1 : 1) * (e.currency === 'USD' ? e.amount * settings.usdRate : e.amount), 0);
+  check.amount = Math.round((Math.round(110 * toPay) - before) * 100) / 100;
 
   return out
     .filter((e) => new Date(e.date) <= now)

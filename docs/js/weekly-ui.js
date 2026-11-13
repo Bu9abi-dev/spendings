@@ -41,10 +41,10 @@ const catTint = (id) => (id === 'Uncategorised' ? 'var(--warn)' : seriesColor(ca
 
 /** Home's candidates from this feature, for homeNotice() in home.js (which shows only the most urgent one):
     [{ rank: 'pace:out', html }, { rank: 'week:summary', html }], each only when it has something to say.
-    `m` is Home's numbers (homeNumbers: its adjusted summary and m.pace), `isCurrent` false for a past cycle. */
+    `m` is Home's numbers (homeNumbers: its adjusted summary and m.card), `isCurrent` false for a past cycle. */
 export function weeklyHomeNotices(m, isCurrent, now = new Date()) {
   const found = [];
-  const pace = isCurrent ? paceAlert(m.pace, now) : null;
+  const pace = isCurrent ? paceAlert(m.card, now) : null; // the card's real 7-day pace (model.js allowancePace)
   if (pace && !paceSeen(pace, m.cyc, stored().pace)) {
     found.push({ rank: 'pace:out', html: `<button type="button" class="sub-line wk-line warn" data-go="insights" data-reset-insights="1" data-anchor="pace" data-pace-seen="${esc(m.cyc)}|${esc(pace.outDay)}">${icon('warn', { size: 16 })}<span>${esc(pace.text)}</span>${icon('chevR', { size: 14, cls: 'chev' })}</button>` });
   }
@@ -96,7 +96,7 @@ function sheetBody(s, pace) {
 /** Open "Your week". Marks the week as seen (quietly: not an Undo step). The pace line uses Home's own numbers. */
 export function openWeek(now = new Date()) {
   const s = currentSummary(now);
-  const pace = paceAlert(homeNow(now).pace, now);
+  const pace = paceAlert(homeNow(now).card, now);
   if (summaryDue(now, seen(), s.week)) saveWeekly({ seen: s.week.key }, t('wk.opened'));
   openSheet({
     label: t('wk.title'),

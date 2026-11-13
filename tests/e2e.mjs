@@ -79,10 +79,12 @@ assert.ok(await until(() => serverEntries().length === 3, 10000), 'the offline e
 entries = JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ token, action: 'list' }) } }).text).entries;
 assert.equal(entries.length, 3);
 
-// ADCB view reflects the allowance: 3000 - 25 - 9.5 - 7
+// ADCB view shows the real money on the card (v39), not a running total of spends: nothing was moved onto it here,
+// so after 25 + 9.5 + 7 of spending it holds −41.50, and the card says it's empty
 await p.click('.key-acc[data-focus="ADCB"]');
 await p.waitForSelector('.capsule');
-assert.match(await p.textContent('.cap-value'), /2,959|2,958/);
+assert.match(await p.textContent('.cap-value'), /−AED 42|−AED 41/);
+assert.match(await p.textContent('.cap-label'), /Allowance card empty/);
 
 // match ADIB with the bank: balance becomes exactly what was typed
 await p.click('.key-acc[data-focus="ADIB"]');
